@@ -1,0 +1,95 @@
+// CamTabCommand.h : the two-way toggle command that owns the CAM tab.
+//
+// There is one of these per assembly workspace. It holds that assembly's job,
+// and loads and saves its .cam file.
+
+#pragma once
+
+#include "CommandBase.h"
+#include "CamJob.h"
+
+class CAddOnInterface;
+class CCamTabWnd;
+
+class CCamTabCommand : public CCommandBase
+{
+public:
+    CCamTabCommand(CAddOnInterface* pAddOn, const std::wstring& sessionId);
+    virtual ~CCamTabCommand();
+
+    // Called by the tab window once it's on screen, so a load can show a prompt.
+    void LoadJobFile();
+    void SaveJobFile();
+
+    // Records that the job has changes that aren't in the .cam file.
+    void MarkJobChanged();
+
+    void OnWindowClosing();
+    void OnWindowGone();
+    void CloseFromAddOn();
+
+    // IAlibreAddOnCommand
+    STDMETHOD(IsTwoWayToggle)(VARIANT_BOOL* pValue) override;
+    STDMETHOD(AddTab)(VARIANT_BOOL* pValue) override;
+    STDMETHOD(get_TabName)(BSTR* pName) override;
+    STDMETHOD(OnShowUI)(__int64 hWnd) override;
+    STDMETHOD(OnTerminate)() override;
+
+private:
+    IADSessionPtr GetSession() const;
+    void SetStatus(const std::wstring& text);
+    void SetSaveBlocked(bool blocked);
+    void WarnIfUnsaved();
+    void DestroyWindowIfOpen();
+    void LeaveAddOn();
+
+    CAddOnInterface* m_pAddOn;
+    std::wstring m_sessionId;
+    CCamTabWnd* m_pWnd;
+
+    camcore::Job m_job;
+    std::filesystem::path m_camPath;
+
+    // Set when a file exists that saving would wrongly overwrite: one from a
+    // newer build, a damaged one, or one for a different assembly.
+    bool m_saveBlocked;
+
+    bool m_unsavedChanges;
+};
+
+/////////////////////////////////////////////////////////////////////////////
+// The window Alibre hosts in the Design Explorer tab.
+
+class CCamTabWnd : public CWnd
+{
+public:
+    explicit CCamTabWnd(CCamTabCommand* pTab);
+
+    bool CreateInTab(HWND hParent);
+    void DetachFromCommand() { m_pTab = nullptr; }
+
+    void SetStatusText(const std::wstring& text);
+    void EnableSave(bool enable);
+
+protected:
+    afx_msg int OnCreate(LPCREATESTRUCT pCreate);
+    afx_msg void OnDestroy();
+    afx_msg void OnSize(UINT type, int cx, int cy);
+    afx_msg void OnTimer(UINT_PTR id);
+    afx_msg void OnSave();
+    afx_msg void OnMarkChanged();
+    afx_msg LRESULT OnLoadJob(WPARAM wParam, LPARAM lParam);
+
+    void PostNcDestroy() override;
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    void LayoutControls(int cx, int cy);
+
+    CCamTabCommand* m_pTab;
+    CTreeCtrl m_tree;
+    CStatic m_status;
+    CButton m_save;
+    CButton m_markChanged;      // temporary, until Setup can change the job
+};

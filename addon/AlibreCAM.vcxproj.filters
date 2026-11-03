@@ -20,12 +20,20 @@
   <ItemGroup>
     <ClCompile Include="AboutDlg.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AddOnInterface.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="CamTabCommand.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="CommandBase.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="Log.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ModelReader.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AlibreCAM.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="stdafx.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AboutDlg.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AddOnInterface.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="CamTabCommand.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="CommandBase.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="Log.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ModelReader.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AlibreCAM.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="resource.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="stdafx.h"><Filter>Header Files</Filter></ClInclude>
@@ -40,8 +48,8 @@
     <None Include="AlibreCAM.def"><Filter>Source Files</Filter></None>
     <None Include="AlibreCAM.adc"><Filter>Add-On Files</Filter></None>
     <None Include="Alibre.props"><Filter>Add-On Files</Filter></None>
-    <None Include="deploy\install.ps1"><Filter>Add-On Files</Filter></None>
-    <None Include="deploy\uninstall.ps1"><Filter>Add-On Files</Filter></None>
-    <None Include="README.md" />
+    <None Include="..\deploy\install.ps1"><Filter>Add-On Files</Filter></None>
+    <None Include="..\deploy\uninstall.ps1"><Filter>Add-On Files</Filter></None>
+    <None Include="..\README.md" />
   </ItemGroup>
 </Project>

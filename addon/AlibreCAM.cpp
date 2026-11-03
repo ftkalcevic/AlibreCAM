@@ -6,6 +6,7 @@
 #include "stdafx.h"
 #include "AlibreCAM.h"
 #include "AddOnInterface.h"
+#include "Log.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -38,8 +39,13 @@ void AddOnLoad(HWND windowHandle, void* pAutomationHook, void* /*reserved*/)
 
     theApp.m_hAlibreWnd = windowHandle;
 
+    LogInit();
+
     if (pAutomationHook == nullptr)
+    {
+        Log(L"AddOnLoad: no automation hook");
         return;
+    }
 
     try
     {
@@ -50,12 +56,13 @@ void AddOnLoad(HWND windowHandle, void* pAutomationHook, void* /*reserved*/)
         {
             _bstr_t version = theApp.m_pRoot->Getversion();   // lowercase "version" in AlibreX_64.tlb
             theApp.m_strAlibreVersion = static_cast<const wchar_t*>(version);
+            Log(L"Alibre version: %s", static_cast<LPCWSTR>(theApp.m_strAlibreVersion));
         }
     }
-    catch (const _com_error&)
+    catch (const _com_error& error)
     {
-        // Not fatal for this add-on: the About box just won't show the
-        // Alibre version.
+        // Not fatal here: the About box just won't show the Alibre version.
+        Log(L"AddOnLoad failed: hr=0x%08X", static_cast<unsigned>(error.Error()));
     }
 }
 
@@ -78,8 +85,11 @@ void AddOnUnload(HWND /*windowHandle*/, BOOL /*forceUnload*/, BOOL* cancel,
 
     // Drop our references while Alibre is still fully alive, rather than
     // during DLL detach.
+    Log(L"AddOnUnload");
+
     if (theApp.m_pAddOn != nullptr)
     {
+        theApp.m_pAddOn->CloseAllTabs();
         theApp.m_pAddOn->Release();
         theApp.m_pAddOn = nullptr;
     }

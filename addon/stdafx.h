@@ -15,7 +15,12 @@
 
 #include <afxwin.h>             // MFC core and standard components
 #include <afxext.h>             // MFC extensions
+#include <afxcmn.h>             // CTreeCtrl
 #include <comdef.h>             // _bstr_t, _com_error, smart pointers
+
+#include <filesystem>
+#include <map>
+#include <string>
 
 // The large automation API that drives Alibre (IADRoot, sessions, geometry...).
 #import "AlibreX_64.tlb"

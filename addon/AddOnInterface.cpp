@@ -4,6 +4,8 @@
 #include "AlibreCAM.h"
 #include "AddOnInterface.h"
 #include "AboutDlg.h"
+#include "CamTabCommand.h"
+#include "Log.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -113,7 +115,7 @@ STDMETHODIMP CAddOnInterface::SubMenuItems(long menuID, SAFEARRAY** pSubMenuIDs)
     if (menuID != MENU_ID_ROOT)
         return S_OK;
 
-    const long children[] = { MENU_ID_ABOUT };
+    const long children[] = { MENU_ID_CAM_TAB, MENU_ID_ABOUT };
     const ULONG count = static_cast<ULONG>(sizeof(children) / sizeof(children[0]));
 
     // The caller takes ownership of the array.
@@ -145,22 +147,27 @@ STDMETHODIMP CAddOnInterface::MenuItemText(long menuID, BSTR* pMenuDisplayText)
     switch (menuID)
     {
     case MENU_ID_ROOT:   *pMenuDisplayText = _bstr_t(L"AlibreCAM").Detach(); break;
+    case MENU_ID_CAM_TAB: *pMenuDisplayText = _bstr_t(L"CAM Tab").Detach(); break;
     case MENU_ID_ABOUT:  *pMenuDisplayText = _bstr_t(L"About").Detach();    break;
     default: break;
     }
     return S_OK;
 }
 
-STDMETHODIMP CAddOnInterface::MenuItemState(long menuID, BSTR /*sessionIdentifier*/,
+STDMETHODIMP CAddOnInterface::MenuItemState(long menuID, BSTR sessionIdentifier,
                                             enum ADDONMenuStates* pType)
 {
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
     if (pType == nullptr)
         return E_POINTER;
 
     // The root must be enabled too, or the whole drop-down/tab greys out.
     // The About box works in every workspace (including Home, which passes an
-    // empty session id), so the session is not consulted.
+    // empty session id). CAM works on assemblies only, on a supported Alibre.
     if (menuID == MENU_ID_ROOT || menuID == MENU_ID_ABOUT)
+        *pType = ADDONMenuStates_ADDON_MENU_ENABLED;
+    else if (menuID == MENU_ID_CAM_TAB && IsAlibreVersionSupported() && IsAssemblySession(sessionIdentifier))
         *pType = ADDONMenuStates_ADDON_MENU_ENABLED;
     else
         *pType = ADDONMenuStates_ADDON_MENU_GRAYED;
@@ -178,6 +185,11 @@ STDMETHODIMP CAddOnInterface::MenuItemToolTip(long menuID, BSTR* pToolTip)
     {
     case MENU_ID_ROOT:
         *pToolTip = _bstr_t(L"AlibreCAM add-on").Detach();
+        break;
+    case MENU_ID_CAM_TAB:
+        *pToolTip = IsAlibreVersionSupported()
+                        ? _bstr_t(L"Open or close the CAM tab in the Design Explorer. Assemblies only.").Detach()
+                        : _bstr_t(L"AlibreCAM needs Alibre Design 27.0.1.27039 or later.").Detach();
         break;
     case MENU_ID_ABOUT:
         *pToolTip = _bstr_t(L"Show information about the AlibreCAM add-on").Detach();
@@ -199,7 +211,7 @@ STDMETHODIMP CAddOnInterface::PopupMenu(long /*menuID*/, VARIANT_BOOL* pIsPopup)
 /////////////////////////////////////////////////////////////////////////////
 // IAlibreAddOn - commands
 
-STDMETHODIMP CAddOnInterface::InvokeCommand(long menuID, BSTR /*sessionIdentifier*/,
+STDMETHODIMP CAddOnInterface::InvokeCommand(long menuID, BSTR sessionIdentifier,
                                             struct IAlibreAddOnCommand** pCommand)
 {
     AFX_MANAGE_STATE(AfxGetStaticModuleState());
@@ -207,13 +219,104 @@ STDMETHODIMP CAddOnInterface::InvokeCommand(long menuID, BSTR /*sessionIdentifie
     if (pCommand == nullptr)
         return E_POINTER;
 
-    // Stateless command: do the work here and hand Alibre no command object.
+    // Stateless commands do the work here and hand Alibre no command object.
     *pCommand = nullptr;
 
     if (menuID == MENU_ID_ABOUT)
+    {
         ShowAboutBox();
+        return S_OK;
+    }
+
+    if (menuID == MENU_ID_CAM_TAB)
+    {
+        const std::wstring sessionId = (sessionIdentifier != nullptr) ? sessionIdentifier : L"";
+        const auto existing = m_tabs.find(sessionId);
+
+        CCamTabCommand* pTab = nullptr;
+        if (existing != m_tabs.end())
+        {
+            // Returning the active toggle command again closes the tab.
+            pTab = existing->second;
+        }
+        else if (IsAlibreVersionSupported() && IsAssemblySession(sessionIdentifier))
+        {
+            pTab = new CCamTabCommand(this, sessionId);
+            pTab->AddRef();     // the map's reference
+            m_tabs[sessionId] = pTab;
+        }
+
+        if (pTab != nullptr)
+            return pTab->QueryInterface(__uuidof(IAlibreAddOnCommand), reinterpret_cast<void**>(pCommand));
+    }
 
     return S_OK;
+}
+
+void CAddOnInterface::RemoveTabForSession(const std::wstring& sessionId)
+{
+    const auto entry = m_tabs.find(sessionId);
+    if (entry != m_tabs.end())
+    {
+        CCamTabCommand* pTab = entry->second;
+        m_tabs.erase(entry);
+        pTab->Release();
+    }
+}
+
+void CAddOnInterface::CloseAllTabs()
+{
+    std::map<std::wstring, CCamTabCommand*> tabs;
+    tabs.swap(m_tabs);
+
+    for (auto& entry : tabs)
+    {
+        entry.second->CloseFromAddOn();
+        entry.second->Release();
+    }
+}
+
+bool CAddOnInterface::IsAssemblySession(BSTR sessionIdentifier)
+{
+    if (sessionIdentifier == nullptr || SysStringLen(sessionIdentifier) == 0 || theApp.m_pRoot == nullptr)
+        return false;
+
+    try
+    {
+        // An unknown identifier throws out of GetItem.
+        IADSessionPtr session = theApp.m_pRoot->GetSessions()->GetItem(_variant_t(sessionIdentifier));
+        return session != nullptr && session->GetSessionType() == ADObjectSubType_AD_ASSEMBLY;
+    }
+    catch (const _com_error&)
+    {
+        return false;
+    }
+}
+
+bool CAddOnInterface::IsAlibreVersionSupported()
+{
+    // The build number is the largest number in the version string, such as
+    // "PRODUCTVERSION 27,0,1,27039". If there's no number at all, allow the
+    // add-on rather than blocking a working version.
+    const CString& version = theApp.m_strAlibreVersion;
+
+    long build = -1;
+    long current = -1;
+    for (int i = 0; i <= version.GetLength(); ++i)
+    {
+        if (i < version.GetLength() && iswdigit(version[i]))
+        {
+            current = ((current < 0) ? 0 : current * 10) + (version[i] - L'0');
+        }
+        else
+        {
+            if (current > build)
+                build = current;
+            current = -1;
+        }
+    }
+
+    return build < 0 || build >= MINIMUM_ALIBRE_BUILD;
 }
 
 void CAddOnInterface::ShowAboutBox()
@@ -264,7 +367,7 @@ STDMETHODIMP CAddOnInterface::MenuIcon(long menuID, BSTR* pMenuIconPath)
         return E_POINTER;
     *pMenuIconPath = nullptr;
 
-    if (menuID != MENU_ID_ROOT && menuID != MENU_ID_ABOUT)
+    if (menuID != MENU_ID_ROOT && menuID != MENU_ID_ABOUT && menuID != MENU_ID_CAM_TAB)
         return S_OK;
 
     // The icon is deployed beside the DLL. Resolve it from our own module,

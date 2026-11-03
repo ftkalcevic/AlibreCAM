@@ -44,8 +44,8 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
     <TargetName>AlibreCAM</TargetName>
-    <OutDir>$(ProjectDir)bin\$(Platform)\$(Configuration)\</OutDir>
-    <IntDir>$(ProjectDir)obj\$(Platform)\$(Configuration)\</IntDir>
+    <OutDir>$(ProjectDir)..\bin\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)..\obj\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
     <!-- F5 launches Alibre Design (deploy the build with deploy\install.ps1 first). -->
     <LocalDebuggerCommand>$(AlibreProgramDir)Alibre Design.exe</LocalDebuggerCommand>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
@@ -60,6 +60,7 @@
     <ClCompile>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -104,6 +105,10 @@
   <ItemGroup>
     <ClCompile Include="AboutDlg.cpp" />
     <ClCompile Include="AddOnInterface.cpp" />
+    <ClCompile Include="CamTabCommand.cpp" />
+    <ClCompile Include="CommandBase.cpp" />
+    <ClCompile Include="Log.cpp" />
+    <ClCompile Include="ModelReader.cpp" />
     <ClCompile Include="AlibreCAM.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
@@ -112,6 +117,10 @@
   <ItemGroup>
     <ClInclude Include="AboutDlg.h" />
     <ClInclude Include="AddOnInterface.h" />
+    <ClInclude Include="CamTabCommand.h" />
+    <ClInclude Include="CommandBase.h" />
+    <ClInclude Include="Log.h" />
+    <ClInclude Include="ModelReader.h" />
     <ClInclude Include="AlibreCAM.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="stdafx.h" />
@@ -126,9 +135,14 @@
     <None Include="AlibreCAM.def" />
     <None Include="AlibreCAM.adc" />
     <None Include="Alibre.props" />
-    <None Include="deploy\install.ps1" />
-    <None Include="deploy\uninstall.ps1" />
-    <None Include="README.md" />
+    <None Include="..\deploy\install.ps1" />
+    <None Include="..\deploy\uninstall.ps1" />
+    <None Include="..\README.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\core\CamCore.vcxproj">
+      <Project>{F2F71ED3-3F56-4B6F-B1B1-7B625FADF24A}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

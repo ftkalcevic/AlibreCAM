@@ -1,8 +1,20 @@
 # AlibreCAM — Alibre Design add-on (C++/MFC)
 
-A minimal integrated Alibre Design add-on. It registers with Alibre, gets its
-own **AlibreCAM** tab on the ribbon, and that tab has an **About** button that
-opens an About dialog.
+CAM for Alibre Design assemblies. The add-on gets its own **AlibreCAM** tab on the
+ribbon. Its **CAM Tab** button opens a CAM tab in the Design Explorer, which holds
+the job tree and saves the job to a `.cam` file next to the assembly.
+
+The project has these parts:
+
+| Folder | Purpose |
+|---|---|
+| `addon\` | `AlibreCAM.dll`, the only code that calls Alibre |
+| `core\` | `CamCore` library: job model and `.cam` storage, with no Alibre or MFC code |
+| `tests\` | `CamCoreTests.exe`, which runs without Alibre |
+| `third_party\` | Copies of external libraries, with their licences |
+| `deploy\` | Install and uninstall scripts |
+
+The log is `%LOCALAPPDATA%\AlibreCAM\AlibreCAM.log`.
 
 ## Requirements
 
@@ -21,8 +33,7 @@ opens an About dialog.
 `Alibre.props` finds the Alibre `Program` folder that holds
 `AlibreX_64.tlb` and `AlibreAddOn_64.tlb`. The build log shows which one it
 used ("Alibre type libraries: ..."). If you have several Alibre versions
-installed, or it can't find yours, pin it by creating `AlibreCAM.user.props`
-next to the project:
+installed, or it can't find yours, pin it by creating `addon\AlibreCAM.user.props`:
 
 ```xml
 <Project>
@@ -37,6 +48,8 @@ The output goes to `bin\x64\Release\`: `AlibreCAM.dll`, `AlibreCAM.adc` and
 
 The two compiler warnings about the type library imports (C4278 `SendMessage`
 and C4192 `IStream`) are expected and harmless.
+
+To run the tests, run `bin\x64\Debug\CamCoreTests.exe` from a command prompt.
 
 ## Install
 
@@ -53,9 +66,8 @@ administrator rights and then:
 - adds the string value `{D3A31918-AFE0-45F2-A080-B531E6894179}` =
   that folder under `HKLM\SOFTWARE\Alibre Design Add-Ons`
 
-Start Alibre Design. A **AlibreCAM** ribbon tab appears, and its **About**
-button opens the dialog. Alibre reads add-ons only at startup, so restart it
-after every install or update.
+Start Alibre Design. An **AlibreCAM** ribbon tab appears. Alibre reads add-ons only
+at startup, so restart it after every install or update.
 
 To remove it: `powershell -ExecutionPolicy Bypass -File deploy\uninstall.ps1`.
 
@@ -70,8 +82,12 @@ Visual Studio. The project launches `Alibre Design.exe` and breakpoints in
 | File | Purpose |
 |---|---|
 | `AlibreCAM.cpp/.h` | MFC app object and the exported `AddOnLoad`, `AddOnInvoke`, `AddOnUnload` and `GetAddOnInterface` functions (listed in `AlibreCAM.def`) |
-| `AddOnInterface.cpp/.h` | `IAlibreAddOn`: menu tree (root *AlibreCAM* → *About*), `UseDedicatedRibbonTab` = TRUE, `MenuIcon`, and `InvokeCommand` |
+| `AddOnInterface.cpp/.h` | `IAlibreAddOn`: menu tree (root *AlibreCAM* → *CAM Tab*, *About*), `UseDedicatedRibbonTab` = TRUE, `MenuIcon`, and `InvokeCommand` |
 | `AboutDlg.cpp/.h`, `AlibreCAM.rc` | The About dialog |
+| `CamTabCommand.cpp/.h` | The CAM tab: its window, job tree, and loading and saving the `.cam` file |
+| `CommandBase.cpp/.h` | Default `IAlibreAddOnCommand` behaviour |
+| `ModelReader.cpp/.h` | Reads Alibre data into plain data for `CamCore` |
+| `Log.cpp/.h` | The log file |
 | `AlibreCAM.adc` | Add-on manifest. `specificationVersion="2"` is required for the ribbon tab and icons |
 | `Alibre.props` | Finds the Alibre type libraries |
 | `deploy\*.ps1` | Install and uninstall |

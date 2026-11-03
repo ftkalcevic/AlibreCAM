@@ -4,7 +4,7 @@
    <Copyright>Copyright (C) 2026 Frank's Workshop</Copyright>
    <Icon location="AlibreCAM.ico"/>
    <Menu text="AlibreCAM"/>
-   <Description>AlibreCAM add-on: adds an AlibreCAM ribbon tab with an About command.</Description>
+   <Description>CAM for Alibre Design assemblies.</Description>
    <Workspace type="Always"/>
    <Property name="Identifier" value="{D3A31918-AFE0-45F2-A080-B531E6894179}"/>
    <MenuFile loadedWhen="Startup"/>
