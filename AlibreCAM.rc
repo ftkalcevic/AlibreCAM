@@ -1,0 +1,106 @@
+// AlibreCAM.rc : resources for the AlibreCAM add-on.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+#include "afxres.h"
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (Australia) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENA)
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_AUS
+#pragma code_page(1252)
+
+#ifdef APSTUDIO_INVOKED
+1 TEXTINCLUDE
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE
+BEGIN
+    "\r\n"
+    "\0"
+END
+#endif    // APSTUDIO_INVOKED
+
+/////////////////////////////////////////////////////////////////////////////
+// Icon
+
+IDI_ALIBRECAM             ICON                    "res\\AlibreCAM.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+// Dialog
+
+IDD_ABOUTBOX DIALOGEX 0, 0, 250, 104
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About AlibreCAM"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    ICON            IDI_ALIBRECAM,IDC_STATIC,14,14,20,20
+    LTEXT           "AlibreCAM Add-On for Alibre Design",IDC_STATIC,46,14,190,8,SS_NOPREFIX
+    LTEXT           "Version",IDC_ADDON_VERSION,46,27,190,8,SS_NOPREFIX
+    LTEXT           "Copyright (C) 2026 Frank's Workshop",IDC_STATIC,46,40,190,8,SS_NOPREFIX
+    LTEXT           "Running in Alibre Design",IDC_ALIBRE_VERSION,46,58,190,16,SS_NOPREFIX
+    DEFPUSHBUTTON   "OK",IDOK,186,83,50,14,WS_GROUP
+END
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO
+BEGIN
+    IDD_ABOUTBOX, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 243
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 97
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+/////////////////////////////////////////////////////////////////////////////
+// Version
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,0
+ PRODUCTVERSION 1,0,0,0
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x2L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "0c0904b0"
+        BEGIN
+            VALUE "CompanyName", "Frank's Workshop"
+            VALUE "FileDescription", "AlibreCAM add-on for Alibre Design"
+            VALUE "FileVersion", "1.0.0.0"
+            VALUE "InternalName", "AlibreCAM.dll"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Frank's Workshop"
+            VALUE "OriginalFilename", "AlibreCAM.dll"
+            VALUE "ProductName", "AlibreCAM"
+            VALUE "ProductVersion", "1.0.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0xc09, 1200
+    END
+END
+
+#endif    // English (Australia) resources
+/////////////////////////////////////////////////////////////////////////////

@@ -1,0 +1,10 @@
+; AlibreCAM.def : exports Alibre Design looks up by name.
+; Names must stay undecorated - check with: dumpbin /exports AlibreCAM.dll
+
+LIBRARY "AlibreCAM"
+
+EXPORTS
+    AddOnLoad
+    AddOnInvoke
+    AddOnUnload
+    GetAddOnInterface

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Locates the Alibre Design "Program" folder that holds AlibreX_64.tlb and
+  AlibreAddOn_64.tlb. Alibre installs to a version-stamped folder
+  (C:\Program Files\Alibre Design <version>\), so it is searched for rather
+  than hard-coded.
+
+  To pin a specific install (e.g. with side-by-side versions, compile against
+  the OLDEST one you want to support), set AlibreProgramDir in any of:
+    - AlibreCAM.user.props beside this file (not checked in), e.g.
+        <Project><PropertyGroup>
+          <AlibreProgramDir>C:\Program Files\Alibre Design 2x.x.x.xxxxx\Program\</AlibreProgramDir>
+        </PropertyGroup></Project>
+    - an environment variable named AlibreProgramDir
+    - the MSBuild command line: /p:AlibreProgramDir="...\Program\"
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <Import Project="$(MSBuildThisFileDirectory)AlibreCAM.user.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)AlibreCAM.user.props')" />
+
+  <PropertyGroup>
+    <_AlibreProgramFiles>$(ProgramW6432)</_AlibreProgramFiles>
+    <_AlibreProgramFiles Condition="'$(_AlibreProgramFiles)'==''">$(ProgramFiles)</_AlibreProgramFiles>
+
+    <!-- All "Alibre Design*" folders, ';'-separated. -->
+    <_AlibreInstallDirs Condition="'$(AlibreProgramDir)'=='' and Exists('$(_AlibreProgramFiles)')">$([System.IO.Directory]::GetDirectories('$(_AlibreProgramFiles)', 'Alibre Design*'))</_AlibreInstallDirs>
+
+    <!-- Take the last one listed (highest version when several are installed). -->
+    <_AlibreLatestDir Condition="'$(_AlibreInstallDirs)'!=''">$(_AlibreInstallDirs.Substring($([MSBuild]::Add($(_AlibreInstallDirs.LastIndexOf(';')), 1))))</_AlibreLatestDir>
+
+    <AlibreProgramDir Condition="'$(AlibreProgramDir)'=='' and '$(_AlibreLatestDir)'!=''">$(_AlibreLatestDir)\Program\</AlibreProgramDir>
+    <AlibreProgramDir Condition="'$(AlibreProgramDir)'!=''">$([MSBuild]::EnsureTrailingSlash('$(AlibreProgramDir)'))</AlibreProgramDir>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <!-- #import "AlibreX_64.tlb" searches /I include directories. -->
+      <AdditionalIncludeDirectories>$(AlibreProgramDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <!-- Fail early with a readable message instead of a cryptic #import error. -->
+  <Target Name="CheckAlibreTypeLibraries" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(AlibreProgramDir)'==''"
+           Text="Alibre Design was not found under '$(_AlibreProgramFiles)\Alibre Design*'. Set AlibreProgramDir (see Alibre.props) to the folder containing AlibreX_64.tlb." />
+    <Error Condition="'$(AlibreProgramDir)'!='' and !Exists('$(AlibreProgramDir)AlibreX_64.tlb')"
+           Text="AlibreX_64.tlb not found in '$(AlibreProgramDir)'. Set AlibreProgramDir (see Alibre.props) to the folder containing it." />
+    <Error Condition="'$(AlibreProgramDir)'!='' and !Exists('$(AlibreProgramDir)AlibreAddOn_64.tlb')"
+           Text="AlibreAddOn_64.tlb not found in '$(AlibreProgramDir)'. Set AlibreProgramDir (see Alibre.props) to the folder containing it." />
+    <Message Importance="high" Text="Alibre type libraries: $(AlibreProgramDir)" />
+  </Target>
+
+</Project>
