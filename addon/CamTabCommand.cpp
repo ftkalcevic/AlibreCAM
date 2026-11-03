@@ -6,6 +6,9 @@
 #include "CamTabCommand.h"
 #include "DisplaySettings.h"
 #include "DrillToolpath.h"
+#include "FileIO.h"
+#include "PostDialog.h"
+#include "PseudoPost.h"
 #include "GeometryReader.h"
 #include "ModelReader.h"
 #include "ToolDialogs.h"
@@ -45,6 +48,7 @@ namespace
         ID_CAM_RENAME_STEP,
         ID_CAM_DUPLICATE_STEP,
         ID_CAM_GENERATE,
+        ID_CAM_POST,
         ID_CAM_DELETE_STEP
     };
 
@@ -878,19 +882,7 @@ void CCamTabCommand::Generate(const StepRef& scope)
     if (!CanGenerate())
         return;
 
-    // No step means every operation, a folder means its operations, and an operation itself.
-    std::vector<StepRef> targets;
-    for (size_t i = 0; i < m_job.sequence.size(); ++i)
-    {
-        if (scope.step != StepRef::kNone && scope.step != i)
-            continue;
-        for (size_t c = 0; c < m_job.sequence[i].children.size(); ++c)
-        {
-            if (!scope.IsOperation() || scope.child == c)
-                targets.push_back(StepRef{ i, c });
-        }
-    }
-
+    const std::vector<StepRef> targets = OperationsIn(scope);
     if (targets.empty())
     {
         ShowError(L"There are no operations to generate.");
@@ -929,6 +921,109 @@ void CCamTabCommand::Generate(const StepRef& scope)
     ShowStatus();
     if (!problems.empty())
         ::MessageBoxW(theApp.m_hAlibreWnd, (summary + L"\n" + problems).c_str(), L"AlibreCAM", MB_OK | MB_ICONWARNING);
+}
+
+std::vector<StepRef> CCamTabCommand::OperationsIn(const StepRef& scope) const
+{
+    // No step means every operation, a folder means its operations, and an operation itself.
+    std::vector<StepRef> targets;
+    for (size_t i = 0; i < m_job.sequence.size(); ++i)
+    {
+        if (scope.step != StepRef::kNone && scope.step != i)
+            continue;
+        for (size_t c = 0; c < m_job.sequence[i].children.size(); ++c)
+        {
+            if (!scope.IsOperation() || scope.child == c)
+                targets.push_back(StepRef{ i, c });
+        }
+    }
+    return targets;
+}
+
+void CCamTabCommand::Post(const StepRef& scope)
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    if (!CanGenerate())
+        return;
+
+    const std::vector<StepRef> targets = OperationsIn(scope);
+    if (targets.empty())
+    {
+        ShowError(L"There are no operations to post.");
+        return;
+    }
+
+    // Posting uses saved toolpaths, so every operation needs one.
+    std::wstring missing;
+    for (const StepRef& target : targets)
+    {
+        const camcore::SequenceStep& operation = m_job.sequence[target.step].children[target.child];
+        if (operation.toolpath.moves.empty())
+            missing += L"\n" + FromUtf8(operation.name);
+    }
+    if (!missing.empty())
+    {
+        ShowError(L"Generate these operations before posting:\n" + missing);
+        return;
+    }
+
+    // The file goes beside the .cam file by default, named after the assembly and folder.
+    const bool wholeJob = (scope.step == StepRef::kNone);
+    std::wstring scopeText = wholeJob ? L"All operations" : FromUtf8(m_job.sequence[scope.step].name);
+    std::wstring fileName = m_camPath.empty() ? L"Program" : m_camPath.stem().wstring();
+    if (!wholeJob)
+        fileName += L" - " + scopeText;
+    fs::path folder = !m_lastPostPath.empty() ? m_lastPostPath.parent_path()
+                      : !m_camPath.empty()    ? m_camPath.parent_path()
+                                              : fs::path();
+    const fs::path suggested = folder.empty() ? fs::path(fileName + L".txt") : folder / (fileName + L".txt");
+
+    CPostDlg dialog(L"Posting: " + scopeText, suggested, m_pWnd);
+    if (dialog.DoModal() != IDOK)
+        return;
+    const fs::path output = dialog.GetOutputPath();
+    m_lastPostPath = output;
+
+    // Each operation with the origin it runs under and its tool. The tools are
+    // kept here so the post can point at them.
+    std::vector<camcore::Tool> tools;
+    tools.reserve(targets.size());
+    std::vector<camcore::PostOperation> entries;
+    for (const StepRef& target : targets)
+    {
+        camcore::PostOperation entry;
+        entry.operation = &m_job.sequence[target.step].children[target.child];
+
+        const size_t active = camcore::ActiveOriginIndex(m_job, target.step);
+        if (active != camcore::kNoStepIndex)
+        {
+            entry.origin = &m_job.sequence[active];
+            const camcore::FrameResult frame = camcore::BuildFrame(entry.origin->origin);
+            if (frame.ok)
+                entry.frame = frame.frame;
+        }
+
+        if (const camcore::Tool* pTool = camcore::FindToolById(m_library, entry.operation->toolId))
+        {
+            tools.push_back(camcore::ToolInMillimetres(*pTool));
+            entry.tool = &tools.back();
+        }
+        entries.push_back(entry);
+    }
+
+    const std::string text = camcore::WritePseudoPost(m_job.assembly.name, entries);
+    std::string message;
+    if (!camcore::WriteFileAtomically(output, text, message))
+    {
+        ShowError(L"Could not write " + output.filename().wstring() + L". " + FromUtf8(message));
+        return;
+    }
+
+    Log(L"[post] %zu operations to %s", entries.size(), output.c_str());
+    m_sequenceStatus = L"Posted " + std::to_wstring(entries.size()) +
+                       (entries.size() == 1 ? L" operation to " : L" operations to ") + output.filename().wstring() + L".";
+    ShowStatus();
 }
 
 bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& problem)
@@ -1949,6 +2044,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
                         L"Add 2 1/2 Axis");
         menu.AppendMenu(MF_SEPARATOR);
         menu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
+        menu.AppendMenu(MF_STRING | generatable, ID_CAM_POST, L"Post...");
     }
     else if (onStep && m_pTab->IsOperation(ref))
     {
@@ -1975,6 +2071,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         {
             menu.AppendMenu(MF_SEPARATOR);
             menu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
+            menu.AppendMenu(MF_STRING | generatable, ID_CAM_POST, L"Post...");
         }
     }
 
@@ -1998,6 +2095,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     case ID_CAM_DELETE_STEP: m_pTab->DeleteStep(ref); break;
     case ID_CAM_DUPLICATE_STEP: m_pTab->DuplicateStep(ref); break;
     case ID_CAM_GENERATE:    m_pTab->Generate(ref); break;
+    case ID_CAM_POST:        m_pTab->Post(ref); break;
     default:                 break;
     }
 }

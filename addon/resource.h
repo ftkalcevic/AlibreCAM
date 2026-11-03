@@ -92,14 +92,19 @@
 #define IDC_FEEDS_TRANSFER_RAPID        13147
 #define IDC_FEEDS_TRANSFER_SET          13148
 #define IDC_FEEDS_TRANSFER              13149
+#define IDD_POST                        13020
+#define IDC_POST_SCOPE                  13150
+#define IDC_POST_PROCESSOR              13151
+#define IDC_POST_FILE                   13152
+#define IDC_POST_BROWSE                 13153
 
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13020
+#define _APS_NEXT_RESOURCE_VALUE        13021
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13150
+#define _APS_NEXT_CONTROL_VALUE         13154
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

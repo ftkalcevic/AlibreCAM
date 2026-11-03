@@ -113,6 +113,7 @@
     <ClCompile Include="ModelReader.cpp" />
     <ClCompile Include="OperationDialog.cpp" />
     <ClCompile Include="OriginDialog.cpp" />
+    <ClCompile Include="PostDialog.cpp" />
     <ClCompile Include="ToolDialogs.cpp" />
     <ClCompile Include="AlibreCAM.cpp" />
     <ClCompile Include="stdafx.cpp">
@@ -131,6 +132,7 @@
     <ClInclude Include="ModelReader.h" />
     <ClInclude Include="OperationDialog.h" />
     <ClInclude Include="OriginDialog.h" />
+    <ClInclude Include="PostDialog.h" />
     <ClInclude Include="ToolDialogs.h" />
     <ClInclude Include="AlibreCAM.h" />
     <ClInclude Include="resource.h" />

@@ -92,6 +92,7 @@ Visual Studio. The project launches `Alibre Design.exe` and breakpoints in
 | `ModelReader.cpp/.h` | Reads Alibre data into plain data for `CamCore` |
 | `OperationDialog.cpp/.h` | The modeless operation dialog and its tabs |
 | `OriginDialog.cpp/.h` | The modeless Set Origin dialog |
+| `PostDialog.cpp/.h` | Chooses the post and output file before posting |
 | `Log.cpp/.h` | The log file |
 | `ToolDialogs.cpp/.h` | The tool library and tool editing dialogs |
 | `AlibreCAM.adc` | Add-on manifest. `specificationVersion="2"` is required for the ribbon tab and icons |

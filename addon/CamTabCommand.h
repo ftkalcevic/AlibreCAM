@@ -70,6 +70,9 @@ public:
     bool CanGenerate() const;
     void Generate(const StepRef& scope);
 
+    // Writes the generated toolpaths of every operation, or a folder's, to a file.
+    void Post(const StepRef& scope);
+
     // Dragging to reorder. Steps never change level, and the first step stays a Set Origin.
     bool CanDrag(const StepRef& ref) const;
     bool CanMoveStep(const StepRef& from, const StepRef& target, DropSide side) const;
@@ -143,6 +146,7 @@ private:
     bool PrepareSelection(const SelectionFilter& wanted);     // false if the view couldn't start
     bool IsPicking() const;
     bool GenerateOperation(const StepRef& target, std::string& problem);
+    std::vector<StepRef> OperationsIn(const StepRef& scope) const;
     void RestoreSelectionFilter();
     void HandleLocate();
 
@@ -180,6 +184,8 @@ private:
     COperationDlg* m_pOperationDlg;
     StepRef m_operationTarget;          // the folder, and the operation in it or kNewStep
     bool m_showingFeatures;             // Features list rows are selected in the view
+
+    std::filesystem::path m_lastPostPath;   // so the next post suggests the same folder
 
     // Picking changes Alibre's selection filter. This puts it back.
     bool m_filterChanged;

@@ -70,6 +70,7 @@
     <ClCompile Include="Feeds.cpp" />
     <ClCompile Include="FileIO.cpp" />
     <ClCompile Include="Origin.cpp" />
+    <ClCompile Include="PseudoPost.cpp" />
     <ClCompile Include="ToolLibrary.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -81,6 +82,7 @@
     <ClInclude Include="Feeds.h" />
     <ClInclude Include="FileIO.h" />
     <ClInclude Include="Origin.h" />
+    <ClInclude Include="PseudoPost.h" />
     <ClInclude Include="ToolLibrary.h" />
     <ClInclude Include="Toolpath.h" />
   </ItemGroup>
