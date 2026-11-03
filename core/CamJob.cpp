@@ -223,6 +223,68 @@ namespace camcore
             return ReadPickObject(*item, pick);
         }
 
+        const char* ClearanceModeName(ClearanceMode mode)
+        {
+            switch (mode)
+            {
+            case ClearanceMode::PartMaxZ:  return "partMaxZ";
+            case ClearanceMode::StockMaxZ: return "stockMaxZ";
+            case ClearanceMode::AbsoluteZ: return "absoluteZ";
+            default:                       return "automatic";
+            }
+        }
+
+        json WriteClearance(const ClearanceSettings& clearance)
+        {
+            return
+            {
+                { "mode", ClearanceModeName(clearance.mode) },
+                { "partDistance", clearance.partDistance },
+                { "stockDistance", clearance.stockDistance },
+                { "absoluteZ", clearance.absoluteZ }
+            };
+        }
+
+        bool ReadNumber(const json& parent, const char* name, double& value)
+        {
+            const auto item = parent.find(name);
+            if (item == parent.end() || !item->is_number())
+                return false;
+            value = item->get<double>();
+            return true;
+        }
+
+        // Operations saved before the Clearance tab existed have the defaults.
+        bool ReadClearance(const json& step, ClearanceSettings& clearance)
+        {
+            clearance = ClearanceSettings();
+            const auto item = step.find("clearance");
+            if (item == step.end())
+                return true;
+            if (!item->is_object())
+                return false;
+
+            std::string mode;
+            if (!ReadString(*item, "mode", mode) || !ReadNumber(*item, "partDistance", clearance.partDistance) ||
+                !ReadNumber(*item, "stockDistance", clearance.stockDistance) ||
+                !ReadNumber(*item, "absoluteZ", clearance.absoluteZ))
+                return false;
+
+            static const ClearanceMode modes[] =
+            {
+                ClearanceMode::Automatic, ClearanceMode::PartMaxZ, ClearanceMode::StockMaxZ, ClearanceMode::AbsoluteZ
+            };
+            for (ClearanceMode candidate : modes)
+            {
+                if (mode == ClearanceModeName(candidate))
+                {
+                    clearance.mode = candidate;
+                    return true;
+                }
+            }
+            return false;
+        }
+
         json WriteFeatures(const std::vector<PickedGeometry>& features)
         {
             json list = json::array();
@@ -278,15 +340,6 @@ namespace camcore
                 { "approachDistance", drill.approachDistance },
                 { "peckDepth", peck }
             };
-        }
-
-        bool ReadNumber(const json& parent, const char* name, double& value)
-        {
-            const auto item = parent.find(name);
-            if (item == parent.end() || !item->is_number())
-                return false;
-            value = item->get<double>();
-            return true;
         }
 
         bool ReadDrilling(const json& item, DrillSettings& drill)
@@ -347,11 +400,12 @@ namespace camcore
             // Facing settings join this when the Facing tab is built.
             if (step.type == StepType::Facing)
                 return { { "type", "facing" }, { "id", step.id }, { "name", step.name },
-                         { "features", WriteFeatures(step.features) } };
+                         { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) } };
 
             if (step.type == StepType::Drill)
                 return { { "type", "drill" }, { "id", step.id }, { "name", step.name },
-                         { "features", WriteFeatures(step.features) }, { "drilling", WriteDrilling(step.drill) } };
+                         { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
+                         { "drilling", WriteDrilling(step.drill) } };
 
             const OriginDefinition& origin = step.origin;
             return
@@ -401,14 +455,14 @@ namespace camcore
             if (type == "facing")
             {
                 step.type = StepType::Facing;
-                return ReadFeatures(item, step.features);
+                return ReadFeatures(item, step.features) && ReadClearance(item, step.clearance);
             }
 
             if (type == "drill")
             {
                 // Drills saved before the Drilling tab existed have no settings yet.
                 step.type = StepType::Drill;
-                if (!ReadFeatures(item, step.features))
+                if (!ReadFeatures(item, step.features) || !ReadClearance(item, step.clearance))
                     return false;
                 const auto drilling = item.find("drilling");
                 return drilling == item.end() || ReadDrilling(*drilling, step.drill);

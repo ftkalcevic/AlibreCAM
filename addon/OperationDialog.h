@@ -105,6 +105,26 @@ private:
     bool m_rowsChosenPosted;    // one message covers a burst of row changes
 };
 
+// The Clearance tab every operation has.
+class CClearancePage : public COperationPage
+{
+public:
+    explicit CClearancePage(COperationDlg* pOwner);
+
+    void Load(const camcore::SequenceStep& step) override;
+    bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
+
+    enum { IDD = IDD_OP_CLEARANCE };
+
+protected:
+    afx_msg void OnModeChanged();
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    void UpdateFields();
+};
+
 // The Drill operation's own tab.
 class CDrillingPage : public COperationPage
 {

@@ -95,6 +95,88 @@ TEST_CASE("a facing operation is an operation, and loads back inside its folder"
     CHECK(back.features[0].targetKey.hex == "09");
 }
 
+TEST_CASE("clearance settings load back unchanged, and default when missing")
+{
+    const fs::path path = TempCam();
+
+    Job job;
+    SequenceStep origin;
+    origin.id = NewStableId();
+    origin.name = "O1";
+    job.sequence.push_back(origin);
+
+    SequenceStep group;
+    group.type = StepType::Group;
+    group.id = NewStableId();
+    group.name = "F1";
+
+    SequenceStep drill;
+    drill.type = StepType::Drill;
+    drill.id = NewStableId();
+    drill.name = "D1";
+    drill.clearance.mode = ClearanceMode::StockMaxZ;
+    drill.clearance.partDistance = 3;
+    drill.clearance.stockDistance = 7.5;
+    drill.clearance.absoluteZ = -2;
+    group.children.push_back(drill);
+
+    SequenceStep facing;
+    facing.type = StepType::Facing;
+    facing.id = NewStableId();
+    facing.name = "Facing 1";
+    facing.clearance.mode = ClearanceMode::AbsoluteZ;
+    group.children.push_back(facing);
+    job.sequence.push_back(group);
+
+    REQUIRE(SaveJob(job, path).ok);
+    const LoadResult loaded = LoadJob(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    const ClearanceSettings& back = loaded.job.sequence[1].children[0].clearance;
+    CHECK(back.mode == ClearanceMode::StockMaxZ);
+    CHECK(back.partDistance == 3);
+    CHECK(back.stockDistance == 7.5);
+    CHECK(back.absoluteZ == -2);
+    CHECK(loaded.job.sequence[1].children[1].clearance.mode == ClearanceMode::AbsoluteZ);
+
+    // A drill saved before the Clearance tab existed.
+    {
+        std::ofstream out(path, std::ios::binary);
+        out << R"({"format":"AlibreCAM","formatVersion":2,"assembly":{"name":"a","guid":"b"},"sequence":[)"
+            << R"({"type":"group","id":"g","name":"F","children":[{"type":"drill","id":"d","name":"D1"}]}]})";
+    }
+    const LoadResult old = LoadJob(path);
+    REQUIRE(old.status == LoadStatus::Ok);
+    CHECK(old.job.sequence[0].children[0].clearance.mode == ClearanceMode::Automatic);
+
+    // An unknown mode is damage.
+    {
+        std::ofstream out(path, std::ios::binary);
+        out << R"({"format":"AlibreCAM","formatVersion":2,"assembly":{"name":"a","guid":"b"},"sequence":[)"
+            << R"({"type":"group","id":"g","name":"F","children":[{"type":"drill","id":"d","name":"D1",)"
+            << R"("clearance":{"mode":"high","partDistance":1,"stockDistance":1,"absoluteZ":1}}]}]})";
+    }
+    CHECK(LoadJob(path).status == LoadStatus::NotACamFile);
+
+    std::error_code ignored;
+    fs::remove(path, ignored);
+}
+
+TEST_CASE("clearance distances can't be negative, but an absolute Z can")
+{
+    ClearanceSettings settings;
+    settings.partDistance = -1;
+    settings.stockDistance = -1;
+    settings.absoluteZ = -50;
+    CHECK(ValidateClearance(settings).empty());     // automatic uses none of them
+
+    settings.mode = ClearanceMode::PartMaxZ;
+    CHECK(ValidateClearance(settings).size() == 1);
+    settings.mode = ClearanceMode::StockMaxZ;
+    CHECK(ValidateClearance(settings).size() == 1);
+    settings.mode = ClearanceMode::AbsoluteZ;
+    CHECK(ValidateClearance(settings).empty());
+}
+
 TEST_CASE("Drill accepts things that reduce to a point")
 {
     CHECK(FeatureAllowed(FeatureFilter::Points, PickKind::CircleEdge));

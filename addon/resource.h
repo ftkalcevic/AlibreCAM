@@ -69,14 +69,22 @@
 #define IDC_FEATURES_ORDER              13114
 #define IDC_FEATURES_CORNER             13115
 #define IDC_FEATURES_SORT               13116
+#define IDD_OP_CLEARANCE                13017
+#define IDC_CLEARANCE_AUTOMATIC         13120
+#define IDC_CLEARANCE_PART              13121
+#define IDC_CLEARANCE_STOCK             13122
+#define IDC_CLEARANCE_ABSOLUTE          13123
+#define IDC_CLEARANCE_PART_DISTANCE     13124
+#define IDC_CLEARANCE_STOCK_DISTANCE    13125
+#define IDC_CLEARANCE_ABSOLUTE_Z        13126
 
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13017
+#define _APS_NEXT_RESOURCE_VALUE        13018
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13117
+#define _APS_NEXT_CONTROL_VALUE         13127
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

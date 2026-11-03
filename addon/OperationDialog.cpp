@@ -541,6 +541,91 @@ void CFeaturesPage::EndDrag()
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// CClearancePage
+
+BEGIN_MESSAGE_MAP(CClearancePage, COperationPage)
+    ON_BN_CLICKED(IDC_CLEARANCE_AUTOMATIC, &CClearancePage::OnModeChanged)
+    ON_BN_CLICKED(IDC_CLEARANCE_PART, &CClearancePage::OnModeChanged)
+    ON_BN_CLICKED(IDC_CLEARANCE_STOCK, &CClearancePage::OnModeChanged)
+    ON_BN_CLICKED(IDC_CLEARANCE_ABSOLUTE, &CClearancePage::OnModeChanged)
+END_MESSAGE_MAP()
+
+CClearancePage::CClearancePage(COperationDlg* pOwner)
+    : COperationPage(IDD_OP_CLEARANCE, pOwner)
+{
+}
+
+void CClearancePage::Load(const SequenceStep& step)
+{
+    const ClearanceSettings& clearance = step.clearance;
+
+    const int mode = (clearance.mode == ClearanceMode::PartMaxZ)    ? IDC_CLEARANCE_PART
+                     : (clearance.mode == ClearanceMode::StockMaxZ) ? IDC_CLEARANCE_STOCK
+                     : (clearance.mode == ClearanceMode::AbsoluteZ) ? IDC_CLEARANCE_ABSOLUTE
+                                                                    : IDC_CLEARANCE_AUTOMATIC;
+    CheckRadioButton(IDC_CLEARANCE_AUTOMATIC, IDC_CLEARANCE_ABSOLUTE, mode);
+
+    SetNumber(IDC_CLEARANCE_PART_DISTANCE, clearance.partDistance);
+    SetNumber(IDC_CLEARANCE_STOCK_DISTANCE, clearance.stockDistance);
+    SetNumber(IDC_CLEARANCE_ABSOLUTE_Z, clearance.absoluteZ);
+    UpdateFields();
+}
+
+bool CClearancePage::Save(SequenceStep& step, std::wstring& problems)
+{
+    ClearanceSettings clearance = step.clearance;
+    std::wstring found;
+
+    // Only the box for the chosen mode is read, so a stray entry in another doesn't block OK.
+    switch (GetCheckedRadioButton(IDC_CLEARANCE_AUTOMATIC, IDC_CLEARANCE_ABSOLUTE))
+    {
+    case IDC_CLEARANCE_PART:
+        clearance.mode = ClearanceMode::PartMaxZ;
+        ReadNumber(IDC_CLEARANCE_PART_DISTANCE, L"The distance above the parts", clearance.partDistance, found);
+        break;
+    case IDC_CLEARANCE_STOCK:
+        clearance.mode = ClearanceMode::StockMaxZ;
+        ReadNumber(IDC_CLEARANCE_STOCK_DISTANCE, L"The distance above the stock", clearance.stockDistance, found);
+        break;
+    case IDC_CLEARANCE_ABSOLUTE:
+        clearance.mode = ClearanceMode::AbsoluteZ;
+        ReadNumber(IDC_CLEARANCE_ABSOLUTE_Z, L"The absolute Z", clearance.absoluteZ, found);
+        break;
+    default:
+        clearance.mode = ClearanceMode::Automatic;
+        break;
+    }
+
+    if (found.empty())
+    {
+        for (const std::string& problem : ValidateClearance(clearance))
+            AppendProblem(found, FromUtf8(problem));
+    }
+
+    if (!found.empty())
+    {
+        AppendProblem(problems, found);
+        return false;
+    }
+
+    step.clearance = clearance;
+    return true;
+}
+
+void CClearancePage::UpdateFields()
+{
+    const int mode = GetCheckedRadioButton(IDC_CLEARANCE_AUTOMATIC, IDC_CLEARANCE_ABSOLUTE);
+    GetDlgItem(IDC_CLEARANCE_PART_DISTANCE)->EnableWindow(mode == IDC_CLEARANCE_PART);
+    GetDlgItem(IDC_CLEARANCE_STOCK_DISTANCE)->EnableWindow(mode == IDC_CLEARANCE_STOCK);
+    GetDlgItem(IDC_CLEARANCE_ABSOLUTE_Z)->EnableWindow(mode == IDC_CLEARANCE_ABSOLUTE);
+}
+
+void CClearancePage::OnModeChanged()
+{
+    UpdateFields();
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // CDrillingPage
 
 BEGIN_MESSAGE_MAP(CDrillingPage, COperationPage)
@@ -722,7 +807,7 @@ BOOL COperationDlg::OnInitDialog()
 
     AddPage(L"Tool", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
     AddPage(L"Feeds && Speeds", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
-    AddPage(L"Clearance", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
+    AddPage(L"Clearance", std::make_unique<CClearancePage>(this));
 
     // Drill and Facing have no Sorting tab.
     if (m_step.type != StepType::Drill && m_step.type != StepType::Facing)

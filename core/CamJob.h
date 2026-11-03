@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "Clearance.h"
 #include "Drill.h"
 #include "Origin.h"
 
@@ -45,8 +46,10 @@ namespace camcore
         // Set Origin steps only
         OriginDefinition origin;
 
-        // Operations only: the picked geometry, in the order it's machined.
+        // Operations only: the picked geometry, in the order it's machined, and
+        // where the clearance plane is.
         std::vector<PickedGeometry> features;
+        ClearanceSettings clearance;
 
         // Drill operations only
         DrillSettings drill;
