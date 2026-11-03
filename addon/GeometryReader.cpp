@@ -70,7 +70,8 @@ namespace
 
     // A part's coordinates and units, and how to bring them into the assembly.
     // The world transform is by rows, with the translation in the fourth row,
-    // and works in the assembly's units.
+    // and works in the assembly's units. No occurrence means the item belongs to
+    // the assembly itself, so it's already in assembly coordinates.
     class PartToAssembly
     {
     public:
@@ -78,6 +79,12 @@ namespace
             : m_partToAssembly(1.0)
             , m_assemblyMm(assemblyMm)
         {
+            if (pOccurrence == nullptr)
+            {
+                m_matrix[0] = m_matrix[5] = m_matrix[10] = m_matrix[15] = 1.0;
+                return;
+            }
+
             const double partMm = MillimetresPerModelUnit(pOccurrence->GetDesignSession());
             m_partToAssembly = partMm / assemblyMm;
             if (std::fabs(partMm - assemblyMm) > 1e-9)
@@ -344,21 +351,124 @@ bool ReadAssemblyBounds(IADSession* pAssembly, Vec3& lower, Vec3& upper)
     }
 }
 
-ADSelectionFilterOption SetSolidSelectionFilter(IADSession* pAssembly, ADSelectionFilterOption option)
+SelectionFilter SetSelectionFilter(IADSession* pAssembly, const SelectionFilter& wanted)
 {
-    ADSelectionFilterOption previous = option;
+    SelectionFilter previous = wanted;
     try
     {
         IADDesignSelectionFilterPtr filter = QI<IADDesignSessionPtr>(pAssembly)->GetSelectionFilter();
-        previous = filter->GetSolid();
-        if (previous != option)
-            filter->PutSolid(option);
+        previous.solid = filter->GetSolid();
+        previous.planes = filter->GetPlanes() != VARIANT_FALSE;
+        previous.points = filter->GetPoints() != VARIANT_FALSE;
+
+        if (previous.solid != wanted.solid)
+            filter->PutSolid(wanted.solid);
+        if (previous.planes != wanted.planes)
+            filter->PutPlanes(wanted.planes ? VARIANT_TRUE : VARIANT_FALSE);
+        if (previous.points != wanted.points)
+            filter->PutPoints(wanted.points ? VARIANT_TRUE : VARIANT_FALSE);
     }
     catch (const _com_error& error)
     {
         Log(L"[pick] could not set the selection filter: hr=0x%08X", static_cast<unsigned>(error.Error()));
     }
     return previous;
+}
+
+bool ReadSelectedLocate(IADSession* pAssembly, camcore::LocatedGeometry& located, std::wstring& problem)
+{
+    using Kind = camcore::LocatedGeometry::Kind;
+
+    located = camcore::LocatedGeometry();
+    problem.clear();
+    const wchar_t* const allowed = L"Pick a design point or plane, a flat or cylindrical face, or a straight or "
+                                   L"circular edge.";
+
+    try
+    {
+        IADPointPtr clicked;
+        IObjectCollectorPtr selected = pAssembly->SelectedObjectsEx(&clicked);
+        if (selected == nullptr || selected->GetCount() == 0)
+            return false;
+
+        // Part items come as proxies. The assembly's own planes and points may not.
+        IDispatchPtr item = selected->GetItem(_variant_t(0L));
+        IADTargetProxyPtr proxy = QI<IADTargetProxyPtr>(item);
+        IADOccurrencePtr occurrence = (proxy != nullptr) ? proxy->GetOccurrence() : nullptr;
+        IDispatchPtr target = (proxy != nullptr) ? proxy->GetTarget() : item;
+        if (target == nullptr)
+        {
+            problem = allowed;
+            return false;
+        }
+
+        bool read = true;
+        PickedGeometry pick;
+        if (IADDesignPlanePtr plane = QI<IADDesignPlanePtr>(target))
+        {
+            IADPointPtr lower, upper, corner;
+            plane->GetGeometry(&lower, &upper, &corner);
+            located.kind = Kind::Plane;
+            located.point = ToVec3(lower);
+            located.direction = ToVec3(plane->GetNormal());
+            Log(L"[locate] design plane %s", static_cast<const wchar_t*>(plane->GetName()));
+        }
+        else if (IADDesignPointPtr point = QI<IADDesignPointPtr>(target))
+        {
+            located.kind = Kind::Point;
+            located.point = ToVec3(point->GetGeometry());
+            Log(L"[locate] design point %s", static_cast<const wchar_t*>(point->GetName()));
+        }
+        else if (IADEdgePtr edge = QI<IADEdgePtr>(target))
+        {
+            read = ReadEdge(edge, pick);
+        }
+        else if (IADFacePtr face = QI<IADFacePtr>(target))
+        {
+            read = ReadFace(face, pick);
+        }
+        else
+        {
+            read = false;
+        }
+
+        if (!read)
+        {
+            problem = allowed;
+            return false;
+        }
+
+        switch (pick.kind)
+        {
+        case PickKind::PlanarFace:      located.kind = Kind::Plane; break;
+        case PickKind::CylindricalFace: located.kind = Kind::Line; break;
+        case PickKind::LineEdge:        located.kind = Kind::Line; break;
+        case PickKind::CircleEdge:      located.kind = Kind::Point; break;
+        default:                        break;
+        }
+        if (pick.kind != PickKind::None)
+        {
+            located.point = pick.point;
+            located.direction = pick.direction;
+        }
+
+        const double assemblyMm = MillimetresPerModelUnit(QI<IADDesignSessionPtr>(pAssembly));
+        const PartToAssembly transform(occurrence, assemblyMm);
+        located.point = transform.Point(located.point);
+        located.direction = transform.Direction(located.direction);
+
+        Log(L"[locate] %s: point (%.4f, %.4f, %.4f) mm, direction (%.4f, %.4f, %.4f)",
+            occurrence != nullptr ? static_cast<const wchar_t*>(occurrence->GetName()) : L"assembly",
+            located.point.x, located.point.y, located.point.z, located.direction.x, located.direction.y,
+            located.direction.z);
+        return true;
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[locate] could not read the selection: hr=0x%08X", static_cast<unsigned>(error.Error()));
+        problem = std::wstring(L"That couldn't be read. ") + allowed;
+        return false;
+    }
 }
 
 void ClearSelection(IADSession* pAssembly)

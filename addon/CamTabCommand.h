@@ -9,6 +9,7 @@
 #include "CommandBase.h"
 #include "CamJob.h"
 #include "CamViewCommand.h"
+#include "GeometryReader.h"
 #include "OperationDialog.h"
 #include "OriginDialog.h"
 #include "ToolLibrary.h"
@@ -25,6 +26,15 @@ struct StepRef
     size_t child = kNone;       // index in that group, for an operation
 
     bool IsOperation() const { return child != kNone; }
+};
+
+// Where a dragged step lands, next to the step it's dropped on. Into is for
+// dropping an operation on a folder, which adds it at the folder's end.
+enum class DropSide
+{
+    Before,
+    After,
+    Into
 };
 
 class CCamTabCommand : public CCommandBase
@@ -54,6 +64,11 @@ public:
     void EditStep(const StepRef& ref);
     void DeleteStep(const StepRef& ref);
     void SelectStep(const StepRef& ref);
+
+    // Dragging to reorder. Steps never change level, and the first step stays a Set Origin.
+    bool CanDrag(const StepRef& ref) const;
+    bool CanMoveStep(const StepRef& from, const StepRef& target, DropSide side) const;
+    void MoveStep(const StepRef& from, const StepRef& target, DropSide side);
     bool CanEditSequence() const;
 
     // The view command, which draws while the tab has focus
@@ -72,6 +87,8 @@ public:
     void OnOriginDialogDone(COriginDlg* pDialog, bool apply);
 
     // From the operation dialog
+    void BeginLocate();
+    void EndLocate();
     void OnOperationDialogDone(COperationDlg* pDialog, bool apply);
 
     void OnWindowClosing();
@@ -111,7 +128,9 @@ private:
     void CloseOriginDialog(bool callAlibre);
     void OpenOperationDialog(const camcore::SequenceStep& step, const StepRef& target);
     void CloseOperationDialog();
+    bool PrepareSelection(const SelectionFilter& wanted);     // false if the view couldn't start
     void RestoreSelectionFilter();
+    void HandleLocate();
 
     CAddOnInterface* m_pAddOn;
     std::wstring m_sessionId;
@@ -149,7 +168,7 @@ private:
 
     // Picking changes Alibre's selection filter. This puts it back.
     bool m_filterChanged;
-    ADSelectionFilterOption m_previousFilter;
+    SelectionFilter m_previousFilter;
 };
 
 /////////////////////////////////////////////////////////////////////////////
@@ -188,6 +207,11 @@ protected:
     afx_msg void OnTreeRightClick(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnTreeBeginRename(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnTreeEndRename(NMHDR* pNotify, LRESULT* pResult);
+    afx_msg void OnTreeBeginDrag(NMHDR* pNotify, LRESULT* pResult);
+    afx_msg void OnMouseMove(UINT flags, CPoint point);
+    afx_msg void OnLButtonUp(UINT flags, CPoint point);
+    afx_msg void OnRButtonDown(UINT flags, CPoint point);
+    afx_msg void OnCaptureChanged(CWnd* pWnd);
     afx_msg LRESULT OnLoadJob(WPARAM wParam, LPARAM lParam);
     afx_msg LRESULT OnClearSelection(WPARAM wParam, LPARAM lParam);
 
@@ -202,6 +226,18 @@ private:
     StepRef StepOfItem(HTREEITEM hItem) const;
     HTREEITEM FindStepItem(const StepRef& ref) const;
 
+    // Dragging. The window holds the mouse capture while a step is dragged.
+    struct DropPlace
+    {
+        bool valid = false;
+        StepRef target;
+        DropSide side = DropSide::Before;
+        HTREEITEM hMarkItem = nullptr;  // where the insert mark or highlight goes
+    };
+    DropPlace FindDropPlace(CPoint treePoint) const;
+    void ShowDropPlace(const DropPlace& place);
+    void EndDrag();
+
     CCamTabCommand* m_pTab;
     CTreeCtrl m_tree;
     CStatic m_status;
@@ -212,4 +248,7 @@ private:
     HTREEITEM m_hOperations;
     bool m_fillingTree;
     bool m_visible;
+
+    bool m_dragging;
+    StepRef m_dragFrom;
 };

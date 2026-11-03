@@ -47,14 +47,28 @@
 #define IDC_OP_NAME                     13080
 #define IDC_OP_TABS                     13081
 #define IDC_OP_PAGE_NOTE                13082
+#define IDD_OP_DRILLING                 13015
+#define IDC_DRILL_DEPTH                 13090
+#define IDC_DRILL_LOCATE                13091
+#define IDC_DRILL_ADD_TIP               13092
+#define IDC_DRILL_LOCATE_NOTE           13093
+#define IDC_DRILL_AT_TOP                13094
+#define IDC_DRILL_AT_BOTTOM             13095
+#define IDC_DWELL_OFF                   13096
+#define IDC_DWELL_TIME                  13097
+#define IDC_DWELL_REVOLUTIONS           13098
+#define IDC_DWELL_SECONDS               13099
+#define IDC_DWELL_REVOLUTION_COUNT      13100
+#define IDC_DRILL_APPROACH              13101
+#define IDC_DRILL_PECK                  13102
 
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13015
+#define _APS_NEXT_RESOURCE_VALUE        13016
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13083
+#define _APS_NEXT_CONTROL_VALUE         13103
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

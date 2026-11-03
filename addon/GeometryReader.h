@@ -22,11 +22,22 @@ double MillimetresPerModelUnit(IADDesignSession* pDesign);
 bool ReadSelectedPick(IADSession* pAssembly, PickFilter filter, camcore::PickedGeometry& pick,
                       std::wstring& problem);
 
+// As ReadSelectedPick, for measuring a depth: a design point or plane, a face, or an edge.
+bool ReadSelectedLocate(IADSession* pAssembly, camcore::LocatedGeometry& located, std::wstring& problem);
+
 // The assembly's extents. Returns false if it has no parts or they can't be read.
 bool ReadAssemblyBounds(IADSession* pAssembly, camcore::Vec3& lower, camcore::Vec3& upper);
 
+// The parts of Alibre's selection filter a pick sets.
+struct SelectionFilter
+{
+    ADSelectionFilterOption solid = ADSelectionFilterOption_AD_FACES_EDGES;
+    bool planes = false;
+    bool points = false;
+};
+
 // Sets Alibre's selection filter so only what the pick allows can be clicked.
 // Returns the previous setting so it can be put back.
-ADSelectionFilterOption SetSolidSelectionFilter(IADSession* pAssembly, ADSelectionFilterOption option);
+SelectionFilter SetSelectionFilter(IADSession* pAssembly, const SelectionFilter& wanted);
 
 void ClearSelection(IADSession* pAssembly);

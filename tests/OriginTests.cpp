@@ -66,6 +66,15 @@ namespace
         return pick;
     }
 
+    SequenceStep NamedStepForDrill(StepType type, const std::string& name)
+    {
+        SequenceStep step;
+        step.type = type;
+        step.id = NewStableId();
+        step.name = name;
+        return step;
+    }
+
     class TempFile
     {
     public:
@@ -466,6 +475,147 @@ TEST_CASE("drill operations load back inside their group")
     CHECK(loaded.job.sequence[1].children[0].name == "Drill 1");
 }
 
+TEST_CASE("drilling settings load back unchanged")
+{
+    TempFile file;
+
+    Job job;
+    job.sequence.push_back(NamedStepForDrill(StepType::SetOrigin, "O1"));
+    SequenceStep group = NamedStepForDrill(StepType::Group, "F1");
+    SequenceStep drill = NamedStepForDrill(StepType::Drill, "D1");
+    drill.drill.depth = 12.5;
+    drill.drill.addTipToDepth = true;
+    drill.drill.location = GeometryLocation::AtBottom;
+    drill.drill.dwell = DwellMode::Revolutions;
+    drill.drill.dwellSeconds = 1.25;
+    drill.drill.dwellRevolutions = 4;
+    drill.drill.approachDistance = 3;
+    drill.drill.pecking = true;
+    drill.drill.peckDepth = 1.5;
+    group.children.push_back(drill);
+
+    SequenceStep plain = NamedStepForDrill(StepType::Drill, "D2");
+    group.children.push_back(plain);
+    job.sequence.push_back(group);
+
+    REQUIRE(SaveJob(job, file.Path()).ok);
+    const LoadResult loaded = LoadJob(file.Path());
+    REQUIRE(loaded.status == LoadStatus::Ok);
+
+    const DrillSettings& back = loaded.job.sequence[1].children[0].drill;
+    CHECK(back.depth == 12.5);
+    CHECK(back.addTipToDepth);
+    CHECK(back.location == GeometryLocation::AtBottom);
+    CHECK(back.dwell == DwellMode::Revolutions);
+    CHECK(back.dwellSeconds == 1.25);
+    CHECK(back.dwellRevolutions == 4);
+    CHECK(back.approachDistance == 3);
+    CHECK(back.pecking);
+    CHECK(back.peckDepth == 1.5);
+
+    const DrillSettings& defaults = loaded.job.sequence[1].children[1].drill;
+    CHECK_FALSE(defaults.pecking);
+    CHECK_FALSE(defaults.addTipToDepth);
+    CHECK(defaults.dwell == DwellMode::Off);
+}
+
+TEST_CASE("drills without drilling settings load with defaults, and damaged ones don't load")
+{
+    TempFile file;
+    const auto write = [&](const std::string& drill)
+    {
+        std::ofstream out(file.Path(), std::ios::binary);
+        out << R"({"format":"AlibreCAM","formatVersion":2,"assembly":{"name":"a","guid":"b"},"sequence":[)"
+            << R"({"type":"group","id":"g","name":"F","children":[)" << drill << "]}]}";
+    };
+
+    write(R"({"type":"drill","id":"d","name":"D1"})");
+    const LoadResult loaded = LoadJob(file.Path());
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    CHECK(loaded.job.sequence[0].children[0].drill.approachDistance == DrillSettings().approachDistance);
+
+    const std::string good = R"("depth":5,"addDrillTip":false,"geometryLocation":"top","dwell":"off","dwellSeconds":1,"dwellRevolutions":2,"approachDistance":2,"peckDepth":null)";
+    write(R"({"type":"drill","id":"d","name":"D1","drilling":{)" + good + "}}");
+    CHECK(LoadJob(file.Path()).status == LoadStatus::Ok);
+
+    std::string bad = good;
+    bad.replace(bad.find("\"top\""), 5, "\"middle\"");
+    write(R"({"type":"drill","id":"d","name":"D1","drilling":{)" + bad + "}}");
+    CHECK(LoadJob(file.Path()).status == LoadStatus::NotACamFile);
+
+    bad = good;
+    bad.replace(bad.find("null"), 4, "\"deep\"");
+    write(R"({"type":"drill","id":"d","name":"D1","drilling":{)" + bad + "}}");
+    CHECK(LoadJob(file.Path()).status == LoadStatus::NotACamFile);
+}
+
+TEST_CASE("drilling settings are checked")
+{
+    DrillSettings settings;
+    CHECK(ValidateDrillSettings(settings).size() == 1);     // no depth yet
+
+    settings.depth = 10;
+    CHECK(ValidateDrillSettings(settings).empty());
+
+    settings.dwell = DwellMode::Seconds;
+    settings.dwellSeconds = 0;
+    settings.dwellRevolutions = 0;      // not used while dwelling by time
+    settings.approachDistance = -1;
+    settings.pecking = true;
+    settings.peckDepth = 0;
+    CHECK(ValidateDrillSettings(settings).size() == 3);
+}
+
+TEST_CASE("Locate measures along the origin's Z")
+{
+    Frame frame;
+    frame.origin = { 0, 0, 20 };
+
+    LocatedGeometry point;
+    point.point = { 5, 5, 8 };
+    CHECK(DistanceAlongZ(frame, point) == doctest::Approx(12));
+
+    LocatedGeometry plane;
+    plane.kind = LocatedGeometry::Kind::Plane;
+    plane.point = { 50, -3, 32 };
+    plane.direction = { 0, 0, -1 };
+    CHECK(DistanceAlongZ(frame, plane) == doctest::Approx(12));
+
+    // A tilted plane is measured where the drill axis meets it: x + z = 10 meets it at z = 10.
+    plane.point = { 10, 0, 0 };
+    plane.direction = { 1, 0, 1 };
+    CHECK(DistanceAlongZ(frame, plane) == doctest::Approx(10));
+
+    // A wall runs along the drill direction, so it never meets the axis.
+    plane.direction = { 1, 0, 0 };
+    CHECK(DistanceAlongZ(frame, plane) == 0);
+
+    // Nearly along it meets the axis kilometres away, which counts as none.
+    plane.point = { 1000, 0, 0 };
+    plane.direction = { 1, 0, 0.02 };
+    CHECK(DistanceAlongZ(frame, plane) == 0);
+
+    LocatedGeometry line;
+    line.kind = LocatedGeometry::Kind::Line;
+    line.point = { 0, 0, 15 };
+    line.direction = { 1, 0, 0 };
+    CHECK(DistanceAlongZ(frame, line) == doctest::Approx(5));
+
+    // A tilted line is measured at its point nearest the axis: it crosses x = 0 at z = 10.
+    line.point = { 5, 0, 15 };
+    line.direction = { 1, 0, 1 };
+    CHECK(DistanceAlongZ(frame, line) == doctest::Approx(10));
+
+    line.direction = { 0, 0, 1 };       // along the drill direction
+    CHECK(DistanceAlongZ(frame, line) == 0);
+
+    // A side origin: Z is assembly X.
+    OriginDefinition definition;
+    definition.plane = Circle({ 100, 0, 0 }, { 1, 0, 0 });
+    point.point = { 90, 7, 7 };
+    CHECK(DistanceAlongZ(BuildFrame(definition).frame, point) == doctest::Approx(10));
+}
+
 TEST_CASE("an operation outside a group stops the file loading")
 {
     TempFile file;
@@ -500,6 +650,137 @@ TEST_CASE("a step runs under the nearest Set Origin at or above it")
     CHECK(ActiveOriginIndex(job, 4) == 4);
     CHECK(ActiveOriginIndex(job, 5) == kNoStepIndex);
     CHECK(ActiveOriginIndex(job, kNoStepIndex) == kNoStepIndex);
+}
+
+namespace
+{
+    SequenceStep NamedStep(StepType type, const std::string& name)
+    {
+        SequenceStep step;
+        step.type = type;
+        step.id = name;
+        step.name = name;
+        return step;
+    }
+
+    std::string Names(const std::vector<SequenceStep>& steps)
+    {
+        std::string names;
+        for (const SequenceStep& step : steps)
+            names += (names.empty() ? "" : " ") + step.name;
+        return names;
+    }
+
+    // O1 O2 F1(D1 D2) F2(D3)
+    Job JobToReorder()
+    {
+        Job job;
+        job.sequence.push_back(NamedStep(StepType::SetOrigin, "O1"));
+        job.sequence.push_back(NamedStep(StepType::SetOrigin, "O2"));
+
+        SequenceStep first = NamedStep(StepType::Group, "F1");
+        first.children.push_back(NamedStep(StepType::Drill, "D1"));
+        first.children.push_back(NamedStep(StepType::Drill, "D2"));
+        job.sequence.push_back(first);
+
+        SequenceStep second = NamedStep(StepType::Group, "F2");
+        second.children.push_back(NamedStep(StepType::Drill, "D3"));
+        job.sequence.push_back(second);
+        return job;
+    }
+}
+
+TEST_CASE("top-level steps move, but a Set Origin must stay first")
+{
+    size_t newIndex = 0;
+
+    SUBCASE("a folder moves up")
+    {
+        Job job = JobToReorder();
+        REQUIRE(MoveStep(job, 3, 1, newIndex));
+        CHECK(Names(job.sequence) == "O1 F2 O2 F1");
+        CHECK(newIndex == 1);
+        CHECK(Names(job.sequence[1].children) == "D3");
+    }
+
+    SUBCASE("a Set Origin moves to the end")
+    {
+        Job job = JobToReorder();
+        REQUIRE(MoveStep(job, 1, 4, newIndex));
+        CHECK(Names(job.sequence) == "O1 F1 F2 O2");
+        CHECK(newIndex == 3);
+    }
+
+    SUBCASE("the two origins swap, so a Set Origin is still first")
+    {
+        Job job = JobToReorder();
+        REQUIRE(MoveStep(job, 1, 0, newIndex));
+        CHECK(Names(job.sequence) == "O2 O1 F1 F2");
+    }
+
+    SUBCASE("a folder can't go first")
+    {
+        Job job = JobToReorder();
+        CHECK_FALSE(MoveStep(job, 2, 0, newIndex));
+        CHECK(Names(job.sequence) == "O1 O2 F1 F2");
+    }
+
+    SUBCASE("the only origin before the folders can't leave first place")
+    {
+        Job job = JobToReorder();
+        job.sequence.erase(job.sequence.begin() + 1);
+        CHECK_FALSE(MoveStep(job, 0, 3, newIndex));
+        CHECK(Names(job.sequence) == "O1 F1 F2");
+    }
+
+    SUBCASE("dropping just before or after itself changes nothing")
+    {
+        Job job = JobToReorder();
+        CHECK_FALSE(MoveStep(job, 2, 2, newIndex));
+        CHECK_FALSE(MoveStep(job, 2, 3, newIndex));
+        CHECK_FALSE(MoveStep(job, 9, 0, newIndex));
+        CHECK_FALSE(MoveStep(job, 0, 9, newIndex));
+    }
+}
+
+TEST_CASE("operations move within a folder and between folders")
+{
+    size_t newIndex = 0;
+
+    SUBCASE("within a folder")
+    {
+        Job job = JobToReorder();
+        REQUIRE(MoveOperation(job, 2, 0, 2, 2, newIndex));
+        CHECK(Names(job.sequence[2].children) == "D2 D1");
+        CHECK(newIndex == 1);
+    }
+
+    SUBCASE("into another folder, at the end")
+    {
+        Job job = JobToReorder();
+        REQUIRE(MoveOperation(job, 2, 1, 3, 1, newIndex));
+        CHECK(Names(job.sequence[2].children) == "D1");
+        CHECK(Names(job.sequence[3].children) == "D3 D2");
+        CHECK(newIndex == 1);
+    }
+
+    SUBCASE("into another folder, first")
+    {
+        Job job = JobToReorder();
+        REQUIRE(MoveOperation(job, 3, 0, 2, 0, newIndex));
+        CHECK(Names(job.sequence[2].children) == "D3 D1 D2");
+        CHECK(job.sequence[3].children.empty());
+    }
+
+    SUBCASE("never out of a folder")
+    {
+        Job job = JobToReorder();
+        CHECK_FALSE(MoveOperation(job, 2, 0, 1, 0, newIndex));
+        CHECK_FALSE(MoveOperation(job, 2, 0, 2, 0, newIndex));
+        CHECK_FALSE(MoveOperation(job, 2, 0, 2, 1, newIndex));
+        CHECK_FALSE(MoveOperation(job, 2, 5, 3, 0, newIndex));
+        CHECK(Names(job.sequence[2].children) == "D1 D2");
+    }
 }
 
 TEST_CASE("stable IDs are long and unique")

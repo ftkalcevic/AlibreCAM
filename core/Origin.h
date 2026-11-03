@@ -121,4 +121,26 @@ namespace camcore
     };
 
     PlaneRectangle PlaneCoveringBox(const Frame& frame, const Vec3& boxMin, const Vec3& boxMax, double margin);
+
+    // Something picked to measure from, in assembly coordinates and millimetres.
+    struct LocatedGeometry
+    {
+        enum class Kind
+        {
+            Point,      // a design point, or a circle's centre
+            Plane,      // a flat face or design plane: a point on it and its normal
+            Line        // a straight edge or cylinder axis: a point on it and its direction
+        };
+
+        Kind kind = Kind::Point;
+        Vec3 point;
+        Vec3 direction;
+    };
+
+    // How far the geometry is from the frame's XY plane along its Z axis (the
+    // drill direction), as a distance (never negative). A plane is measured where
+    // the Z axis through the origin meets it, and a line at its point nearest that
+    // axis. Anything parallel to the drill direction has no answer, and anything
+    // further than 10 m is taken as none, so both give 0.
+    double DistanceAlongZ(const Frame& frame, const LocatedGeometry& geometry);
 }

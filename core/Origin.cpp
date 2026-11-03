@@ -23,6 +23,13 @@ namespace camcore
 
         const double kEmptyPlaneHalfSize = 10.0;
 
+        // A located plane or line within about half a degree of the drill
+        // direction counts as parallel to it, and gives no distance.
+        const double kParallelTolerance = 0.01;
+
+        // A located distance beyond this (10 m) is taken as no distance.
+        const double kLargestLocatedDistance = 10000.0;
+
         // v with its component along unit axis removed.
         Vec3 Perpendicular(const Vec3& v, const Vec3& axis)
         {
@@ -195,5 +202,51 @@ namespace camcore
         rectangle.corners[2] = FramePointToWorld(frame, { uMax, vMax, 0.0 });
         rectangle.corners[3] = FramePointToWorld(frame, { uMin, vMax, 0.0 });
         return rectangle;
+    }
+
+    double DistanceAlongZ(const Frame& frame, const LocatedGeometry& geometry)
+    {
+        const Vec3& z = frame.zAxis;
+        const Vec3 fromOrigin = geometry.point - frame.origin;
+        double distance = 0.0;
+
+        Vec3 direction;
+        switch (geometry.kind)
+        {
+        case LocatedGeometry::Kind::Plane:
+        {
+            // Where the drill axis through the origin meets the plane. A plane
+            // parallel to the drill direction never meets it.
+            if (!Normalise(geometry.direction, direction))
+                return 0.0;
+            const double across = Dot(z, direction);
+            if (std::fabs(across) < kParallelTolerance)
+                return 0.0;
+            distance = Dot(fromOrigin, direction) / across;
+            break;
+        }
+
+        case LocatedGeometry::Kind::Line:
+        {
+            // The line's point nearest the drill axis through the origin. A line
+            // parallel to the drill direction has no nearest point.
+            if (!Normalise(geometry.direction, direction))
+                return 0.0;
+            const double along = Dot(direction, z);
+            const double square = 1.0 - along * along;
+            if (square < kParallelTolerance * kParallelTolerance)
+                return 0.0;
+            const double s = (along * Dot(fromOrigin, z) - Dot(fromOrigin, direction)) / square;
+            distance = Dot(fromOrigin + direction * s, z);
+            break;
+        }
+
+        default:
+            distance = Dot(fromOrigin, z);
+            break;
+        }
+
+        distance = std::fabs(distance);
+        return (distance > kLargestLocatedDistance) ? 0.0 : distance;
     }
 }

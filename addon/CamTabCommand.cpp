@@ -102,6 +102,41 @@ namespace
         const DWORD_PTR child = data & 0xFFFFFFFFu;
         return StepRef{ static_cast<size_t>(data >> 32), child == 0 ? StepRef::kNone : static_cast<size_t>(child - 1) };
     }
+
+    // Applies a drop to job. Returns false, changing nothing, if it isn't allowed
+    // or wouldn't change anything. moved is where the step ends up.
+    bool ApplyMove(camcore::Job& job, const StepRef& from, const StepRef& target, DropSide side, StepRef& moved)
+    {
+        size_t newIndex = 0;
+        const size_t after = (side == DropSide::After) ? 1 : 0;
+
+        if (!from.IsOperation())
+        {
+            // Top-level steps go before or after another top-level step.
+            if (target.IsOperation() || side == DropSide::Into ||
+                !camcore::MoveStep(job, from.step, target.step + after, newIndex))
+                return false;
+            moved = StepRef{ newIndex };
+            return true;
+        }
+
+        if (side == DropSide::Into)
+        {
+            // Onto a folder: at its end.
+            if (target.IsOperation() || target.step >= job.sequence.size() ||
+                !camcore::MoveOperation(job, from.step, from.child, target.step,
+                                        job.sequence[target.step].children.size(), newIndex))
+                return false;
+        }
+        else if (!target.IsOperation() ||
+                 !camcore::MoveOperation(job, from.step, from.child, target.step, target.child + after, newIndex))
+        {
+            return false;
+        }
+
+        moved = StepRef{ target.step, newIndex };
+        return true;
+    }
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -122,7 +157,7 @@ CCamTabCommand::CCamTabCommand(CAddOnInterface* pAddOn, const std::wstring& sess
     , m_pOperationDlg(nullptr)
     , m_operationTarget()
     , m_filterChanged(false)
-    , m_previousFilter(ADSelectionFilterOption_AD_FACES_EDGES)
+    , m_previousFilter()
 {
 }
 
@@ -802,6 +837,39 @@ void CCamTabCommand::SelectStep(const StepRef& ref)
         RebuildScene();
 }
 
+bool CCamTabCommand::CanDrag(const StepRef& ref) const
+{
+    // An open dialog holds a step's position, so nothing moves while one is open.
+    return CanEditSequence() && !IsDialogOpen() && FindStep(ref) != nullptr;
+}
+
+bool CCamTabCommand::CanMoveStep(const StepRef& from, const StepRef& target, DropSide side) const
+{
+    if (!CanDrag(from) || FindStep(target) == nullptr)
+        return false;
+
+    camcore::Job trial = m_job;
+    StepRef moved;
+    return ApplyMove(trial, from, target, side, moved);
+}
+
+void CCamTabCommand::MoveStep(const StepRef& from, const StepRef& target, DropSide side)
+{
+    if (!CanDrag(from) || FindStep(target) == nullptr)
+        return;
+
+    const std::wstring name = FromUtf8(FindStep(from)->name);
+    StepRef moved;
+    if (!ApplyMove(m_job, from, target, side, moved))
+        return;
+
+    Log(L"[sequence] moved %s", name.c_str());
+    m_selected = moved;
+    MarkJobChanged();
+    ShowSequence();
+    RebuildScene();
+}
+
 void CCamTabCommand::OpenOriginDialog(const camcore::SequenceStep& step, size_t editIndex)
 {
     // The dialog draws a preview from the moment it's created, so set these first.
@@ -901,6 +969,7 @@ void CCamTabCommand::OnOperationDialogDone(COperationDlg* pDialog, bool apply)
         return;
 
     m_pOperationDlg = nullptr;
+    RestoreSelectionFilter();
     if (!apply || !CanEditSequence() || !IsFolder(StepRef{ m_operationTarget.step }))
         return;
 
@@ -996,6 +1065,12 @@ void CCamTabCommand::OnViewTerminated(CCamViewCommand* pView)
         m_pOriginDlg->ShowPickProblem(L"Picking stopped because another command started. Click Pick to try again.");
         RestoreSelectionFilter();
     }
+    if (m_pOperationDlg != nullptr && m_pOperationDlg->IsLocating())
+    {
+        m_pOperationDlg->StopLocating();
+        m_pOperationDlg->ShowLocateProblem(L"Locate stopped because another command started. Click Locate to try again.");
+        RestoreSelectionFilter();
+    }
 }
 
 void CCamTabCommand::OnTabVisibilityChanged(bool visible)
@@ -1078,24 +1153,15 @@ void CCamTabCommand::RebuildScene()
         m_pView->Refresh();
 }
 
-void CCamTabCommand::BeginPick(PickSlot slot)
+bool CCamTabCommand::PrepareSelection(const SelectionFilter& wanted)
 {
     if (!StartView(L"picking"))
-    {
-        if (m_pOriginDlg != nullptr)
-        {
-            m_pOriginDlg->StopPicking();
-            m_pOriginDlg->ShowPickProblem(L"Picking couldn't start. Click the CAM tab, then click Pick again.");
-        }
-        return;
-    }
+        return false;
 
     try
     {
         IADSessionPtr session = GetSession();
-        const ADSelectionFilterOption wanted =
-            (slot == PickSlot::Plane) ? ADSelectionFilterOption_AD_FACES_EDGES : ADSelectionFilterOption_AD_EDGES;
-        const ADSelectionFilterOption previous = SetSolidSelectionFilter(session, wanted);
+        const SelectionFilter previous = SetSelectionFilter(session, wanted);
         if (!m_filterChanged)
         {
             m_previousFilter = previous;
@@ -1107,9 +1173,39 @@ void CCamTabCommand::BeginPick(PickSlot slot)
     {
         Log(L"[pick] could not prepare the pick: hr=0x%08X", static_cast<unsigned>(error.Error()));
     }
+    return true;
+}
+
+void CCamTabCommand::BeginPick(PickSlot slot)
+{
+    SelectionFilter wanted;
+    wanted.solid = (slot == PickSlot::Plane) ? ADSelectionFilterOption_AD_FACES_EDGES : ADSelectionFilterOption_AD_EDGES;
+    if (!PrepareSelection(wanted) && m_pOriginDlg != nullptr)
+    {
+        m_pOriginDlg->StopPicking();
+        m_pOriginDlg->ShowPickProblem(L"Picking couldn't start. Click the CAM tab, then click Pick again.");
+    }
 }
 
 void CCamTabCommand::EndPick()
+{
+    RestoreSelectionFilter();
+}
+
+void CCamTabCommand::BeginLocate()
+{
+    SelectionFilter wanted;
+    wanted.solid = ADSelectionFilterOption_AD_FACES_EDGES;
+    wanted.planes = true;
+    wanted.points = true;
+    if (!PrepareSelection(wanted) && m_pOperationDlg != nullptr)
+    {
+        m_pOperationDlg->StopLocating();
+        m_pOperationDlg->ShowLocateProblem(L"Locate couldn't start. Click the CAM tab, then click Locate again.");
+    }
+}
+
+void CCamTabCommand::EndLocate()
 {
     RestoreSelectionFilter();
 }
@@ -1122,7 +1218,7 @@ void CCamTabCommand::RestoreSelectionFilter()
     m_filterChanged = false;
     try
     {
-        SetSolidSelectionFilter(GetSession(), m_previousFilter);
+        SetSelectionFilter(GetSession(), m_previousFilter);
     }
     catch (const _com_error& error)
     {
@@ -1132,6 +1228,12 @@ void CCamTabCommand::RestoreSelectionFilter()
 
 void CCamTabCommand::HandleSelection()
 {
+    if (m_pOperationDlg != nullptr && m_pOperationDlg->IsLocating())
+    {
+        HandleLocate();
+        return;
+    }
+
     if (m_pOriginDlg == nullptr)
         return;
 
@@ -1178,6 +1280,52 @@ void CCamTabCommand::HandleSelection()
         m_pWnd->PostClearSelection();
 }
 
+void CCamTabCommand::HandleLocate()
+{
+    camcore::LocatedGeometry located;
+    std::wstring problem;
+    bool read = false;
+    try
+    {
+        read = ReadSelectedLocate(GetSession(), located, problem);
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[locate] could not find the session: hr=0x%08X", static_cast<unsigned>(error.Error()));
+    }
+
+    // Clearing the selection calls this again with nothing selected.
+    if (!read && problem.empty())
+        return;
+
+    if (read)
+    {
+        // Measured from the origin the operation's folder runs under.
+        const size_t active = camcore::ActiveOriginIndex(m_job, m_operationTarget.step);
+        const camcore::FrameResult frame = (active != camcore::kNoStepIndex)
+                                               ? camcore::BuildFrame(m_job.sequence[active].origin)
+                                               : camcore::FrameResult();
+        if (frame.ok)
+        {
+            const double depth = camcore::DistanceAlongZ(frame.frame, located);
+            Log(L"[locate] depth %.4f mm from %s", depth, FromUtf8(m_job.sequence[active].name).c_str());
+            m_pOperationDlg->SetLocatedDepth(depth);
+            RestoreSelectionFilter();
+        }
+        else
+        {
+            m_pOperationDlg->ShowLocateProblem(L"There's no complete Set Origin above this folder to measure from.");
+        }
+    }
+    else
+    {
+        m_pOperationDlg->ShowLocateProblem(problem);
+    }
+
+    if (m_pWnd != nullptr)
+        m_pWnd->PostClearSelection();
+}
+
 void CCamTabCommand::ClearPickedSelection()
 {
     try
@@ -1206,6 +1354,11 @@ BEGIN_MESSAGE_MAP(CCamTabWnd, CWnd)
     ON_NOTIFY(NM_RCLICK, IDC_CAM_TREE, &CCamTabWnd::OnTreeRightClick)
     ON_NOTIFY(TVN_BEGINLABELEDIT, IDC_CAM_TREE, &CCamTabWnd::OnTreeBeginRename)
     ON_NOTIFY(TVN_ENDLABELEDIT, IDC_CAM_TREE, &CCamTabWnd::OnTreeEndRename)
+    ON_NOTIFY(TVN_BEGINDRAG, IDC_CAM_TREE, &CCamTabWnd::OnTreeBeginDrag)
+    ON_WM_MOUSEMOVE()
+    ON_WM_LBUTTONUP()
+    ON_WM_RBUTTONDOWN()
+    ON_WM_CAPTURECHANGED()
     ON_MESSAGE(WM_APP_LOAD_JOB, &CCamTabWnd::OnLoadJob)
     ON_MESSAGE(WM_APP_CLEAR_SELECTION, &CCamTabWnd::OnClearSelection)
 END_MESSAGE_MAP()
@@ -1216,6 +1369,7 @@ CCamTabWnd::CCamTabWnd(CCamTabCommand* pTab)
     , m_hOperations(nullptr)
     , m_fillingTree(false)
     , m_visible(false)
+    , m_dragging(false)
 {
 }
 
@@ -1525,6 +1679,183 @@ void CCamTabWnd::OnTreeEndRename(NMHDR* pNotify, LRESULT* pResult)
         name.Trim();
         m_tree.SetItemText(pInfo->item.hItem, name);
     }
+}
+
+void CCamTabWnd::OnTreeBeginDrag(NMHDR* pNotify, LRESULT* pResult)
+{
+    *pResult = 0;
+
+    const NMTREEVIEW* pInfo = reinterpret_cast<NMTREEVIEW*>(pNotify);
+    const HTREEITEM hItem = pInfo->itemNew.hItem;
+    if (m_pTab == nullptr || !IsStepItem(hItem) || !m_pTab->CanDrag(StepOfItem(hItem)))
+        return;
+
+    m_dragFrom = StepOfItem(hItem);
+    m_tree.SelectItem(hItem);
+    m_dragging = true;
+    SetCapture();
+}
+
+CCamTabWnd::DropPlace CCamTabWnd::FindDropPlace(CPoint treePoint) const
+{
+    DropPlace place;
+    if (m_pTab == nullptr)
+        return place;
+
+    HTREEITEM hItem = m_tree.HitTest(treePoint);
+    bool lowerHalf = false;
+    if (hItem != nullptr)
+    {
+        CRect rect;
+        m_tree.GetItemRect(hItem, &rect, FALSE);
+        lowerHalf = treePoint.y >= rect.CenterPoint().y;
+    }
+    else
+    {
+        // Below the last item counts as after the last top-level step.
+        CRect client;
+        m_tree.GetClientRect(&client);
+        const HTREEITEM hLast = m_tree.GetLastVisibleItem();
+        CRect lastRect;
+        if (hLast == nullptr || !m_tree.GetItemRect(hLast, &lastRect, FALSE) || treePoint.y < lastRect.bottom)
+            return place;
+
+        for (HTREEITEM hStep = m_tree.GetChildItem(m_hOperations); hStep != nullptr;
+             hStep = m_tree.GetNextSiblingItem(hStep))
+            hItem = hStep;
+        lowerHalf = true;
+    }
+
+    if (!IsStepItem(hItem))
+        return place;
+
+    const StepRef over = StepOfItem(hItem);
+    if (!m_dragFrom.IsOperation())
+    {
+        // A top-level step only goes beside another one. Over an operation means
+        // after that operation's folder.
+        if (over.IsOperation())
+        {
+            place.target = StepRef{ over.step };
+            place.side = DropSide::After;
+        }
+        else
+        {
+            place.target = over;
+            place.side = lowerHalf ? DropSide::After : DropSide::Before;
+        }
+
+        // After a folder, the mark goes below its operations.
+        const HTREEITEM hStep = FindStepItem(place.target);
+        place.hMarkItem = hStep;
+        if (place.side == DropSide::After && hStep != nullptr && (m_tree.GetItemState(hStep, TVIS_EXPANDED) & TVIS_EXPANDED))
+        {
+            for (HTREEITEM hChild = m_tree.GetChildItem(hStep); hChild != nullptr;
+                 hChild = m_tree.GetNextSiblingItem(hChild))
+                place.hMarkItem = hChild;
+        }
+    }
+    else if (!over.IsOperation())
+    {
+        // An operation dropped on a folder goes at its end.
+        place.target = over;
+        place.side = DropSide::Into;
+        place.hMarkItem = hItem;
+    }
+    else
+    {
+        place.target = over;
+        place.side = lowerHalf ? DropSide::After : DropSide::Before;
+        place.hMarkItem = hItem;
+    }
+
+    place.valid = m_pTab->CanMoveStep(m_dragFrom, place.target, place.side);
+    return place;
+}
+
+void CCamTabWnd::ShowDropPlace(const DropPlace& place)
+{
+    if (place.valid && place.side == DropSide::Into)
+    {
+        m_tree.SetInsertMark(nullptr);
+        m_tree.SelectDropTarget(place.hMarkItem);
+    }
+    else
+    {
+        m_tree.SelectDropTarget(nullptr);
+        m_tree.SetInsertMark(place.valid ? place.hMarkItem : nullptr, place.side == DropSide::After);
+    }
+    ::SetCursor(::LoadCursor(nullptr, place.valid ? IDC_ARROW : IDC_NO));
+}
+
+void CCamTabWnd::OnMouseMove(UINT flags, CPoint point)
+{
+    if (!m_dragging)
+    {
+        CWnd::OnMouseMove(flags, point);
+        return;
+    }
+
+    ClientToScreen(&point);
+    m_tree.ScreenToClient(&point);
+
+    // Scroll when the mouse is near the top or bottom of the tree.
+    CRect client;
+    m_tree.GetClientRect(&client);
+    const int edge = 12;
+    if (point.y < client.top + edge)
+        m_tree.SendMessage(WM_VSCROLL, SB_LINEUP);
+    else if (point.y > client.bottom - edge)
+        m_tree.SendMessage(WM_VSCROLL, SB_LINEDOWN);
+
+    ShowDropPlace(FindDropPlace(point));
+}
+
+void CCamTabWnd::OnLButtonUp(UINT flags, CPoint point)
+{
+    if (!m_dragging)
+    {
+        CWnd::OnLButtonUp(flags, point);
+        return;
+    }
+
+    ClientToScreen(&point);
+    m_tree.ScreenToClient(&point);
+    const DropPlace place = FindDropPlace(point);
+    const StepRef from = m_dragFrom;
+    EndDrag();
+
+    if (place.valid && m_pTab != nullptr)
+        m_pTab->MoveStep(from, place.target, place.side);
+}
+
+void CCamTabWnd::OnRButtonDown(UINT flags, CPoint point)
+{
+    // A right click cancels a drag.
+    if (m_dragging)
+        EndDrag();
+    else
+        CWnd::OnRButtonDown(flags, point);
+}
+
+void CCamTabWnd::OnCaptureChanged(CWnd* pWnd)
+{
+    // Losing the mouse to another window cancels a drag.
+    if (m_dragging)
+        EndDrag();
+    CWnd::OnCaptureChanged(pWnd);
+}
+
+void CCamTabWnd::EndDrag()
+{
+    if (!m_dragging)
+        return;
+
+    m_dragging = false;
+    m_tree.SetInsertMark(nullptr);
+    m_tree.SelectDropTarget(nullptr);
+    if (GetCapture() == this)
+        ReleaseCapture();
 }
 
 void CCamTabWnd::StartRename(const StepRef& ref)

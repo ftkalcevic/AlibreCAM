@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "Drill.h"
 #include "Origin.h"
 
 namespace camcore
@@ -42,6 +43,9 @@ namespace camcore
 
         // Set Origin steps only
         OriginDefinition origin;
+
+        // Drill operations only
+        DrillSettings drill;
 
         // Groups only. Operations run in this order. Groups don't nest, and a
         // Set Origin stays outside them, so a group can't hold either.
@@ -102,6 +106,20 @@ namespace camcore
     // The Set Origin a step runs under: the step itself if it's a Set Origin,
     // otherwise the nearest one above it. kNoStepIndex if there's none.
     size_t ActiveOriginIndex(const Job& job, size_t stepIndex);
+
+    // Moving changes the order only, never the level: top-level steps stay in the
+    // sequence, and operations stay in groups. `insertBefore` counts positions as
+    // they are before the move, and the list's size means the end. Each returns
+    // false, changing nothing, for a move that's invalid or changes nothing.
+
+    // Refused if the sequence would no longer start with a Set Origin. On success
+    // newIndex is where the step ended up.
+    bool MoveStep(Job& job, size_t from, size_t insertBefore, size_t& newIndex);
+
+    // Moves an operation within its group or into another one. On success
+    // newIndex is where it ended up in toGroup.
+    bool MoveOperation(Job& job, size_t fromGroup, size_t fromIndex, size_t toGroup, size_t insertBefore,
+                       size_t& newIndex);
 
     LoadResult LoadJob(const std::filesystem::path& path);
 

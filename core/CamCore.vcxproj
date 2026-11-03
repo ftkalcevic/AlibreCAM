@@ -63,12 +63,14 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="CamJob.cpp" />
+    <ClCompile Include="Drill.cpp" />
     <ClCompile Include="FileIO.cpp" />
     <ClCompile Include="Origin.cpp" />
     <ClCompile Include="ToolLibrary.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CamJob.h" />
+    <ClInclude Include="Drill.h" />
     <ClInclude Include="FileIO.h" />
     <ClInclude Include="Origin.h" />
     <ClInclude Include="ToolLibrary.h" />

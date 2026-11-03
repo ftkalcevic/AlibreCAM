@@ -1,4 +1,4 @@
-> Exported from the Claude doc "Alibre CAM Add-on: Version 1 Specification" on 3 November 2026 (rev 61).
+> Exported from the Claude doc "Alibre CAM Add-on: Version 1 Specification" on 3 November 2026 (rev 64).
 > The Claude doc is the master copy: https://claude.ai/artifact/JZEKmxczFdEn2eV32A5acB
 > The two diagrams are redrawn here in Mermaid, because they don't export from the doc.
 > Update this copy after spec changes, or note here if it becomes the master.
@@ -188,7 +188,8 @@ These rules keep group behaviour predictable:
 - **Shown as folders:** In the tree a group is a folder. Right-click Operations and choose Add Folder to add one at the end of the sequence, with no dialog. Its name, such as "Folder 1", is ready to type over. The sequence must start with a `Set Origin`, so Add Folder is unavailable until one exists.
 - **Folder menu:** Right-clicking a folder offers Rename, which edits the name in place, and Delete. Deleting a folder that holds operations asks first, and an empty folder is deleted without asking. Below a separator, an Add Holes submenu holds Drill, which opens the Drill dialog for a new operation in that folder.
 - **Operations live in folders:** An operation can only be created inside a folder, and runs under the folder's origin. Right-clicking an operation offers Edit, Rename (in place), and Delete, which asks first. Double-clicking it opens its dialog.
-- **Operation dialog:** A modeless dialog with a name and tabs. Every operation has Features (its geometry), Tool (a drill or flat end mill), Feeds & Speeds, Clearance, and Sorting. Drill adds a Drilling tab for drill depth, geometry location (top, bottom, or from the model), dwell (off, time, or revolutions), and engage and retract distances. The tabs are built one at a time.
+- **Dragging to reorder:** Steps are dragged with the mouse and never change level. `Set Origin` steps and folders move among the top-level steps, and the first step must stay a `Set Origin`. Operations move within a folder or into another folder; dropping one on a folder adds it at the end. A line shows where a step will go, a no-entry cursor shows where it can't, and a right click cancels. Nothing can be dragged while a dialog is open.
+- **Operation dialog:** A modeless dialog with a name and tabs. Every operation has Features (its geometry), Tool (a drill or flat end mill), Feeds & Speeds, Clearance, and Sorting. Drill adds a Drilling tab. Depth is how far to drill, with Add drill tip to depth, and a Locate button that measures along the origin's Z from its XY plane to a picked point, plane, face or edge. Locate stores only the number. A plane is measured where the drill axis through the origin meets it, and a line at its point nearest that axis. Anything parallel to the drill direction has no answer, and anything over 10 m away counts as none, so both measure as 0. Location of cut geometry is at top or at bottom. Dwell is off, a time in seconds, or a number of revolutions. Engage/retract has an approach distance, and Options has a peck depth, left blank to drill in one pass. The tabs are built one at a time.
 
 ## Out-of-date tracking
 

@@ -187,6 +187,87 @@ namespace camcore
             return true;
         }
 
+        const char* DwellName(DwellMode mode)
+        {
+            switch (mode)
+            {
+            case DwellMode::Seconds:     return "seconds";
+            case DwellMode::Revolutions: return "revolutions";
+            default:                     return "off";
+            }
+        }
+
+        json WriteDrilling(const DrillSettings& drill)
+        {
+            json peck = nullptr;
+            if (drill.pecking)
+                peck = drill.peckDepth;
+
+            return
+            {
+                { "depth", drill.depth },
+                { "addDrillTip", drill.addTipToDepth },
+                { "geometryLocation", drill.location == GeometryLocation::AtBottom ? "bottom" : "top" },
+                { "dwell", DwellName(drill.dwell) },
+                { "dwellSeconds", drill.dwellSeconds },
+                { "dwellRevolutions", drill.dwellRevolutions },
+                { "approachDistance", drill.approachDistance },
+                { "peckDepth", peck }
+            };
+        }
+
+        bool ReadNumber(const json& parent, const char* name, double& value)
+        {
+            const auto item = parent.find(name);
+            if (item == parent.end() || !item->is_number())
+                return false;
+            value = item->get<double>();
+            return true;
+        }
+
+        bool ReadDrilling(const json& item, DrillSettings& drill)
+        {
+            if (!item.is_object())
+                return false;
+
+            std::string location, dwell;
+            if (!ReadNumber(item, "depth", drill.depth) || !ReadBool(item, "addDrillTip", drill.addTipToDepth) ||
+                !ReadString(item, "geometryLocation", location) ||
+                !ReadString(item, "dwell", dwell) || !ReadNumber(item, "dwellSeconds", drill.dwellSeconds) ||
+                !ReadNumber(item, "dwellRevolutions", drill.dwellRevolutions) ||
+                !ReadNumber(item, "approachDistance", drill.approachDistance))
+                return false;
+
+            if (location == "top")
+                drill.location = GeometryLocation::AtTop;
+            else if (location == "bottom")
+                drill.location = GeometryLocation::AtBottom;
+            else
+                return false;
+
+            if (dwell == DwellName(DwellMode::Off))
+                drill.dwell = DwellMode::Off;
+            else if (dwell == DwellName(DwellMode::Seconds))
+                drill.dwell = DwellMode::Seconds;
+            else if (dwell == DwellName(DwellMode::Revolutions))
+                drill.dwell = DwellMode::Revolutions;
+            else
+                return false;
+
+            // A null peck depth means no pecking.
+            const auto peck = item.find("peckDepth");
+            if (peck == item.end())
+                return false;
+            drill.pecking = !peck->is_null();
+            if (drill.pecking)
+            {
+                if (!peck->is_number())
+                    return false;
+                drill.peckDepth = peck->get<double>();
+            }
+            return true;
+        }
+
         json WriteStep(const SequenceStep& step)
         {
             if (step.type == StepType::Group)
@@ -198,9 +279,9 @@ namespace camcore
                 return { { "type", "group" }, { "id", step.id }, { "name", step.name }, { "children", children } };
             }
 
-            // Drill settings join this as each dialog tab is built.
+            // The other tabs' settings join this as each is built.
             if (step.type == StepType::Drill)
-                return { { "type", "drill" }, { "id", step.id }, { "name", step.name } };
+                return { { "type", "drill" }, { "id", step.id }, { "name", step.name }, { "drilling", WriteDrilling(step.drill) } };
 
             const OriginDefinition& origin = step.origin;
             return
@@ -249,8 +330,10 @@ namespace camcore
 
             if (type == "drill")
             {
+                // Drills saved before the Drilling tab existed have no settings yet.
                 step.type = StepType::Drill;
-                return true;
+                const auto drilling = item.find("drilling");
+                return drilling == item.end() || ReadDrilling(*drilling, step.drill);
             }
 
             if (type != "setOrigin")
@@ -434,6 +517,58 @@ namespace camcore
                 return i;
         }
         return kNoStepIndex;
+    }
+
+    bool MoveStep(Job& job, size_t from, size_t insertBefore, size_t& newIndex)
+    {
+        std::vector<SequenceStep>& sequence = job.sequence;
+        if (from >= sequence.size() || insertBefore > sequence.size())
+            return false;
+
+        // Inserting just before or after itself leaves it where it is.
+        const size_t target = (insertBefore > from) ? insertBefore - 1 : insertBefore;
+        if (target == from)
+            return false;
+
+        std::vector<SequenceStep> moved = sequence;
+        SequenceStep step = std::move(moved[from]);
+        moved.erase(moved.begin() + static_cast<ptrdiff_t>(from));
+        moved.insert(moved.begin() + static_cast<ptrdiff_t>(target), std::move(step));
+
+        if (moved.front().type != StepType::SetOrigin)
+            return false;
+
+        sequence = std::move(moved);
+        newIndex = target;
+        return true;
+    }
+
+    bool MoveOperation(Job& job, size_t fromGroup, size_t fromIndex, size_t toGroup, size_t insertBefore,
+                       size_t& newIndex)
+    {
+        std::vector<SequenceStep>& sequence = job.sequence;
+        if (fromGroup >= sequence.size() || toGroup >= sequence.size() ||
+            sequence[fromGroup].type != StepType::Group || sequence[toGroup].type != StepType::Group)
+            return false;
+
+        std::vector<SequenceStep>& source = sequence[fromGroup].children;
+        std::vector<SequenceStep>& destination = sequence[toGroup].children;
+        if (fromIndex >= source.size() || insertBefore > destination.size())
+            return false;
+
+        size_t target = insertBefore;
+        if (fromGroup == toGroup)
+        {
+            target = (insertBefore > fromIndex) ? insertBefore - 1 : insertBefore;
+            if (target == fromIndex)
+                return false;
+        }
+
+        SequenceStep operation = std::move(source[fromIndex]);
+        source.erase(source.begin() + static_cast<ptrdiff_t>(fromIndex));
+        destination.insert(destination.begin() + static_cast<ptrdiff_t>(target), std::move(operation));
+        newIndex = target;
+        return true;
     }
 
     IdentityMatch CompareIdentity(const AssemblyIdentity& a, const AssemblyIdentity& b)
