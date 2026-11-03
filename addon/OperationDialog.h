@@ -9,6 +9,7 @@
 #include "resource.h"
 #include "CamJob.h"
 #include "Features.h"
+#include "ToolLibrary.h"
 
 #include <memory>
 #include <vector>
@@ -105,6 +106,33 @@ private:
     bool m_rowsChosenPosted;    // one message covers a burst of row changes
 };
 
+// The Tool tab every operation has: the library's tools, and the chosen one's details.
+class CToolPage : public COperationPage
+{
+public:
+    explicit CToolPage(COperationDlg* pOwner);
+
+    void Load(const camcore::SequenceStep& step) override;
+    bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
+
+    enum { IDD = IDD_OP_TOOL };
+
+protected:
+    BOOL OnInitDialog() override;
+    afx_msg void OnToolChanged(NMHDR* pNotify, LRESULT* pResult);
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    const camcore::Tool* ChosenTool() const;
+    void ShowDetails(const camcore::Tool* pTool);
+
+    camcore::ToolLibrary m_library;
+    std::string m_toolId;       // kept if it isn't in the library, so it isn't lost
+    CListCtrl m_tools;
+    CListCtrl m_details;
+};
+
 // The Clearance tab every operation has.
 class CClearancePage : public COperationPage
 {
@@ -180,6 +208,9 @@ public:
 
     // The frame of the origin the operation runs under. False if it has none yet.
     bool GetFrame(camcore::Frame& frame) const;
+
+    // The job's tool library. Empty if the dialog has lost its tab.
+    camcore::ToolLibrary GetToolLibrary() const;
 
     enum { IDD = IDD_OPERATION };
 

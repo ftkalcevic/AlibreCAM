@@ -114,6 +114,7 @@ TEST_CASE("clearance settings load back unchanged, and default when missing")
     drill.type = StepType::Drill;
     drill.id = NewStableId();
     drill.name = "D1";
+    drill.toolId = "tool-7";
     drill.clearance.mode = ClearanceMode::StockMaxZ;
     drill.clearance.partDistance = 3;
     drill.clearance.stockDistance = 7.5;
@@ -136,6 +137,8 @@ TEST_CASE("clearance settings load back unchanged, and default when missing")
     CHECK(back.partDistance == 3);
     CHECK(back.stockDistance == 7.5);
     CHECK(back.absoluteZ == -2);
+    CHECK(loaded.job.sequence[1].children[0].toolId == "tool-7");
+    CHECK(loaded.job.sequence[1].children[1].toolId.empty());
     CHECK(loaded.job.sequence[1].children[1].clearance.mode == ClearanceMode::AbsoluteZ);
 
     // A drill saved before the Clearance tab existed.
@@ -147,6 +150,7 @@ TEST_CASE("clearance settings load back unchanged, and default when missing")
     const LoadResult old = LoadJob(path);
     REQUIRE(old.status == LoadStatus::Ok);
     CHECK(old.job.sequence[0].children[0].clearance.mode == ClearanceMode::Automatic);
+    CHECK(old.job.sequence[0].children[0].toolId.empty());
 
     // An unknown mode is damage.
     {

@@ -744,6 +744,9 @@ void CCamTabCommand::AddOperation(size_t folder, camcore::StepType type)
     operation.type = type;
     operation.id = camcore::NewStableId();
     operation.name = NewOperationName(m_job, type == camcore::StepType::Facing ? "Facing" : "Drill");
+
+    // A new operation starts with the tool selected in the tree.
+    operation.toolId = m_job.selectedToolId;
     OpenOperationDialog(operation, StepRef{ folder, kNewStep });
 }
 

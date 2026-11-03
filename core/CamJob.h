@@ -51,6 +51,9 @@ namespace camcore
         std::vector<PickedGeometry> features;
         ClearanceSettings clearance;
 
+        // Operations only: the ID of the tool in the job's library, or empty.
+        std::string toolId;
+
         // Drill operations only
         DrillSettings drill;
 

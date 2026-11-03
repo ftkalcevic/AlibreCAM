@@ -285,6 +285,19 @@ namespace camcore
             return false;
         }
 
+        // Operations saved before the Tool tab existed have no tool.
+        bool ReadTool(const json& step, std::string& toolId)
+        {
+            toolId.clear();
+            const auto item = step.find("tool");
+            if (item == step.end())
+                return true;
+            if (!item->is_string())
+                return false;
+            toolId = item->get<std::string>();
+            return true;
+        }
+
         json WriteFeatures(const std::vector<PickedGeometry>& features)
         {
             json list = json::array();
@@ -399,11 +412,11 @@ namespace camcore
             // The other tabs' settings join this as each is built.
             // Facing settings join this when the Facing tab is built.
             if (step.type == StepType::Facing)
-                return { { "type", "facing" }, { "id", step.id }, { "name", step.name },
+                return { { "type", "facing" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
                          { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) } };
 
             if (step.type == StepType::Drill)
-                return { { "type", "drill" }, { "id", step.id }, { "name", step.name },
+                return { { "type", "drill" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
                          { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
                          { "drilling", WriteDrilling(step.drill) } };
 
@@ -455,14 +468,16 @@ namespace camcore
             if (type == "facing")
             {
                 step.type = StepType::Facing;
-                return ReadFeatures(item, step.features) && ReadClearance(item, step.clearance);
+                return ReadTool(item, step.toolId) && ReadFeatures(item, step.features) &&
+                       ReadClearance(item, step.clearance);
             }
 
             if (type == "drill")
             {
                 // Drills saved before the Drilling tab existed have no settings yet.
                 step.type = StepType::Drill;
-                if (!ReadFeatures(item, step.features) || !ReadClearance(item, step.clearance))
+                if (!ReadTool(item, step.toolId) || !ReadFeatures(item, step.features) ||
+                    !ReadClearance(item, step.clearance))
                     return false;
                 const auto drilling = item.find("drilling");
                 return drilling == item.end() || ReadDrilling(*drilling, step.drill);

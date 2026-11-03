@@ -541,6 +541,142 @@ void CFeaturesPage::EndDrag()
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// CToolPage
+
+namespace
+{
+    const wchar_t* ToolTypeName(ToolType type)
+    {
+        return (type == ToolType::Drill) ? L"Drill" : L"Flat end mill";
+    }
+
+    std::wstring Length(double value, ToolUnit unit)
+    {
+        return FormatNumber(value) + (unit == ToolUnit::Inches ? L" in" : L" mm");
+    }
+}
+
+BEGIN_MESSAGE_MAP(CToolPage, COperationPage)
+    ON_NOTIFY(LVN_ITEMCHANGED, IDC_TOOL_LIST, &CToolPage::OnToolChanged)
+END_MESSAGE_MAP()
+
+CToolPage::CToolPage(COperationDlg* pOwner)
+    : COperationPage(IDD_OP_TOOL, pOwner)
+{
+}
+
+BOOL CToolPage::OnInitDialog()
+{
+    COperationPage::OnInitDialog();
+
+    m_tools.SubclassDlgItem(IDC_TOOL_LIST, this);
+    m_tools.SetExtendedStyle(m_tools.GetExtendedStyle() | LVS_EX_FULLROWSELECT);
+    m_tools.InsertColumn(0, L"T", LVCFMT_RIGHT, 32);
+    m_tools.InsertColumn(1, L"Name", LVCFMT_LEFT, 130);
+    m_tools.InsertColumn(2, L"Type", LVCFMT_LEFT, 80);
+
+    m_details.SubclassDlgItem(IDC_TOOL_DETAILS, this);
+    m_details.SetExtendedStyle(m_details.GetExtendedStyle() | LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+    m_details.InsertColumn(0, L"Property", LVCFMT_LEFT, 90);
+    m_details.InsertColumn(1, L"Value", LVCFMT_LEFT, 100);
+    return TRUE;
+}
+
+void CToolPage::Load(const SequenceStep& step)
+{
+    m_library = m_pOwner->GetToolLibrary();
+    m_toolId = step.toolId;
+
+    // Later, each operation lists only the tools that suit it.
+    m_tools.DeleteAllItems();
+    int chosen = -1;
+    for (size_t i = 0; i < m_library.tools.size(); ++i)
+    {
+        const Tool& tool = m_library.tools[i];
+        const int row = m_tools.InsertItem(static_cast<int>(i), std::to_wstring(tool.number).c_str());
+        m_tools.SetItemText(row, 1, FromUtf8(tool.name).c_str());
+        m_tools.SetItemText(row, 2, ToolTypeName(tool.type));
+        m_tools.SetItemData(row, static_cast<DWORD_PTR>(i));
+        if (tool.id == m_toolId)
+            chosen = row;
+    }
+
+    if (chosen >= 0)
+    {
+        m_tools.SetItemState(chosen, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+        m_tools.EnsureVisible(chosen, FALSE);
+    }
+
+    if (m_library.tools.empty())
+        SetDlgItemText(IDC_TOOL_NOTE, L"The tool library is empty. Double-click Tools on the CAM tab to add tools.");
+    else if (!m_toolId.empty() && chosen < 0)
+        SetDlgItemText(IDC_TOOL_NOTE, L"This operation's tool isn't in the library. Choose another.");
+    else if (chosen < 0)
+        SetDlgItemText(IDC_TOOL_NOTE, L"Choose a tool.");
+    else
+        SetDlgItemText(IDC_TOOL_NOTE, L"");
+
+    ShowDetails(ChosenTool());
+}
+
+bool CToolPage::Save(SequenceStep& step, std::wstring& /*problems*/)
+{
+    // With nothing chosen, a tool missing from the library stays, so it's still known.
+    if (const Tool* pTool = ChosenTool())
+        step.toolId = pTool->id;
+    else
+        step.toolId = m_toolId;
+    return true;
+}
+
+const Tool* CToolPage::ChosenTool() const
+{
+    const int row = m_tools.GetNextItem(-1, LVNI_SELECTED);
+    if (row < 0)
+        return nullptr;
+    const size_t index = static_cast<size_t>(m_tools.GetItemData(row));
+    return (index < m_library.tools.size()) ? &m_library.tools[index] : nullptr;
+}
+
+void CToolPage::ShowDetails(const Tool* pTool)
+{
+    m_details.DeleteAllItems();
+    if (pTool == nullptr)
+        return;
+
+    const auto add = [&](const wchar_t* property, const std::wstring& value)
+    {
+        const int row = m_details.InsertItem(m_details.GetItemCount(), property);
+        m_details.SetItemText(row, 1, value.c_str());
+    };
+
+    // In the tool's own unit, as the library holds it.
+    add(L"Number", L"T" + std::to_wstring(pTool->number));
+    add(L"Name", FromUtf8(pTool->name));
+    add(L"Type", ToolTypeName(pTool->type));
+    add(L"Units", pTool->unit == ToolUnit::Inches ? L"Inches" : L"Millimetres");
+    add(L"Diameter", Length(pTool->diameter, pTool->unit));
+    add(L"Flute length", Length(pTool->fluteLength, pTool->unit));
+    add(L"Overall length", Length(pTool->overallLength, pTool->unit));
+    if (pTool->type == ToolType::Drill)
+        add(L"Point angle", FormatNumber(pTool->pointAngle) + L"\u00B0");
+    else
+        add(L"Flute count", std::to_wstring(pTool->fluteCount));
+}
+
+void CToolPage::OnToolChanged(NMHDR* pNotify, LRESULT* pResult)
+{
+    *pResult = 0;
+    const NMLISTVIEW* pInfo = reinterpret_cast<NMLISTVIEW*>(pNotify);
+    if ((pInfo->uChanged & LVIF_STATE) != 0 && ((pInfo->uOldState ^ pInfo->uNewState) & LVIS_SELECTED) != 0)
+    {
+        ShowDetails(ChosenTool());
+        if (ChosenTool() != nullptr)
+            SetDlgItemText(IDC_TOOL_NOTE, L"");
+    }
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // CClearancePage
 
 BEGIN_MESSAGE_MAP(CClearancePage, COperationPage)
@@ -805,7 +941,7 @@ BOOL COperationDlg::OnInitDialog()
     if (pFeatures->GetSafeHwnd() != nullptr)
         m_pFeatures = pFeatures;
 
-    AddPage(L"Tool", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
+    AddPage(L"Tool", std::make_unique<CToolPage>(this));
     AddPage(L"Feeds && Speeds", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
     AddPage(L"Clearance", std::make_unique<CClearancePage>(this));
 
@@ -972,6 +1108,11 @@ void COperationDlg::ShowFeatureNote(const std::wstring& text)
 {
     if (m_pFeatures != nullptr)
         m_pFeatures->ShowNote(text);
+}
+
+ToolLibrary COperationDlg::GetToolLibrary() const
+{
+    return (m_pTab != nullptr) ? m_pTab->GetToolLibrary() : ToolLibrary();
 }
 
 bool COperationDlg::GetFrame(camcore::Frame& frame) const

@@ -92,6 +92,7 @@ public:
     void BeginFeatureSelect();
     void EndFeatureSelect();
     bool GetOperationFrame(camcore::Frame& frame) const;
+    const camcore::ToolLibrary& GetToolLibrary() const { return m_library; }
 
     // Shows the rows chosen in the Features list in the view.
     void ShowFeaturesInView(const std::vector<camcore::PickedGeometry>& features);

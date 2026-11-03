@@ -77,14 +77,18 @@
 #define IDC_CLEARANCE_PART_DISTANCE     13124
 #define IDC_CLEARANCE_STOCK_DISTANCE    13125
 #define IDC_CLEARANCE_ABSOLUTE_Z        13126
+#define IDD_OP_TOOL                     13018
+#define IDC_TOOL_LIST                   13130
+#define IDC_TOOL_DETAILS                13131
+#define IDC_TOOL_NOTE                   13132
 
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13018
+#define _APS_NEXT_RESOURCE_VALUE        13019
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13127
+#define _APS_NEXT_CONTROL_VALUE         13133
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif
