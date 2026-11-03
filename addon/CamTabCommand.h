@@ -7,6 +7,7 @@
 
 #include "CommandBase.h"
 #include "CamJob.h"
+#include "ToolLibrary.h"
 
 class CAddOnInterface;
 class CCamTabWnd;
@@ -21,8 +22,9 @@ public:
     void LoadJobFile();
     void SaveJobFile();
 
-    // Records that the job has changes that aren't in the .cam file.
-    void MarkJobChanged();
+    // The tool library
+    void OpenToolLibrary();
+    void SelectToolByIndex(size_t index);
 
     void OnWindowClosing();
     void OnWindowGone();
@@ -40,6 +42,9 @@ private:
     void SetStatus(const std::wstring& text);
     void SetSaveBlocked(bool blocked);
     void WarnIfUnsaved();
+    void MarkJobChanged();
+    std::filesystem::path CurrentLibraryPath() const;
+    void ReloadTools();
     void DestroyWindowIfOpen();
     void LeaveAddOn();
 
@@ -55,6 +60,10 @@ private:
     bool m_saveBlocked;
 
     bool m_unsavedChanges;
+
+    camcore::ToolLibrary m_library;
+    std::wstring m_jobStatus;
+    std::wstring m_toolStatus;
 };
 
 /////////////////////////////////////////////////////////////////////////////
@@ -70,6 +79,8 @@ public:
 
     void SetStatusText(const std::wstring& text);
     void EnableSave(bool enable);
+    void ShowTools(const camcore::ToolLibrary& library, const std::string& selectedToolId);
+    void MarkSelectedTool(const camcore::ToolLibrary& library, const std::string& selectedToolId);
 
 protected:
     afx_msg int OnCreate(LPCREATESTRUCT pCreate);
@@ -77,7 +88,8 @@ protected:
     afx_msg void OnSize(UINT type, int cx, int cy);
     afx_msg void OnTimer(UINT_PTR id);
     afx_msg void OnSave();
-    afx_msg void OnMarkChanged();
+    afx_msg void OnTreeSelectionChanged(NMHDR* pNotify, LRESULT* pResult);
+    afx_msg void OnTreeDoubleClick(NMHDR* pNotify, LRESULT* pResult);
     afx_msg LRESULT OnLoadJob(WPARAM wParam, LPARAM lParam);
 
     void PostNcDestroy() override;
@@ -91,5 +103,6 @@ private:
     CTreeCtrl m_tree;
     CStatic m_status;
     CButton m_save;
-    CButton m_markChanged;      // temporary, until Setup can change the job
+    HTREEITEM m_hTools;
+    bool m_fillingTree;
 };

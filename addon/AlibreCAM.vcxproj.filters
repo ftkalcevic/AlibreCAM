@@ -24,6 +24,7 @@
     <ClCompile Include="CommandBase.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Log.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ModelReader.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ToolDialogs.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AlibreCAM.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="stdafx.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
@@ -34,6 +35,7 @@
     <ClInclude Include="CommandBase.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Log.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ModelReader.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ToolDialogs.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AlibreCAM.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="resource.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="stdafx.h"><Filter>Header Files</Filter></ClInclude>

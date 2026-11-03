@@ -20,10 +20,17 @@ namespace camcore
         std::string guid;
     };
 
-    // Setup and the operation sequence are added in later steps.
+    // Machine, stock and the operation sequence are added in later steps.
     struct Job
     {
         AssemblyIdentity assembly;
+
+        // Empty uses the add-on's default tool library. Otherwise, as returned
+        // by StoredLibraryPath.
+        std::string toolLibraryPath;
+
+        // The ID of the selected tool in the library, or empty.
+        std::string selectedToolId;
     };
 
     enum class LoadStatus

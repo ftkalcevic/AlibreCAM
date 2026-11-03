@@ -5,14 +5,34 @@
 #define IDD_ABOUTBOX                    13001
 #define IDC_ADDON_VERSION               13002
 #define IDC_ALIBRE_VERSION              13003
+#define IDD_TOOL_LIBRARY                13010
+#define IDD_TOOL_EDIT                   13011
+#define IDC_LIB_PATH                    13020
+#define IDC_LIB_NOTE                    13021
+#define IDC_LIB_LIST                    13022
+#define IDC_LIB_ADD                     13023
+#define IDC_LIB_EDIT                    13024
+#define IDC_LIB_COPY                    13025
+#define IDC_LIB_DELETE                  13026
+#define IDC_LIB_OTHER                   13027
+#define IDC_LIB_DEFAULT                 13028
+#define IDC_TOOL_NUMBER                 13040
+#define IDC_TOOL_NAME                   13041
+#define IDC_TOOL_TYPE                   13042
+#define IDC_TOOL_UNIT                   13043
+#define IDC_TOOL_DIAMETER               13044
+#define IDC_TOOL_FLUTE_LENGTH           13045
+#define IDC_TOOL_OVERALL_LENGTH         13046
+#define IDC_TOOL_FLUTE_COUNT            13047
+#define IDC_TOOL_POINT_ANGLE            13048
 
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13010
+#define _APS_NEXT_RESOURCE_VALUE        13012
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13010
+#define _APS_NEXT_CONTROL_VALUE         13049
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

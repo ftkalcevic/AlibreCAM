@@ -15,9 +15,11 @@
 
 #include <afxwin.h>             // MFC core and standard components
 #include <afxext.h>             // MFC extensions
-#include <afxcmn.h>             // CTreeCtrl
+#include <afxcmn.h>             // CTreeCtrl, CListCtrl
+#include <afxdlgs.h>            // CFileDialog
 #include <comdef.h>             // _bstr_t, _com_error, smart pointers
 
+#include <algorithm>
 #include <filesystem>
 #include <map>
 #include <string>

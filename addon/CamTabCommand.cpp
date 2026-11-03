@@ -5,6 +5,7 @@
 #include "AddOnInterface.h"
 #include "CamTabCommand.h"
 #include "ModelReader.h"
+#include "ToolDialogs.h"
 #include "Log.h"
 
 #ifdef _DEBUG
@@ -23,8 +24,7 @@ namespace
     {
         IDC_CAM_TREE = 14001,
         IDC_CAM_STATUS,
-        IDC_CAM_SAVE,
-        IDC_CAM_MARK_CHANGED
+        IDC_CAM_SAVE
     };
 
     std::wstring FileName(const fs::path& path)
@@ -68,8 +68,9 @@ IADSessionPtr CCamTabCommand::GetSession() const
 void CCamTabCommand::SetStatus(const std::wstring& text)
 {
     Log(L"[tab] status: %s", text.c_str());
+    m_jobStatus = text;
     if (m_pWnd != nullptr)
-        m_pWnd->SetStatusText(text);
+        m_pWnd->SetStatusText(m_toolStatus.empty() ? m_jobStatus : m_jobStatus + L"\n" + m_toolStatus);
 }
 
 void CCamTabCommand::SetSaveBlocked(bool blocked)
@@ -223,6 +224,104 @@ void CCamTabCommand::OnWindowGone()
 /////////////////////////////////////////////////////////////////////////////
 // Loading and saving the .cam file
 
+fs::path CCamTabCommand::CurrentLibraryPath() const
+{
+    return m_job.toolLibraryPath.empty() ? DefaultToolLibraryPath()
+                                         : camcore::ResolveLibraryPath(m_camPath, m_job.toolLibraryPath);
+}
+
+void CCamTabCommand::ReloadTools()
+{
+    const fs::path path = CurrentLibraryPath();
+    const camcore::ToolLibraryLoadResult loaded = camcore::LoadToolLibrary(path);
+
+    m_library = camcore::ToolLibrary();
+    if (loaded.status == camcore::LoadStatus::Ok)
+    {
+        m_library = loaded.library;
+
+        if (m_library.tools.empty())
+        {
+            m_toolStatus = L"The tool library is empty. Double-click Tools to add one.";
+        }
+        else if (m_job.selectedToolId.empty())
+        {
+            m_toolStatus = L"No tool selected.";
+        }
+        else if (const camcore::Tool* pTool = camcore::FindToolById(m_library, m_job.selectedToolId))
+        {
+            m_toolStatus = L"Selected tool: T" + std::to_wstring(pTool->number) + L" " + FromUtf8(pTool->name);
+        }
+        else
+        {
+            m_toolStatus = L"The selected tool isn't in this library. Select another.";
+        }
+    }
+    else if (loaded.status == camcore::LoadStatus::NotFound)
+    {
+        // A new default library is expected. A job's own library should exist.
+        m_toolStatus = m_job.toolLibraryPath.empty()
+                           ? L"The tool library is empty. Double-click Tools to add one."
+                           : L"This job's tool library is missing: " + path.wstring();
+    }
+    else
+    {
+        m_toolStatus = L"The tool library can't be used. " + FromUtf8(loaded.message);
+    }
+
+    Log(L"[tools] library '%s': %zu tools. %s", path.c_str(), m_library.tools.size(), m_toolStatus.c_str());
+
+    if (m_pWnd != nullptr)
+        m_pWnd->ShowTools(m_library, m_job.selectedToolId);
+
+    SetStatus(m_jobStatus);
+}
+
+void CCamTabCommand::OpenToolLibrary()
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    if (m_saveBlocked)
+        return;
+
+    const fs::path before = CurrentLibraryPath();
+
+    CToolLibraryDlg dialog(before, m_job.selectedToolId, m_pWnd);
+    dialog.DoModal();
+
+    const fs::path after = dialog.GetLibraryPath();
+    if (after != before)
+    {
+        m_job.toolLibraryPath = (after == DefaultToolLibraryPath())
+                                    ? std::string()
+                                    : camcore::StoredLibraryPath(m_camPath, after);
+        Log(L"[tools] job library is now '%s'", after.c_str());
+        MarkJobChanged();
+    }
+
+    ReloadTools();
+}
+
+void CCamTabCommand::SelectToolByIndex(size_t index)
+{
+    if (m_saveBlocked || index >= m_library.tools.size())
+        return;
+
+    const std::string& id = m_library.tools[index].id;
+    if (id == m_job.selectedToolId)
+        return;
+
+    m_job.selectedToolId = id;
+    MarkJobChanged();
+
+    if (m_pWnd != nullptr)
+        m_pWnd->MarkSelectedTool(m_library, m_job.selectedToolId);
+
+    const camcore::Tool& tool = m_library.tools[index];
+    m_toolStatus = L"Selected tool: T" + std::to_wstring(tool.number) + L" " + FromUtf8(tool.name);
+    SetStatus(m_jobStatus);
+}
+
 void CCamTabCommand::LoadJobFile()
 {
     AssemblyInfo current;
@@ -251,6 +350,7 @@ void CCamTabCommand::LoadJobFile()
     if (current.path.empty())
     {
         SetStatus(L"New job. Save the assembly before saving CAM data.");
+        ReloadTools();
         return;
     }
 
@@ -265,6 +365,7 @@ void CCamTabCommand::LoadJobFile()
 
     case camcore::LoadStatus::NotFound:
         SetStatus(L"New job. Not saved yet.");
+        ReloadTools();
         return;
 
     case camcore::LoadStatus::NewerVersion:
@@ -299,12 +400,14 @@ void CCamTabCommand::LoadJobFile()
         m_job = loaded.job;
         m_job.assembly = current.identity;
         SetStatus(L"Using " + fileName + L". Save to link it to this assembly.");
+        ReloadTools();
         return;
     }
 
     m_job = loaded.job;
     m_job.assembly = current.identity;
     SetStatus(L"Loaded " + fileName + L".");
+    ReloadTools();
 }
 
 void CCamTabCommand::SaveJobFile()
@@ -351,6 +454,13 @@ void CCamTabCommand::SaveJobFile()
 
     m_job.assembly = current.identity;
 
+    // A library kept beside the job must still resolve from the new location.
+    if (target != m_camPath && !m_job.toolLibraryPath.empty())
+    {
+        const fs::path library = camcore::ResolveLibraryPath(m_camPath, m_job.toolLibraryPath);
+        m_job.toolLibraryPath = camcore::StoredLibraryPath(target, library);
+    }
+
     const camcore::SaveResult saved = camcore::SaveJob(m_job, target);
     if (!saved.ok)
     {
@@ -374,12 +484,15 @@ BEGIN_MESSAGE_MAP(CCamTabWnd, CWnd)
     ON_WM_SIZE()
     ON_WM_TIMER()
     ON_BN_CLICKED(IDC_CAM_SAVE, &CCamTabWnd::OnSave)
-    ON_BN_CLICKED(IDC_CAM_MARK_CHANGED, &CCamTabWnd::OnMarkChanged)
+    ON_NOTIFY(TVN_SELCHANGED, IDC_CAM_TREE, &CCamTabWnd::OnTreeSelectionChanged)
+    ON_NOTIFY(NM_DBLCLK, IDC_CAM_TREE, &CCamTabWnd::OnTreeDoubleClick)
     ON_MESSAGE(WM_APP_LOAD_JOB, &CCamTabWnd::OnLoadJob)
 END_MESSAGE_MAP()
 
 CCamTabWnd::CCamTabWnd(CCamTabCommand* pTab)
     : m_pTab(pTab)
+    , m_hTools(nullptr)
+    , m_fillingTree(false)
 {
 }
 
@@ -409,7 +522,7 @@ int CCamTabWnd::OnCreate(LPCREATESTRUCT pCreate)
 
     HTREEITEM hSetup = m_tree.InsertItem(L"Setup");
     m_tree.InsertItem(L"Machine", hSetup);
-    m_tree.InsertItem(L"Tools", hSetup);
+    m_hTools = m_tree.InsertItem(L"Tools", hSetup);
     m_tree.InsertItem(L"Stock", hSetup);
     m_tree.InsertItem(L"Operations");
     m_tree.Expand(hSetup, TVE_EXPAND);
@@ -419,10 +532,6 @@ int CCamTabWnd::OnCreate(LPCREATESTRUCT pCreate)
 
     m_save.Create(L"Save", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, CRect(0, 0, 10, 10), this, IDC_CAM_SAVE);
     m_save.SetFont(pFont);
-
-    m_markChanged.Create(L"Mark as changed (test)", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                         CRect(0, 0, 10, 10), this, IDC_CAM_MARK_CHANGED);
-    m_markChanged.SetFont(pFont);
 
     CRect client;
     GetClientRect(&client);
@@ -463,15 +572,13 @@ void CCamTabWnd::LayoutControls(int cx, int cy)
     const int statusHeight = 60;
     const int width = (cx > margin * 2) ? cx - margin * 2 : 1;
 
-    const int markY = cy - margin - buttonHeight;
-    const int buttonY = markY - margin - buttonHeight;
+    const int buttonY = cy - margin - buttonHeight;
     const int statusY = buttonY - margin - statusHeight;
     const int treeHeight = statusY - margin * 2;
 
     m_tree.MoveWindow(margin, margin, width, (treeHeight > 40) ? treeHeight : 40);
     m_status.MoveWindow(margin, statusY, width, statusHeight);
     m_save.MoveWindow(margin, buttonY, width, buttonHeight);
-    m_markChanged.MoveWindow(margin, markY, width, buttonHeight);
 }
 
 void CCamTabWnd::OnSize(UINT type, int cx, int cy)
@@ -505,10 +612,72 @@ void CCamTabWnd::OnSave()
         m_pTab->SaveJobFile();
 }
 
-void CCamTabWnd::OnMarkChanged()
+void CCamTabWnd::OnTreeSelectionChanged(NMHDR* /*pNotify*/, LRESULT* pResult)
 {
-    if (m_pTab != nullptr)
-        m_pTab->MarkJobChanged();
+    *pResult = 0;
+
+    if (m_fillingTree || m_pTab == nullptr)
+        return;
+
+    const HTREEITEM hItem = m_tree.GetSelectedItem();
+    if (hItem != nullptr && m_tree.GetParentItem(hItem) == m_hTools)
+        m_pTab->SelectToolByIndex(static_cast<size_t>(m_tree.GetItemData(hItem)));
+}
+
+void CCamTabWnd::OnTreeDoubleClick(NMHDR* /*pNotify*/, LRESULT* pResult)
+{
+    *pResult = 0;
+
+    if (m_pTab == nullptr)
+        return;
+
+    CPoint point;
+    ::GetCursorPos(&point);
+    m_tree.ScreenToClient(&point);
+
+    const HTREEITEM hItem = m_tree.HitTest(point);
+    if (hItem != nullptr && (hItem == m_hTools || m_tree.GetParentItem(hItem) == m_hTools))
+    {
+        // Handled, so the tree doesn't also expand or collapse the item.
+        *pResult = 1;
+        m_pTab->OpenToolLibrary();
+    }
+}
+
+void CCamTabWnd::ShowTools(const camcore::ToolLibrary& library, const std::string& selectedToolId)
+{
+    m_fillingTree = true;
+
+    HTREEITEM hChild = m_tree.GetChildItem(m_hTools);
+    while (hChild != nullptr)
+    {
+        const HTREEITEM hNext = m_tree.GetNextSiblingItem(hChild);
+        m_tree.DeleteItem(hChild);
+        hChild = hNext;
+    }
+
+    for (size_t i = 0; i < library.tools.size(); ++i)
+    {
+        const camcore::Tool& tool = library.tools[i];
+        const std::wstring text = L"T" + std::to_wstring(tool.number) + L" " + FromUtf8(tool.name);
+        const HTREEITEM hItem = m_tree.InsertItem(text.c_str(), m_hTools);
+        m_tree.SetItemData(hItem, static_cast<DWORD_PTR>(i));
+    }
+
+    MarkSelectedTool(library, selectedToolId);
+    m_tree.Expand(m_hTools, TVE_EXPAND);
+
+    m_fillingTree = false;
+}
+
+void CCamTabWnd::MarkSelectedTool(const camcore::ToolLibrary& library, const std::string& selectedToolId)
+{
+    for (HTREEITEM hItem = m_tree.GetChildItem(m_hTools); hItem != nullptr; hItem = m_tree.GetNextSiblingItem(hItem))
+    {
+        const size_t index = static_cast<size_t>(m_tree.GetItemData(hItem));
+        const bool selected = index < library.tools.size() && library.tools[index].id == selectedToolId;
+        m_tree.SetItemState(hItem, selected ? TVIS_BOLD : 0, TVIS_BOLD);
+    }
 }
 
 LRESULT CCamTabWnd::OnLoadJob(WPARAM, LPARAM)
@@ -526,5 +695,4 @@ void CCamTabWnd::SetStatusText(const std::wstring& text)
 void CCamTabWnd::EnableSave(bool enable)
 {
     m_save.EnableWindow(enable ? TRUE : FALSE);
-    m_markChanged.EnableWindow(enable ? TRUE : FALSE);
 }

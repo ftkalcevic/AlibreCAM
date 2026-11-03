@@ -109,6 +109,7 @@
     <ClCompile Include="CommandBase.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="ModelReader.cpp" />
+    <ClCompile Include="ToolDialogs.cpp" />
     <ClCompile Include="AlibreCAM.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
@@ -121,6 +122,7 @@
     <ClInclude Include="CommandBase.h" />
     <ClInclude Include="Log.h" />
     <ClInclude Include="ModelReader.h" />
+    <ClInclude Include="ToolDialogs.h" />
     <ClInclude Include="AlibreCAM.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="stdafx.h" />

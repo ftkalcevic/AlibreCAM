@@ -4,11 +4,11 @@
 
 #include <cctype>
 #include <exception>
-#include <fstream>
-#include <sstream>
 #include <system_error>
 
 #include <nlohmann/json.hpp>
+
+#include "FileIO.h"
 
 namespace camcore
 {
@@ -54,16 +54,11 @@ namespace camcore
         if (!fs::exists(path, error))
             return LoadFailure(LoadStatus::NotFound, "File not found: " + PathText(path));
 
-        std::ifstream file(path, std::ios::binary);
-        if (!file)
-            return LoadFailure(LoadStatus::Unreadable, "Could not open " + PathText(path));
-
-        std::ostringstream buffer;
-        buffer << file.rdbuf();
-        if (file.bad())
+        std::string text;
+        if (!ReadWholeFile(path, text))
             return LoadFailure(LoadStatus::Unreadable, "Could not read " + PathText(path));
 
-        const json root = json::parse(buffer.str(), nullptr, false);
+        const json root = json::parse(text, nullptr, false);
         if (root.is_discarded())
             return LoadFailure(LoadStatus::Unreadable, "Not valid JSON: " + PathText(path));
 
@@ -104,6 +99,22 @@ namespace camcore
         result.fileVersion = fileVersion;
         result.job.assembly.name = name->get<std::string>();
         result.job.assembly.guid = guid->get<std::string>();
+
+        // Files saved before tools existed don't have the tools section.
+        const auto tools = root.find("tools");
+        if (tools != root.end())
+        {
+            if (!tools->is_object())
+                return LoadFailure(LoadStatus::NotACamFile, "The tools section is invalid: " + PathText(path), fileVersion);
+
+            const auto library = tools->find("library");
+            if (library != tools->end() && library->is_string())
+                result.job.toolLibraryPath = library->get<std::string>();
+
+            const auto selected = tools->find("selected");
+            if (selected != tools->end() && selected->is_string())
+                result.job.selectedToolId = selected->get<std::string>();
+        }
         return result;
     }
 
@@ -123,6 +134,11 @@ namespace camcore
                       { "name", job.assembly.name },
                       { "guid", job.assembly.guid }
                   } },
+                { "tools",
+                  {
+                      { "library", job.toolLibraryPath },
+                      { "selected", job.selectedToolId }
+                  } },
                 { "setup", json::object() },
                 { "sequence", json::array() }
             };
@@ -134,40 +150,7 @@ namespace camcore
             return result;
         }
 
-        fs::path temporary = path;
-        temporary += ".tmp";
-
-        {
-            std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
-            if (!file)
-            {
-                result.message = "Could not write " + PathText(temporary);
-                return result;
-            }
-
-            file.write(text.data(), static_cast<std::streamsize>(text.size()));
-            file.close();
-
-            if (!file)
-            {
-                std::error_code ignored;
-                fs::remove(temporary, ignored);
-                result.message = "Could not write " + PathText(temporary);
-                return result;
-            }
-        }
-
-        std::error_code error;
-        fs::rename(temporary, path, error);
-        if (error)
-        {
-            std::error_code ignored;
-            fs::remove(temporary, ignored);
-            result.message = "Could not replace " + PathText(path) + ": " + error.message();
-            return result;
-        }
-
-        result.ok = true;
+        result.ok = WriteFileAtomically(path, text, result.message);
         return result;
     }
 

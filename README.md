@@ -9,7 +9,7 @@ The project has these parts:
 | Folder | Purpose |
 |---|---|
 | `addon\` | `AlibreCAM.dll`, the only code that calls Alibre |
-| `core\` | `CamCore` library: job model and `.cam` storage, with no Alibre or MFC code |
+| `core\` | `CamCore` library: job model, tool library and file storage, with no Alibre or MFC code |
 | `tests\` | `CamCoreTests.exe`, which runs without Alibre |
 | `third_party\` | Copies of external libraries, with their licences |
 | `deploy\` | Install and uninstall scripts |
@@ -88,6 +88,7 @@ Visual Studio. The project launches `Alibre Design.exe` and breakpoints in
 | `CommandBase.cpp/.h` | Default `IAlibreAddOnCommand` behaviour |
 | `ModelReader.cpp/.h` | Reads Alibre data into plain data for `CamCore` |
 | `Log.cpp/.h` | The log file |
+| `ToolDialogs.cpp/.h` | The tool library and tool editing dialogs |
 | `AlibreCAM.adc` | Add-on manifest. `specificationVersion="2"` is required for the ribbon tab and icons |
 | `Alibre.props` | Finds the Alibre type libraries |
 | `deploy\*.ps1` | Install and uninstall |
