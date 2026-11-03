@@ -42,6 +42,7 @@ namespace
         ID_CAM_ADD_FACING,
         ID_CAM_EDIT_STEP,
         ID_CAM_RENAME_STEP,
+        ID_CAM_DUPLICATE_STEP,
         ID_CAM_DELETE_STEP
     };
 
@@ -840,6 +841,25 @@ void CCamTabCommand::SelectStep(const StepRef& ref)
     m_selected = ref;
     if (originChanges)
         RebuildScene();
+}
+
+void CCamTabCommand::DuplicateStep(const StepRef& ref)
+{
+    // An open dialog holds a step's position, as for dragging.
+    const camcore::SequenceStep* pStep = FindStep(ref);
+    if (!CanDrag(ref) || pStep == nullptr)
+        return;
+
+    const std::wstring name = FromUtf8(pStep->name);
+    size_t newIndex = 0;
+    if (!camcore::DuplicateStep(m_job, ref.step, ref.IsOperation() ? ref.child : camcore::kNoStepIndex, newIndex))
+        return;
+
+    Log(L"[sequence] duplicated %s", name.c_str());
+    m_selected = ref.IsOperation() ? StepRef{ ref.step, newIndex } : StepRef{ newIndex };
+    MarkJobChanged();
+    ShowSequence();
+    RebuildScene();
 }
 
 bool CCamTabCommand::CanDrag(const StepRef& ref) const
@@ -1736,6 +1756,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     const UINT editable = m_pTab->CanEditSequence() ? MF_ENABLED : MF_GRAYED;
     const UINT renamable = m_pTab->CanRename(ref) ? MF_ENABLED : MF_GRAYED;
     const UINT deletable = m_pTab->CanDelete(ref) ? MF_ENABLED : MF_GRAYED;
+    const UINT duplicable = m_pTab->CanDrag(ref) ? MF_ENABLED : MF_GRAYED;
 
     CMenu menu;
     menu.CreatePopupMenu();
@@ -1745,6 +1766,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     {
         menu.AppendMenu(MF_STRING | renamable, ID_CAM_RENAME_STEP, L"Rename");
         menu.AppendMenu(MF_STRING | deletable, ID_CAM_DELETE_STEP, L"Delete");
+        menu.AppendMenu(MF_STRING | duplicable, ID_CAM_DUPLICATE_STEP, L"Duplicate");
         menu.AppendMenu(MF_SEPARATOR);
 
         holes.CreatePopupMenu();
@@ -1761,6 +1783,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         menu.AppendMenu(MF_STRING | editable, ID_CAM_EDIT_STEP, L"Edit...");
         menu.AppendMenu(MF_STRING | renamable, ID_CAM_RENAME_STEP, L"Rename");
         menu.AppendMenu(MF_STRING | deletable, ID_CAM_DELETE_STEP, L"Delete");
+        menu.AppendMenu(MF_STRING | duplicable, ID_CAM_DUPLICATE_STEP, L"Duplicate");
     }
     else
     {
@@ -1772,6 +1795,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
             menu.AppendMenu(MF_SEPARATOR);
             menu.AppendMenu(MF_STRING | editable, ID_CAM_EDIT_STEP, L"Edit...");
             menu.AppendMenu(MF_STRING | deletable, ID_CAM_DELETE_STEP, L"Delete");
+            menu.AppendMenu(MF_STRING | duplicable, ID_CAM_DUPLICATE_STEP, L"Duplicate");
         }
     }
 
@@ -1793,6 +1817,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     case ID_CAM_EDIT_STEP:   m_pTab->EditStep(ref); break;
     case ID_CAM_RENAME_STEP: m_tree.EditLabel(hItem); break;
     case ID_CAM_DELETE_STEP: m_pTab->DeleteStep(ref); break;
+    case ID_CAM_DUPLICATE_STEP: m_pTab->DuplicateStep(ref); break;
     default:                 break;
     }
 }

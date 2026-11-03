@@ -134,6 +134,13 @@ namespace camcore
     bool MoveOperation(Job& job, size_t fromGroup, size_t fromIndex, size_t toGroup, size_t insertBefore,
                        size_t& newIndex);
 
+    // Copies a step, or an operation when operation isn't kNoStepIndex, to just
+    // below it. A group's copy holds copies of its operations. Every copy gets a
+    // new ID, and the copied step's name gets " (copy)". Returns false, changing
+    // nothing, if there's no such step. newIndex is where the copy is: in the
+    // sequence, or in the group for an operation.
+    bool DuplicateStep(Job& job, size_t step, size_t operation, size_t& newIndex);
+
     LoadResult LoadJob(const std::filesystem::path& path);
 
     // Writes a temporary file and then replaces the target, so a failed save

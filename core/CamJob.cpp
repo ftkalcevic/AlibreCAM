@@ -751,6 +751,27 @@ namespace camcore
         return true;
     }
 
+    bool DuplicateStep(Job& job, size_t step, size_t operation, size_t& newIndex)
+    {
+        if (step >= job.sequence.size())
+            return false;
+
+        std::vector<SequenceStep>& list = (operation == kNoStepIndex) ? job.sequence : job.sequence[step].children;
+        const size_t index = (operation == kNoStepIndex) ? step : operation;
+        if (index >= list.size())
+            return false;
+
+        SequenceStep copy = list[index];
+        copy.id = NewStableId();
+        copy.name += " (copy)";
+        for (SequenceStep& child : copy.children)
+            child.id = NewStableId();
+
+        list.insert(list.begin() + static_cast<ptrdiff_t>(index + 1), std::move(copy));
+        newIndex = index + 1;
+        return true;
+    }
+
     IdentityMatch CompareIdentity(const AssemblyIdentity& a, const AssemblyIdentity& b)
     {
         if (a.guid.empty() || b.guid.empty())

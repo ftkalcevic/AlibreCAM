@@ -810,6 +810,54 @@ TEST_CASE("operations move within a folder and between folders")
     }
 }
 
+TEST_CASE("a duplicate goes just below the original, with new IDs")
+{
+    size_t newIndex = 0;
+
+    SUBCASE("a folder and its operations")
+    {
+        Job job = JobToReorder();
+        job.sequence[2].children[0].drill.depth = 7;
+        REQUIRE(DuplicateStep(job, 2, kNoStepIndex, newIndex));
+        CHECK(newIndex == 3);
+        CHECK(Names(job.sequence) == "O1 O2 F1 F1 (copy) F2");
+
+        const SequenceStep& copy = job.sequence[3];
+        CHECK(copy.type == StepType::Group);
+        CHECK(Names(copy.children) == "D1 D2");
+        CHECK(copy.children[0].drill.depth == 7);
+        CHECK(copy.id != job.sequence[2].id);
+        CHECK(copy.children[0].id != job.sequence[2].children[0].id);
+        CHECK(copy.children[1].id != job.sequence[2].children[1].id);
+    }
+
+    SUBCASE("a Set Origin")
+    {
+        Job job = JobToReorder();
+        REQUIRE(DuplicateStep(job, 0, kNoStepIndex, newIndex));
+        CHECK(Names(job.sequence) == "O1 O1 (copy) O2 F1 F2");
+        CHECK(job.sequence[1].type == StepType::SetOrigin);
+    }
+
+    SUBCASE("an operation stays in its folder")
+    {
+        Job job = JobToReorder();
+        REQUIRE(DuplicateStep(job, 2, 0, newIndex));
+        CHECK(newIndex == 1);
+        CHECK(Names(job.sequence[2].children) == "D1 D1 (copy) D2");
+        CHECK(job.sequence[2].children[1].id != job.sequence[2].children[0].id);
+        CHECK(Names(job.sequence) == "O1 O2 F1 F2");
+    }
+
+    SUBCASE("nothing to copy")
+    {
+        Job job = JobToReorder();
+        CHECK_FALSE(DuplicateStep(job, 9, kNoStepIndex, newIndex));
+        CHECK_FALSE(DuplicateStep(job, 2, 5, newIndex));
+        CHECK(Names(job.sequence) == "O1 O2 F1 F2");
+    }
+}
+
 TEST_CASE("stable IDs are long and unique")
 {
     CHECK(NewStableId().size() == 32);

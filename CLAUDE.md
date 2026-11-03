@@ -65,6 +65,7 @@ Target Alibre 27.0.1.27039. The API docs describe v29, so a documented call may 
 - The Clearance tab is built, installed and untested: `CClearancePage` in `addon\OperationDialog`, with `ClearanceSettings` in `core\Clearance`, saved under `clearance` in each operation.
 - The Tool tab is built, installed and untested: `CToolPage` in `addon\OperationDialog`, storing `SequenceStep::toolId` (saved as `tool`). It lists the whole library for now, with no filter by operation.
 - The Feeds & Speeds tab is built, installed and untested: `CFeedsPage` in `addon\OperationDialog`, with `FeedSettings` in `core\Feeds`, saved under `feeds`. Its unit labels are fixed at mm/min until the job has a display unit.
+- Duplicate on tree items is built, installed and untested (`DuplicateStep` in `core\CamJob`).
 - Dragging to reorder the tree is also built, installed and untested. The rules are `MoveStep` and `MoveOperation` in `core\CamJob`; the tab window holds the mouse capture during a drag.
 - Unproven in Alibre: whether typing a folder name in the tree's in-place edit reaches the edit, or whether Alibre takes the keys as shortcuts. Also whether alpha is honoured on lines (the grid is meant to be faint), whether `IsSenseReversed` gives the outward face normal, and keyboard use in the modeless dialog. Alibre's message loop doesn't call `IsDialogMessage`, so Tab and Enter may not work there.
 

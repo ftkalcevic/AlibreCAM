@@ -64,6 +64,7 @@ public:
     void EditStep(const StepRef& ref);
     void DeleteStep(const StepRef& ref);
     void SelectStep(const StepRef& ref);
+    void DuplicateStep(const StepRef& ref);     // the copy goes just below
 
     // Dragging to reorder. Steps never change level, and the first step stays a Set Origin.
     bool CanDrag(const StepRef& ref) const;
