@@ -12,6 +12,7 @@
 #include "Drill.h"
 #include "Feeds.h"
 #include "Origin.h"
+#include "Toolpath.h"
 
 namespace camcore
 {
@@ -56,6 +57,9 @@ namespace camcore
         // the speeds and feeds to use it at.
         std::string toolId;
         FeedSettings feeds;
+
+        // Operations only: the last toolpath generated. Empty until Generate runs.
+        Toolpath toolpath;
 
         // Drill operations only
         DrillSettings drill;

@@ -316,6 +316,52 @@ namespace camcore
                    ReadNumber(*item, "transfer", feeds.transfer);
         }
 
+        // Each move is [kind, x, y, z, feed, seconds], kind 0 rapid, 1 feed, 2 dwell.
+        json WriteToolpath(const Toolpath& toolpath)
+        {
+            json moves = json::array();
+            for (const ToolpathMove& move : toolpath.moves)
+            {
+                const int kind = (move.kind == MoveKind::Feed) ? 1 : (move.kind == MoveKind::Dwell) ? 2 : 0;
+                moves.push_back(json::array({ kind, move.to.x, move.to.y, move.to.z, move.feed, move.seconds }));
+            }
+            return moves;
+        }
+
+        // Operations never generated have no toolpath.
+        bool ReadToolpath(const json& step, Toolpath& toolpath)
+        {
+            toolpath = Toolpath();
+            const auto item = step.find("toolpath");
+            if (item == step.end())
+                return true;
+            if (!item->is_array())
+                return false;
+
+            for (const json& entry : *item)
+            {
+                if (!entry.is_array() || entry.size() != 6)
+                    return false;
+                for (const json& number : entry)
+                {
+                    if (!number.is_number())
+                        return false;
+                }
+
+                const int kind = entry[0].get<int>();
+                if (kind < 0 || kind > 2)
+                    return false;
+
+                ToolpathMove move;
+                move.kind = (kind == 1) ? MoveKind::Feed : (kind == 2) ? MoveKind::Dwell : MoveKind::Rapid;
+                move.to = { entry[1].get<double>(), entry[2].get<double>(), entry[3].get<double>() };
+                move.feed = entry[4].get<double>();
+                move.seconds = entry[5].get<double>();
+                toolpath.moves.push_back(move);
+            }
+            return true;
+        }
+
         // Operations saved before the Tool tab existed have no tool.
         bool ReadTool(const json& step, std::string& toolId)
         {
@@ -444,12 +490,12 @@ namespace camcore
             // Facing settings join this when the Facing tab is built.
             if (step.type == StepType::Facing)
                 return { { "type", "facing" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
-                         { "feeds", WriteFeeds(step.feeds) },
+                         { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
                          { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) } };
 
             if (step.type == StepType::Drill)
                 return { { "type", "drill" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
-                         { "feeds", WriteFeeds(step.feeds) },
+                         { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
                          { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
                          { "drilling", WriteDrilling(step.drill) } };
 
@@ -501,7 +547,8 @@ namespace camcore
             if (type == "facing")
             {
                 step.type = StepType::Facing;
-                return ReadTool(item, step.toolId) && ReadFeeds(item, step.feeds) && ReadFeatures(item, step.features) &&
+                return ReadTool(item, step.toolId) && ReadFeeds(item, step.feeds) && ReadToolpath(item, step.toolpath) &&
+                       ReadFeatures(item, step.features) &&
                        ReadClearance(item, step.clearance);
             }
 
@@ -509,7 +556,8 @@ namespace camcore
             {
                 // Drills saved before the Drilling tab existed have no settings yet.
                 step.type = StepType::Drill;
-                if (!ReadTool(item, step.toolId) || !ReadFeeds(item, step.feeds) || !ReadFeatures(item, step.features) ||
+                if (!ReadTool(item, step.toolId) || !ReadFeeds(item, step.feeds) || !ReadToolpath(item, step.toolpath) ||
+                    !ReadFeatures(item, step.features) ||
                     !ReadClearance(item, step.clearance))
                     return false;
                 const auto drilling = item.find("drilling");

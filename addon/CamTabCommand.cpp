@@ -5,6 +5,7 @@
 #include "AddOnInterface.h"
 #include "CamTabCommand.h"
 #include "DisplaySettings.h"
+#include "DrillToolpath.h"
 #include "GeometryReader.h"
 #include "ModelReader.h"
 #include "ToolDialogs.h"
@@ -43,6 +44,7 @@ namespace
         ID_CAM_EDIT_STEP,
         ID_CAM_RENAME_STEP,
         ID_CAM_DUPLICATE_STEP,
+        ID_CAM_GENERATE,
         ID_CAM_DELETE_STEP
     };
 
@@ -837,9 +839,10 @@ void CCamTabCommand::SelectStep(const StepRef& ref)
     if (FindStep(ref) == nullptr)
         return;
 
-    const bool originChanges = (ref.step != m_selected.step);
+    // The origin, and which toolpath is drawn bold, follow the selection.
+    const bool changed = (ref.step != m_selected.step || ref.child != m_selected.child);
     m_selected = ref;
-    if (originChanges)
+    if (changed)
         RebuildScene();
 }
 
@@ -860,6 +863,126 @@ void CCamTabCommand::DuplicateStep(const StepRef& ref)
     MarkJobChanged();
     ShowSequence();
     RebuildScene();
+}
+
+bool CCamTabCommand::CanGenerate() const
+{
+    // An open dialog may be changing an operation's settings.
+    return CanEditSequence() && !IsDialogOpen();
+}
+
+void CCamTabCommand::Generate(const StepRef& scope)
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    if (!CanGenerate())
+        return;
+
+    // No step means every operation, a folder means its operations, and an operation itself.
+    std::vector<StepRef> targets;
+    for (size_t i = 0; i < m_job.sequence.size(); ++i)
+    {
+        if (scope.step != StepRef::kNone && scope.step != i)
+            continue;
+        for (size_t c = 0; c < m_job.sequence[i].children.size(); ++c)
+        {
+            if (!scope.IsOperation() || scope.child == c)
+                targets.push_back(StepRef{ i, c });
+        }
+    }
+
+    if (targets.empty())
+    {
+        ShowError(L"There are no operations to generate.");
+        return;
+    }
+
+    // The clearance plane can depend on the parts' size, which may have changed.
+    ReadModelSize();
+
+    size_t generated = 0;
+    std::wstring problems;
+    for (const StepRef& target : targets)
+    {
+        camcore::SequenceStep& operation = m_job.sequence[target.step].children[target.child];
+        std::string problem;
+        if (GenerateOperation(target, problem))
+        {
+            ++generated;
+        }
+        else
+        {
+            operation.toolpath = camcore::Toolpath();
+            problems += L"\n" + FromUtf8(operation.name) + L": " + FromUtf8(problem);
+        }
+        Log(L"[generate] %s: %s", FromUtf8(operation.name).c_str(),
+            problem.empty() ? L"ok" : FromUtf8(problem).c_str());
+    }
+
+    MarkJobChanged();
+    RebuildScene();
+
+    const std::wstring summary = L"Generated " + std::to_wstring(generated) + L" of " +
+                                 std::to_wstring(targets.size()) +
+                                 (targets.size() == 1 ? L" operation." : L" operations.");
+    m_sequenceStatus = summary;
+    ShowStatus();
+    if (!problems.empty())
+        ::MessageBoxW(theApp.m_hAlibreWnd, (summary + L"\n" + problems).c_str(), L"AlibreCAM", MB_OK | MB_ICONWARNING);
+}
+
+bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& problem)
+{
+    camcore::SequenceStep& operation = m_job.sequence[target.step].children[target.child];
+    if (operation.type != camcore::StepType::Drill)
+    {
+        problem = "Toolpaths for this operation aren't built yet.";
+        return false;
+    }
+
+    const size_t active = camcore::ActiveOriginIndex(m_job, target.step);
+    const camcore::FrameResult frame = (active != camcore::kNoStepIndex)
+                                           ? camcore::BuildFrame(m_job.sequence[active].origin)
+                                           : camcore::FrameResult();
+    if (!frame.ok)
+    {
+        problem = "There's no complete Set Origin above its folder.";
+        return false;
+    }
+
+    const camcore::Tool* pTool = camcore::FindToolById(m_library, operation.toolId);
+    camcore::Tool tool;
+    if (pTool != nullptr)
+        tool = camcore::ToolInMillimetres(*pTool);
+
+    camcore::DrillToolpathInput input;
+    input.operation = &operation;
+    input.frame = frame.frame;
+    input.tool = (pTool != nullptr) ? &tool : nullptr;
+
+    // The parts' highest point in the origin's frame is the highest corner of their box.
+    if (m_haveBounds)
+    {
+        input.havePartMaxZ = true;
+        for (int i = 0; i < 8; ++i)
+        {
+            const camcore::Vec3 corner{ (i & 1) ? m_boundsUpper.x : m_boundsLower.x,
+                                        (i & 2) ? m_boundsUpper.y : m_boundsLower.y,
+                                        (i & 4) ? m_boundsUpper.z : m_boundsLower.z };
+            const double height = camcore::WorldToFrame(frame.frame, corner).z;
+            input.partMaxZ = (i == 0) ? height : (std::max)(input.partMaxZ, height);
+        }
+    }
+
+    const camcore::ToolpathResult result = camcore::GenerateDrillToolpath(input);
+    if (!result.ok)
+    {
+        problem = result.problem;
+        return false;
+    }
+
+    operation.toolpath = result.toolpath;
+    return true;
 }
 
 bool CCamTabCommand::CanDrag(const StepRef& ref) const
@@ -1007,7 +1130,9 @@ void CCamTabCommand::OnOperationDialogDone(COperationDlg* pDialog, bool apply)
         return;
 
     std::vector<camcore::SequenceStep>& children = m_job.sequence[m_operationTarget.step].children;
-    const camcore::SequenceStep& step = pDialog->GetStep();
+    // Its settings may have changed, so the old toolpath no longer fits it.
+    camcore::SequenceStep step = pDialog->GetStep();
+    step.toolpath = camcore::Toolpath();
     if (m_operationTarget.child == kNewStep)
     {
         children.push_back(step);
@@ -1187,6 +1312,50 @@ void CCamTabCommand::RebuildScene()
             m_scene.origin = result.frame;
             m_scene.plane = camcore::PlaneCoveringBox(result.frame, lower, upper, kOriginPlaneMargin);
             m_scene.hasOrigin = true;
+        }
+    }
+
+    // Every generated toolpath, brought from its origin's frame into the assembly.
+    m_scene.showToolpaths = !IsPicking();
+    m_scene.toolpaths.clear();
+    for (size_t i = 0; i < m_job.sequence.size(); ++i)
+    {
+        const size_t active = camcore::ActiveOriginIndex(m_job, i);
+        const camcore::FrameResult frame = (active != camcore::kNoStepIndex)
+                                               ? camcore::BuildFrame(m_job.sequence[active].origin)
+                                               : camcore::FrameResult();
+        if (!frame.ok)
+            continue;
+
+        for (size_t c = 0; c < m_job.sequence[i].children.size(); ++c)
+        {
+            const std::vector<camcore::ToolpathMove>& moves = m_job.sequence[i].children[c].toolpath.moves;
+            if (moves.empty())
+                continue;
+
+            CamScene::Toolpath drawn;
+            // Bold when its operation is selected, or its folder is, which selects them all.
+            drawn.selected = (m_selected.step == i && (!m_selected.IsOperation() || m_selected.child == c));
+
+            // A run carries on while moves are the same kind. The first move only says where it starts.
+            camcore::Vec3 at = camcore::FramePointToWorld(frame.frame, moves.front().to);
+            camcore::MoveKind runKind = camcore::MoveKind::Dwell;
+            for (size_t m = 1; m < moves.size(); ++m)
+            {
+                const camcore::ToolpathMove& move = moves[m];
+                if (move.kind == camcore::MoveKind::Dwell)
+                    continue;
+
+                const camcore::Vec3 to = camcore::FramePointToWorld(frame.frame, move.to);
+                std::vector<std::vector<camcore::Vec3>>& runs =
+                    (move.kind == camcore::MoveKind::Rapid) ? drawn.rapids : drawn.feeds;
+                if (move.kind != runKind || runs.empty())
+                    runs.push_back({ at });
+                runs.back().push_back(to);
+                runKind = move.kind;
+                at = to;
+            }
+            m_scene.toolpaths.push_back(std::move(drawn));
         }
     }
 
@@ -1757,6 +1926,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     const UINT renamable = m_pTab->CanRename(ref) ? MF_ENABLED : MF_GRAYED;
     const UINT deletable = m_pTab->CanDelete(ref) ? MF_ENABLED : MF_GRAYED;
     const UINT duplicable = m_pTab->CanDrag(ref) ? MF_ENABLED : MF_GRAYED;
+    const UINT generatable = m_pTab->CanGenerate() ? MF_ENABLED : MF_GRAYED;
 
     CMenu menu;
     menu.CreatePopupMenu();
@@ -1777,6 +1947,8 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         twoAndAHalfAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_FACING, L"Facing...");
         menu.AppendMenu(MF_POPUP | editable, reinterpret_cast<UINT_PTR>(twoAndAHalfAxis.GetSafeHmenu()),
                         L"Add 2 1/2 Axis");
+        menu.AppendMenu(MF_SEPARATOR);
+        menu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
     }
     else if (onStep && m_pTab->IsOperation(ref))
     {
@@ -1784,6 +1956,8 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         menu.AppendMenu(MF_STRING | renamable, ID_CAM_RENAME_STEP, L"Rename");
         menu.AppendMenu(MF_STRING | deletable, ID_CAM_DELETE_STEP, L"Delete");
         menu.AppendMenu(MF_STRING | duplicable, ID_CAM_DUPLICATE_STEP, L"Duplicate");
+        menu.AppendMenu(MF_SEPARATOR);
+        menu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
     }
     else
     {
@@ -1796,6 +1970,11 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
             menu.AppendMenu(MF_STRING | editable, ID_CAM_EDIT_STEP, L"Edit...");
             menu.AppendMenu(MF_STRING | deletable, ID_CAM_DELETE_STEP, L"Delete");
             menu.AppendMenu(MF_STRING | duplicable, ID_CAM_DUPLICATE_STEP, L"Duplicate");
+        }
+        else
+        {
+            menu.AppendMenu(MF_SEPARATOR);
+            menu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
         }
     }
 
@@ -1818,6 +1997,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     case ID_CAM_RENAME_STEP: m_tree.EditLabel(hItem); break;
     case ID_CAM_DELETE_STEP: m_pTab->DeleteStep(ref); break;
     case ID_CAM_DUPLICATE_STEP: m_pTab->DuplicateStep(ref); break;
+    case ID_CAM_GENERATE:    m_pTab->Generate(ref); break;
     default:                 break;
     }
 }

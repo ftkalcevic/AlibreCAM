@@ -66,6 +66,10 @@ public:
     void SelectStep(const StepRef& ref);
     void DuplicateStep(const StepRef& ref);     // the copy goes just below
 
+    // Calculates toolpaths: every operation with no step, a folder's, or one operation's.
+    bool CanGenerate() const;
+    void Generate(const StepRef& scope);
+
     // Dragging to reorder. Steps never change level, and the first step stays a Set Origin.
     bool CanDrag(const StepRef& ref) const;
     bool CanMoveStep(const StepRef& from, const StepRef& target, DropSide side) const;
@@ -138,6 +142,7 @@ private:
     void CloseOperationDialog();
     bool PrepareSelection(const SelectionFilter& wanted);     // false if the view couldn't start
     bool IsPicking() const;
+    bool GenerateOperation(const StepRef& target, std::string& problem);
     void RestoreSelectionFilter();
     void HandleLocate();
 

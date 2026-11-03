@@ -66,6 +66,7 @@ Target Alibre 27.0.1.27039. The API docs describe v29, so a documented call may 
 - The Tool tab is built, installed and untested: `CToolPage` in `addon\OperationDialog`, storing `SequenceStep::toolId` (saved as `tool`). It lists the whole library for now, with no filter by operation.
 - The Feeds & Speeds tab is built, installed and untested: `CFeedsPage` in `addon\OperationDialog`, with `FeedSettings` in `core\Feeds`, saved under `feeds`. Its unit labels are fixed at mm/min until the job has a display unit.
 - Duplicate on tree items is built, installed and untested (`DuplicateStep` in `core\CamJob`).
+- Generate and drill toolpaths are built, installed and untested. The generator is `GenerateDrillToolpath` in `core\DrillToolpath`, the moves are `core\Toolpath` (saved under `toolpath` in the origin's frame), and `CCamTabCommand::Generate` runs it. Toolpaths are drawn as polylines in `CamScene::toolpaths`. Automatic clearance is a stand-in (5 mm above the parts) until it's decided, and editing an operation discards its toolpath. Out-of-date marking is still step 7.
 - Dragging to reorder the tree is also built, installed and untested. The rules are `MoveStep` and `MoveOperation` in `core\CamJob`; the tab window holds the mouse capture during a drag.
 - Unproven in Alibre: whether typing a folder name in the tree's in-place edit reaches the edit, or whether Alibre takes the keys as shortcuts. Also whether alpha is honoured on lines (the grid is meant to be faint), whether `IsSenseReversed` gives the outward face normal, and keyboard use in the modeless dialog. Alibre's message loop doesn't call `IsDialogMessage`, so Tab and Enter may not work there.
 
@@ -74,7 +75,7 @@ Target Alibre 27.0.1.27039. The API docs describe v29, so a documented call may 
 1. Done: CAM tab, tree, and `.cam` file.
 2. Done: tool library and selecting a tool in the tree.
 3. `Set Origin` and its drawing in the view. **This is the current step.** Built and installed, awaiting Frank's test.
-4. Drill: picking geometry and drawing the toolpath with the selected tool. **Started:** the menus and an empty tabbed dialog are built, and the tabs come next, one at a time.
+4. Drill: picking geometry and drawing the toolpath with the selected tool. Built: the menus, every Drill tab, Generate, and drawing the drill toolpath. All of it awaits Frank's test.
 5. Machine, post language, and stock, through to G-code that can be cut on the router.
 6. Facing, Contour, and Pocket.
 7. Groups, out-of-date marking, and repair.

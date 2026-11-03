@@ -190,10 +190,44 @@ STDMETHODIMP CCamViewCommand::On3DRender()
 
 void CCamViewCommand::DrawScene(IADAddOnCanvasDisplay* pCanvas, const CamScene& scene)
 {
+    const double unit = scene.millimetresPerUnit;
+
+    if (scene.showToolpaths)
+    {
+        for (const CamScene::Toolpath& toolpath : scene.toolpaths)
+        {
+            const float weight = toolpath.selected ? kSelectedToolpathLineWeight : kToolpathLineWeight;
+            const struct
+            {
+                const wchar_t* name;
+                const DisplayColour& colour;
+                const std::vector<std::vector<Vec3>>& runs;
+            } kinds[] =
+            {
+                { L"Toolpath rapids", kRapidColour, toolpath.rapids },
+                { L"Toolpath feeds", kFeedColour, toolpath.feeds }
+            };
+
+            for (const auto& kind : kinds)
+            {
+                if (kind.runs.empty())
+                    continue;
+                const __int64 segment = AddSegment(pCanvas, kind.name, kind.colour, weight, scene.foreground);
+                for (const std::vector<Vec3>& run : kind.runs)
+                {
+                    std::vector<float> points;
+                    points.reserve(run.size() * 3);
+                    for (const Vec3& point : run)
+                        AddPoint(points, point, unit);
+                    DrawPolyline(pCanvas, segment, points);
+                }
+            }
+        }
+    }
+
     if (!scene.hasOrigin)
         return;
 
-    const double unit = scene.millimetresPerUnit;
     const camcore::Frame& frame = scene.origin;
 
     if (scene.showPlane)

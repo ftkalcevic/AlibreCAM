@@ -8,6 +8,8 @@
 #include "CommandBase.h"
 #include "Origin.h"
 
+#include <vector>
+
 class CCamTabCommand;
 
 // What the view draws, in assembly millimetres. The tab builds it.
@@ -21,6 +23,17 @@ struct CamScene
     bool showPlane = true;
     camcore::Frame origin;
     camcore::PlaneRectangle plane;
+
+    // Each operation's toolpath as runs of connected lines, already in assembly
+    // coordinates. Left out while picking, like the plane.
+    struct Toolpath
+    {
+        std::vector<std::vector<camcore::Vec3>> rapids;
+        std::vector<std::vector<camcore::Vec3>> feeds;
+        bool selected = false;
+    };
+    std::vector<Toolpath> toolpaths;
+    bool showToolpaths = true;
 
     bool foreground = true;     // drawn over the model, rather than hidden by it
     double millimetresPerUnit = 10.0;

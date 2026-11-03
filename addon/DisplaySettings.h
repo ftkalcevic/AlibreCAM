@@ -29,4 +29,10 @@ const DisplayColour kOriginYColour = { 40, 200, 40, 255 };
 const DisplayColour kOriginZColour = { 40, 90, 255, 255 };
 
 const double kOriginAxisLengthMm = 25.0;
+
+// Toolpaths. The canvas has no dashed lines, so rapids differ by colour only.
+const DisplayColour kRapidColour = { 220, 40, 40, 255 };
+const DisplayColour kFeedColour = { 30, 110, 230, 255 };
+const float kToolpathLineWeight = 1.5f;
+const float kSelectedToolpathLineWeight = 3.0f;
 const float kOriginLineWeight = 3.0f;

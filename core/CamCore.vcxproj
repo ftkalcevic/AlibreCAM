@@ -65,6 +65,7 @@
     <ClCompile Include="CamJob.cpp" />
     <ClCompile Include="Clearance.cpp" />
     <ClCompile Include="Drill.cpp" />
+    <ClCompile Include="DrillToolpath.cpp" />
     <ClCompile Include="Features.cpp" />
     <ClCompile Include="Feeds.cpp" />
     <ClCompile Include="FileIO.cpp" />
@@ -75,11 +76,13 @@
     <ClInclude Include="CamJob.h" />
     <ClInclude Include="Clearance.h" />
     <ClInclude Include="Drill.h" />
+    <ClInclude Include="DrillToolpath.h" />
     <ClInclude Include="Features.h" />
     <ClInclude Include="Feeds.h" />
     <ClInclude Include="FileIO.h" />
     <ClInclude Include="Origin.h" />
     <ClInclude Include="ToolLibrary.h" />
+    <ClInclude Include="Toolpath.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

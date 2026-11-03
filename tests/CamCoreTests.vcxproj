@@ -68,6 +68,7 @@
     <ClCompile Include="CamCoreTests.cpp" />
     <ClCompile Include="FeatureTests.cpp" />
     <ClCompile Include="OriginTests.cpp" />
+    <ClCompile Include="ToolpathTests.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\core\CamCore.vcxproj">
