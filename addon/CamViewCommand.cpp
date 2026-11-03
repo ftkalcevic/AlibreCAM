@@ -40,13 +40,6 @@ namespace
         values.push_back(static_cast<float>(mm.z / millimetresPerUnit));
     }
 
-    void AddDirection(std::vector<float>& values, const Vec3& direction)
-    {
-        values.push_back(static_cast<float>(direction.x));
-        values.push_back(static_cast<float>(direction.y));
-        values.push_back(static_cast<float>(direction.z));
-    }
-
     __int64 AddSegment(IADAddOnCanvasDisplay* pCanvas, const wchar_t* name, const DisplayColour& colour,
                        float lineWeight, bool foreground)
     {
@@ -81,51 +74,19 @@ namespace
         DrawPolyline(pCanvas, segment, points);
     }
 
-    // The plane is drawn twice, once facing each way, so it shows from both sides.
-    void DrawPlane(IADAddOnCanvasDisplay* pCanvas, const camcore::PlaneRectangle& plane, const Vec3& normal,
+    // The plane is an outline and grid lines rather than a shaded mesh. Alibre
+    // picks add-on graphics before the model behind them, and a mesh would cover
+    // everything behind the plane.
+    void DrawPlane(IADAddOnCanvasDisplay* pCanvas, const camcore::Frame& frame, const camcore::PlaneRectangle& plane,
                    bool foreground, double millimetresPerUnit)
     {
-        std::vector<float> vertices;
-        std::vector<float> normals;
-        for (int side = 0; side < 2; ++side)
-        {
-            for (const Vec3& corner : plane.corners)
-            {
-                AddPoint(vertices, corner, millimetresPerUnit);
-                AddDirection(normals, side == 0 ? normal : normal * -1.0);
-            }
-        }
+        const __int64 grid = AddSegment(pCanvas, L"Origin plane grid", kOriginGridColour, kOriginGridLineWeight,
+                                        foreground);
+        for (const camcore::LineSegment& line : camcore::PlaneGrid(frame, plane, kOriginGridDivisions))
+            DrawLine(pCanvas, grid, line.from, line.to, millimetresPerUnit);
 
-        // Each face is its vertex count followed by the vertex indices.
-        const std::vector<int> indices =
-        {
-            3, 0, 1, 2,   3, 0, 2, 3,
-            3, 4, 6, 5,   3, 4, 7, 6
-        };
-
-        const __int64 segment = AddSegment(pCanvas, L"Origin plane", kOriginPlaneColour, 1.0f, foreground);
-
-        SAFEARRAY* pVertices = MakeArray(VT_R4, vertices);
-        SAFEARRAY* pNormals = MakeArray(VT_R4, normals);
-        SAFEARRAY* pIndices = MakeArray(VT_I4, indices);
-        if (pVertices != nullptr && pNormals != nullptr && pIndices != nullptr)
-        {
-            __int64 result = 0;
-            const HRESULT hr = pCanvas->DrawMesh(segment, &pVertices, &pNormals, &pIndices, &result);
-            if (FAILED(hr))
-                Log(L"[view] DrawMesh failed hr=0x%08X", static_cast<unsigned>(hr));
-        }
-        if (pVertices != nullptr)
-            SafeArrayDestroy(pVertices);
-        if (pNormals != nullptr)
-            SafeArrayDestroy(pNormals);
-        if (pIndices != nullptr)
-            SafeArrayDestroy(pIndices);
-
-        // An opaque outline, so the plane's extent shows even if Alibre ignores the alpha.
-        DisplayColour outlineColour = kOriginPlaneColour;
-        outlineColour.alpha = 255;
-        const __int64 outline = AddSegment(pCanvas, L"Origin plane outline", outlineColour, 1.0f, foreground);
+        const __int64 outline = AddSegment(pCanvas, L"Origin plane outline", kOriginPlaneColour,
+                                           kOriginOutlineLineWeight, foreground);
         std::vector<float> points;
         for (int i = 0; i <= 4; ++i)
             AddPoint(points, plane.corners[i % 4], millimetresPerUnit);
@@ -235,7 +196,8 @@ void CCamViewCommand::DrawScene(IADAddOnCanvasDisplay* pCanvas, const CamScene& 
     const double unit = scene.millimetresPerUnit;
     const camcore::Frame& frame = scene.origin;
 
-    DrawPlane(pCanvas, scene.plane, frame.zAxis, scene.foreground, unit);
+    if (scene.showPlane)
+        DrawPlane(pCanvas, frame, scene.plane, scene.foreground, unit);
 
     const struct
     {

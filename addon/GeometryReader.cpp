@@ -109,6 +109,11 @@ namespace
             return assembly * m_assemblyMm;
         }
 
+        double Length(double part) const
+        {
+            return part * m_partToAssembly * m_assemblyMm;
+        }
+
         Vec3 Direction(const Vec3& part) const
         {
             const double* m = m_matrix;
@@ -140,6 +145,47 @@ namespace
         return true;
     }
 
+    // A hole's ends are the centres of the circles bounding its face, furthest
+    // apart along the axis. Without two, both ends are the base point.
+    void FindCylinderEnds(IADFace* pFace, PickedGeometry& pick)
+    {
+        pick.start = pick.end = pick.point;
+
+        Vec3 axis;
+        if (!camcore::Normalise(pick.direction, axis))
+            return;
+
+        bool found = false;
+        double low = 0.0, high = 0.0;
+        IADEdgesPtr edges = pFace->GetEdges();
+        const long count = (edges != nullptr) ? edges->GetCount() : 0;
+        for (long i = 0; i < count; ++i)
+        {
+            IADCurvePtr curve = edges->GetItem(i)->GetGeometry();
+            Vec3 centre;
+            if (IADCirclePtr circle = QI<IADCirclePtr>(curve))
+                centre = ToVec3(circle->GetCenter());
+            else if (IADCircularArcPtr arc = QI<IADCircularArcPtr>(curve))
+                centre = ToVec3(arc->GetCenter());
+            else
+                continue;
+
+            const double along = camcore::Dot(centre - pick.point, axis);
+            if (!found || along < low)
+            {
+                low = along;
+                pick.start = centre;
+            }
+            if (!found || along > high)
+            {
+                high = along;
+                pick.end = centre;
+            }
+            found = true;
+        }
+        Log(L"[pick] cylinder ends %s, %.4f apart", found ? L"found" : L"not found", high - low);
+    }
+
     bool ReadFace(IADFace* pFace, PickedGeometry& pick)
     {
         Vec3 point, normal;
@@ -155,7 +201,9 @@ namespace
             pick.kind = PickKind::CylindricalFace;
             pick.point = ToVec3(cylinder->GetBasePoint());
             pick.direction = ToVec3(cylinder->GetAxis());
-            Log(L"[pick] cylindrical face, radius %g", cylinder->GetRadius());
+            pick.radius = cylinder->GetRadius();
+            FindCylinderEnds(pFace, pick);
+            Log(L"[pick] cylindrical face, radius %g", pick.radius);
         }
         else
         {
@@ -216,12 +264,14 @@ namespace
             pick.kind = PickKind::CircleEdge;
             pick.point = ToVec3(circle->GetCenter());
             pick.direction = ToVec3(circle->GetAxis());
+            pick.radius = circle->GetRadius();
         }
         else if (IADCircularArcPtr arc = QI<IADCircularArcPtr>(curve))
         {
             pick.kind = PickKind::CircleEdge;
             pick.point = ToVec3(arc->GetCenter());
             pick.direction = ToVec3(arc->GetAxis());
+            pick.radius = arc->GetRadius();
         }
         else
         {
@@ -303,6 +353,7 @@ bool ReadSelectedPick(IADSession* pAssembly, PickFilter filter, PickedGeometry& 
         pick.start = transform.Point(pick.start);
         pick.end = transform.Point(pick.end);
         pick.direction = transform.Direction(pick.direction);
+        pick.radius = transform.Length(pick.radius);
 
         // The clicked point is already in assembly coordinates.
         pick.clicked = (clicked != nullptr) ? ToVec3(clicked) * assemblyMm : pick.point;
@@ -468,6 +519,213 @@ bool ReadSelectedLocate(IADSession* pAssembly, camcore::LocatedGeometry& located
         Log(L"[locate] could not read the selection: hr=0x%08X", static_cast<unsigned>(error.Error()));
         problem = std::wstring(L"That couldn't be read. ") + allowed;
         return false;
+    }
+}
+
+namespace
+{
+    // Reads one selected item as a feature. Returns false if it isn't one the filter allows.
+    bool ReadFeatureItem(IDispatch* pItem, double assemblyMm, camcore::FeatureFilter filter, PickedGeometry& pick)
+    {
+        pick = PickedGeometry();
+
+        // Part items come as proxies. The assembly's own design points may not.
+        IADTargetProxyPtr proxy = QI<IADTargetProxyPtr>(pItem);
+        IADOccurrencePtr occurrence = (proxy != nullptr) ? proxy->GetOccurrence() : nullptr;
+        IDispatchPtr target = (proxy != nullptr) ? proxy->GetTarget() : IDispatchPtr(pItem);
+        if (target == nullptr)
+            return false;
+
+        bool read = false;
+        if (IADDesignPointPtr point = QI<IADDesignPointPtr>(target))
+        {
+            pick.kind = PickKind::DesignPoint;
+            pick.point = ToVec3(point->GetGeometry());
+            pick.targetName = ToUtf8(static_cast<const wchar_t*>(point->GetName()));
+            read = true;
+        }
+        else if (IADEdgePtr edge = QI<IADEdgePtr>(target))
+        {
+            read = ReadEdge(edge, pick);
+        }
+        else if (IADFacePtr face = QI<IADFacePtr>(target))
+        {
+            read = ReadFace(face, pick);
+        }
+
+        // Faces and edges need their occurrence to be found again.
+        if (!read || !camcore::FeatureAllowed(filter, pick.kind) ||
+            (occurrence == nullptr && pick.kind != PickKind::DesignPoint))
+            return false;
+
+        const PartToAssembly transform(occurrence, assemblyMm);
+        pick.point = transform.Point(pick.point);
+        pick.start = transform.Point(pick.start);
+        pick.end = transform.Point(pick.end);
+        pick.direction = transform.Direction(pick.direction);
+        pick.radius = transform.Length(pick.radius);
+        pick.clicked = pick.point;
+
+        if (occurrence != nullptr)
+        {
+            pick.occurrenceKey = TakeKey(occurrence->GetKey());
+            pick.occurrenceName = ToUtf8(static_cast<const wchar_t*>(occurrence->GetName()));
+        }
+        return true;
+    }
+
+    // A saved key as the array BindKeyToItem takes. The caller destroys it.
+    SAFEARRAY* KeyArray(const camcore::PersistentKey& key)
+    {
+        if (key.IsEmpty())
+            return nullptr;
+
+        const VARTYPE vt = static_cast<VARTYPE>(key.elementType);
+        SAFEARRAY* pProbe = SafeArrayCreateVector(vt, 0, 1);
+        if (pProbe == nullptr)
+            return nullptr;
+        const UINT elementSize = SafeArrayGetElemsize(pProbe);
+        SafeArrayDestroy(pProbe);
+        if (elementSize == 0)
+            return nullptr;
+
+        const size_t bytes = key.hex.size() / 2;
+        SAFEARRAY* pArray = SafeArrayCreateVector(vt, 0, static_cast<ULONG>(bytes / elementSize));
+        BYTE* pData = nullptr;
+        if (pArray != nullptr && SUCCEEDED(SafeArrayAccessData(pArray, reinterpret_cast<void**>(&pData))))
+        {
+            const auto nibble = [](char c) -> BYTE
+            {
+                return static_cast<BYTE>(c >= 'A' ? c - 'A' + 10 : c - '0');
+            };
+            for (size_t i = 0; i < bytes; ++i)
+                pData[i] = static_cast<BYTE>((nibble(key.hex[i * 2]) << 4) | nibble(key.hex[i * 2 + 1]));
+            SafeArrayUnaccessData(pArray);
+        }
+        return pArray;
+    }
+
+    IDispatchPtr BindKey(IADSession* pSession, const camcore::PersistentKey& key, ADObjectType type)
+    {
+        SAFEARRAY* pArray = KeyArray(key);
+        if (pArray == nullptr)
+            return nullptr;
+
+        IDispatchPtr result;
+        try
+        {
+            result = pSession->BindKeyToItem(&pArray, type);
+        }
+        catch (const _com_error&)
+        {
+            // An item that's been deleted no longer binds.
+        }
+        SafeArrayDestroy(pArray);
+        return result;
+    }
+}
+
+bool ReadSelectedFeatures(IADSession* pAssembly, camcore::FeatureFilter filter, std::vector<PickedGeometry>& features,
+                          int& ignored)
+{
+    features.clear();
+    ignored = 0;
+
+    try
+    {
+        IADPointPtr clicked;
+        IObjectCollectorPtr selected = pAssembly->SelectedObjectsEx(&clicked);
+        const long count = (selected != nullptr) ? selected->GetCount() : 0;
+        const double assemblyMm = MillimetresPerModelUnit(QI<IADDesignSessionPtr>(pAssembly));
+
+        for (long i = 0; i < count; ++i)
+        {
+            PickedGeometry pick;
+            bool read = false;
+            try
+            {
+                read = ReadFeatureItem(selected->GetItem(_variant_t(i)), assemblyMm, filter, pick);
+            }
+            catch (const _com_error& error)
+            {
+                Log(L"[features] could not read selected item %ld: hr=0x%08X", i, static_cast<unsigned>(error.Error()));
+            }
+
+            if (read)
+                features.push_back(pick);
+            else
+                ++ignored;
+        }
+        Log(L"[features] %ld selected: %zu features, %d ignored", count, features.size(), ignored);
+        return true;
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[features] could not read the selection: hr=0x%08X", static_cast<unsigned>(error.Error()));
+        return false;
+    }
+}
+
+namespace
+{
+    // The feature as something Alibre can select, or nothing if it can't be found.
+    // Design points have no key to find them by.
+    IADTargetProxyPtr FindFeature(IADSession* pAssembly, const PickedGeometry& feature)
+    {
+        if (feature.kind == PickKind::DesignPoint)
+            return nullptr;
+
+        IADOccurrencePtr occurrence =
+            QI<IADOccurrencePtr>(BindKey(pAssembly, feature.occurrenceKey, ADObjectType_AD_OCCURRENCE));
+        if (occurrence == nullptr)
+            return nullptr;
+
+        // Face and edge keys belong to the part.
+        IADSessionPtr part = QI<IADSessionPtr>(occurrence->GetDesignSession());
+        IDispatchPtr target = (part != nullptr) ? BindKey(part, feature.targetKey, ADObjectType_AD_TOPOLOGY) : nullptr;
+        if (target == nullptr)
+            return nullptr;
+
+        return pAssembly->NewTargetProxy(occurrence, target);
+    }
+}
+
+int SelectFeatures(IADSession* pAssembly, const std::vector<PickedGeometry>& features)
+{
+    int selected = 0;
+    try
+    {
+        IObjectCollectorPtr collector = theApp.m_pRoot->NewObjectCollector();
+        for (const PickedGeometry& feature : features)
+        {
+            if (IADTargetProxyPtr proxy = FindFeature(pAssembly, feature))
+            {
+                collector->Add(proxy);
+                ++selected;
+            }
+        }
+
+        pAssembly->Select(collector);
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[features] could not select the features: hr=0x%08X", static_cast<unsigned>(error.Error()));
+    }
+
+    Log(L"[features] selected %d of %zu features", selected, features.size());
+    return selected;
+}
+
+void HighlightFeature(IADSession* pAssembly, const PickedGeometry* pFeature)
+{
+    try
+    {
+        IADTargetProxyPtr proxy = (pFeature != nullptr) ? FindFeature(pAssembly, *pFeature) : nullptr;
+        pAssembly->Highlight(proxy);
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[features] could not highlight a feature: hr=0x%08X", static_cast<unsigned>(error.Error()));
     }
 }
 

@@ -86,6 +86,452 @@ void COperationPage::SetNumber(int id, double value)
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// CFeaturesPage
+
+namespace
+{
+    // The sort choices, kept between dialogs.
+    int g_lastOrder = 0;
+    int g_lastCorner = 0;
+
+    enum FeatureColumn
+    {
+        kColumnNumber,
+        kColumnType,
+        kColumnPart,
+        kColumnDiameter,
+        kColumnX,
+        kColumnY,
+        kColumnZ
+    };
+
+    const UINT ID_FEATURE_DELETE = 1;
+
+    const UINT WM_APP_ROWS_CHOSEN = WM_APP + 1;
+
+    const wchar_t* FeatureTypeName(PickKind kind)
+    {
+        switch (kind)
+        {
+        case PickKind::CylindricalFace: return L"Hole";
+        case PickKind::CircleEdge:      return L"Circle";
+        case PickKind::DesignPoint:     return L"Point";
+        default:                        return L"Other";
+        }
+    }
+
+    std::wstring FormatCoordinate(double value)
+    {
+        wchar_t text[64] = {};
+        _snwprintf_s(text, _countof(text), _TRUNCATE, L"%.3f", value);
+        return text;
+    }
+}
+
+BEGIN_MESSAGE_MAP(CFeaturesPage, COperationPage)
+    ON_BN_CLICKED(IDC_FEATURES_SELECT, &CFeaturesPage::OnSelectFeatures)
+    ON_BN_CLICKED(IDC_FEATURES_DELETE, &CFeaturesPage::OnDelete)
+    ON_BN_CLICKED(IDC_FEATURES_SORT, &CFeaturesPage::OnSort)
+    ON_CBN_SELCHANGE(IDC_FEATURES_ORDER, &CFeaturesPage::OnOrderChanged)
+    ON_NOTIFY(LVN_KEYDOWN, IDC_FEATURES_LIST, &CFeaturesPage::OnListKeyDown)
+    ON_NOTIFY(NM_RCLICK, IDC_FEATURES_LIST, &CFeaturesPage::OnListRightClick)
+    ON_NOTIFY(LVN_BEGINDRAG, IDC_FEATURES_LIST, &CFeaturesPage::OnListBeginDrag)
+    ON_NOTIFY(LVN_ITEMCHANGED, IDC_FEATURES_LIST, &CFeaturesPage::OnListSelectionChanged)
+    ON_WM_MOUSEMOVE()
+    ON_WM_LBUTTONUP()
+    ON_WM_CAPTURECHANGED()
+    ON_MESSAGE(WM_APP_ROWS_CHOSEN, &CFeaturesPage::OnRowsChosen)
+END_MESSAGE_MAP()
+
+CFeaturesPage::CFeaturesPage(COperationDlg* pOwner)
+    : COperationPage(IDD_OP_FEATURES, pOwner)
+    , m_dragging(false)
+    , m_dragRow(-1)
+    , m_dropHighlight(-1)
+    , m_filling(false)
+    , m_rowsChosenPosted(false)
+{
+}
+
+BOOL CFeaturesPage::OnInitDialog()
+{
+    COperationPage::OnInitDialog();
+
+    m_list.SubclassDlgItem(IDC_FEATURES_LIST, this);
+    m_list.SetExtendedStyle(m_list.GetExtendedStyle() | LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+    m_list.InsertColumn(kColumnNumber, L"#", LVCFMT_RIGHT, 28);
+    m_list.InsertColumn(kColumnType, L"Type", LVCFMT_LEFT, 48);
+    m_list.InsertColumn(kColumnPart, L"Part", LVCFMT_LEFT, 110);
+    m_list.InsertColumn(kColumnDiameter, L"Dia.", LVCFMT_RIGHT, 54);
+    m_list.InsertColumn(kColumnX, L"X", LVCFMT_RIGHT, 64);
+    m_list.InsertColumn(kColumnY, L"Y", LVCFMT_RIGHT, 64);
+    m_list.InsertColumn(kColumnZ, L"Z", LVCFMT_RIGHT, 64);
+
+    m_order.SubclassDlgItem(IDC_FEATURES_ORDER, this);
+    m_order.AddString(L"Minimum distance");
+    m_order.AddString(L"Directional, X first");
+    m_order.AddString(L"Directional, Y first");
+    m_order.SetCurSel(g_lastOrder);
+
+    m_corner.SubclassDlgItem(IDC_FEATURES_CORNER, this);
+    m_corner.AddString(L"Top left");
+    m_corner.AddString(L"Top right");
+    m_corner.AddString(L"Bottom left");
+    m_corner.AddString(L"Bottom right");
+    m_corner.SetCurSel(g_lastCorner);
+
+    ShowSelecting(false);
+    OnOrderChanged();
+    return TRUE;
+}
+
+void CFeaturesPage::Load(const SequenceStep& step)
+{
+    m_features = step.features;
+    FillList();
+}
+
+bool CFeaturesPage::Save(SequenceStep& step, std::wstring& /*problems*/)
+{
+    step.features = m_features;
+    return true;
+}
+
+void CFeaturesPage::FillList()
+{
+    camcore::Frame frame;
+    const bool haveFrame = m_pOwner->GetFrame(frame);
+
+    m_filling = true;
+    m_list.SetRedraw(FALSE);
+    m_list.DeleteAllItems();
+    for (size_t i = 0; i < m_features.size(); ++i)
+    {
+        const PickedGeometry& feature = m_features[i];
+        const int row = m_list.InsertItem(static_cast<int>(i), std::to_wstring(i + 1).c_str());
+        m_list.SetItemText(row, kColumnType, FeatureTypeName(feature.kind));
+
+        std::wstring part = FromUtf8(feature.occurrenceName);
+        if (feature.kind == PickKind::DesignPoint)
+            part = part.empty() ? FromUtf8(feature.targetName) : part + L": " + FromUtf8(feature.targetName);
+        m_list.SetItemText(row, kColumnPart, part.c_str());
+
+        if (feature.radius > 0.0)
+            m_list.SetItemText(row, kColumnDiameter, FormatCoordinate(feature.radius * 2.0).c_str());
+
+        // Shown in the operation's origin frame, the way it's machined.
+        const Vec3 point = haveFrame ? WorldToFrame(frame, FeaturePoint(frame, feature)) : feature.point;
+        m_list.SetItemText(row, kColumnX, FormatCoordinate(point.x).c_str());
+        m_list.SetItemText(row, kColumnY, FormatCoordinate(point.y).c_str());
+        m_list.SetItemText(row, kColumnZ, FormatCoordinate(point.z).c_str());
+    }
+    m_list.SetRedraw(TRUE);
+    m_list.Invalidate();
+    m_filling = false;
+    UpdateButtons();
+}
+
+void CFeaturesPage::SelectRow(int row)
+{
+    for (int i = 0; i < m_list.GetItemCount(); ++i)
+        m_list.SetItemState(i, i == row ? LVIS_SELECTED | LVIS_FOCUSED : 0, LVIS_SELECTED | LVIS_FOCUSED);
+    if (row >= 0)
+        m_list.EnsureVisible(row, FALSE);
+}
+
+void CFeaturesPage::UpdateButtons()
+{
+    GetDlgItem(IDC_FEATURES_DELETE)->EnableWindow(m_list.GetSelectedCount() > 0);
+    GetDlgItem(IDC_FEATURES_SORT)->EnableWindow(m_features.size() > 1);
+}
+
+void CFeaturesPage::ForgetViewSelection()
+{
+    m_viewSelection.clear();
+}
+
+void CFeaturesPage::ShowSelecting(bool selecting)
+{
+    SetDlgItemText(IDC_FEATURES_SELECT, selecting ? L"Done" : L"Select Features");
+    ShowNote(selecting ? L"Select features in the view. Ctrl+click adds or removes one." : L"");
+}
+
+void CFeaturesPage::ShowNote(const std::wstring& text)
+{
+    SetDlgItemText(IDC_FEATURES_NOTE, text.c_str());
+}
+
+void CFeaturesPage::SetSelectedFeatures(const std::vector<PickedGeometry>& selected, int ignored)
+{
+    // Only what changed in the view counts, so clearing and re-selecting the list
+    // when selecting starts doesn't empty it.
+    m_features = ApplySelectionChange(m_features, m_viewSelection, selected);
+    m_viewSelection = selected;
+    FillList();
+
+    std::wstring note = std::to_wstring(m_features.size()) + (m_features.size() == 1 ? L" feature." : L" features.");
+    if (ignored > 0)
+    {
+        note += L" " + std::to_wstring(ignored) + (ignored == 1 ? L" selected item isn't" : L" selected items aren't") +
+                L" a circle, hole or point, and was left out.";
+    }
+    ShowNote(note);
+}
+
+void CFeaturesPage::ChangedByUser()
+{
+    FillList();
+}
+
+void CFeaturesPage::OnSelectFeatures()
+{
+    if (m_pOwner->IsSelectingFeatures())
+        m_pOwner->StopSelectingFeatures();
+    else
+        m_pOwner->StartSelectingFeatures();
+}
+
+void CFeaturesPage::OnDelete()
+{
+    // Deleting from the end keeps the earlier rows' numbers right.
+    std::vector<int> rows;
+    POSITION position = m_list.GetFirstSelectedItemPosition();
+    while (position != nullptr)
+        rows.push_back(m_list.GetNextSelectedItem(position));
+    if (rows.empty())
+        return;
+
+    std::sort(rows.rbegin(), rows.rend());
+    for (int row : rows)
+    {
+        if (row >= 0 && row < static_cast<int>(m_features.size()))
+            m_features.erase(m_features.begin() + row);
+    }
+
+    // While selecting, the view's selection follows the list.
+    if (m_pOwner->IsSelectingFeatures())
+        m_pOwner->StartSelectingFeatures();
+
+    ChangedByUser();
+    SelectRow((std::min)(rows.back(), static_cast<int>(m_features.size()) - 1));
+}
+
+void CFeaturesPage::OnOrderChanged()
+{
+    // The corner is only for the directional orders.
+    GetDlgItem(IDC_FEATURES_CORNER)->EnableWindow(m_order.GetCurSel() > 0);
+    g_lastOrder = (std::max)(m_order.GetCurSel(), 0);
+}
+
+void CFeaturesPage::OnSort()
+{
+    camcore::Frame frame;
+    if (!m_pOwner->GetFrame(frame))
+    {
+        ShowNote(L"There's no complete Set Origin above this folder, so the features can't be sorted.");
+        return;
+    }
+
+    g_lastOrder = (std::max)(m_order.GetCurSel(), 0);
+    g_lastCorner = (std::max)(m_corner.GetCurSel(), 0);
+
+    std::vector<Vec3> points;
+    for (const PickedGeometry& feature : m_features)
+        points.push_back(WorldToFrame(frame, FeaturePoint(frame, feature)));
+
+    const FeatureOrder order = (g_lastOrder == 1)   ? FeatureOrder::RowsXFirst
+                               : (g_lastOrder == 2) ? FeatureOrder::RowsYFirst
+                                                    : FeatureOrder::MinimumDistance;
+    static const StartCorner corners[] =
+    {
+        StartCorner::TopLeft, StartCorner::TopRight, StartCorner::BottomLeft, StartCorner::BottomRight
+    };
+
+    std::vector<PickedGeometry> sorted;
+    for (size_t index : SortFeatures(points, order, corners[g_lastCorner % 4]))
+        sorted.push_back(m_features[index]);
+    m_features = sorted;
+
+    ChangedByUser();
+    ShowNote(L"Sorted.");
+}
+
+void CFeaturesPage::OnListKeyDown(NMHDR* pNotify, LRESULT* pResult)
+{
+    *pResult = 0;
+    const WORD key = reinterpret_cast<NMLVKEYDOWN*>(pNotify)->wVKey;
+    if (key == VK_DELETE)
+    {
+        OnDelete();
+    }
+    else if (key == 'A' && (::GetKeyState(VK_CONTROL) & 0x8000) != 0)
+    {
+        // Ctrl+A chooses every row. The view follows, as for any change.
+        for (int row = 0; row < m_list.GetItemCount(); ++row)
+            m_list.SetItemState(row, LVIS_SELECTED, LVIS_SELECTED);
+    }
+}
+
+void CFeaturesPage::OnListRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
+{
+    *pResult = 0;
+    if (m_list.GetSelectedCount() == 0)
+        return;
+
+    CMenu menu;
+    menu.CreatePopupMenu();
+    menu.AppendMenu(MF_STRING, ID_FEATURE_DELETE, L"Delete");
+
+    CPoint point;
+    ::GetCursorPos(&point);
+    if (menu.TrackPopupMenu(TPM_LEFTALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY, point.x, point.y,
+                            this) == ID_FEATURE_DELETE)
+        OnDelete();
+}
+
+void CFeaturesPage::OnListSelectionChanged(NMHDR* pNotify, LRESULT* pResult)
+{
+    *pResult = 0;
+    UpdateButtons();
+
+    // Choosing several rows changes each one, so they're shown in the view once
+    // the changes have all arrived.
+    const NMLISTVIEW* pInfo = reinterpret_cast<NMLISTVIEW*>(pNotify);
+    const bool selectionChanged = (pInfo->uChanged & LVIF_STATE) != 0 &&
+                                  ((pInfo->uOldState ^ pInfo->uNewState) & (LVIS_SELECTED | LVIS_FOCUSED)) != 0;
+    if (selectionChanged && !m_filling && !m_rowsChosenPosted)
+    {
+        m_rowsChosenPosted = true;
+        PostMessage(WM_APP_ROWS_CHOSEN);
+    }
+}
+
+LRESULT CFeaturesPage::OnRowsChosen(WPARAM, LPARAM)
+{
+    m_rowsChosenPosted = false;
+    ShowChosenRows();
+    return 0;
+}
+
+void CFeaturesPage::ShowChosenRows()
+{
+    // The focused row comes first, so it's the one highlighted while selecting.
+    std::vector<PickedGeometry> chosen;
+    const int focused = m_list.GetNextItem(-1, LVNI_FOCUSED);
+    if (focused >= 0 && focused < static_cast<int>(m_features.size()) &&
+        (m_list.GetItemState(focused, LVIS_SELECTED) & LVIS_SELECTED) != 0)
+        chosen.push_back(m_features[focused]);
+
+    POSITION position = m_list.GetFirstSelectedItemPosition();
+    while (position != nullptr)
+    {
+        const int row = m_list.GetNextSelectedItem(position);
+        if (row != focused && row >= 0 && row < static_cast<int>(m_features.size()))
+            chosen.push_back(m_features[row]);
+    }
+    m_pOwner->ShowFeaturesInView(chosen);
+}
+
+void CFeaturesPage::OnListBeginDrag(NMHDR* pNotify, LRESULT* pResult)
+{
+    *pResult = 0;
+    m_dragRow = reinterpret_cast<NMLISTVIEW*>(pNotify)->iItem;
+    if (m_dragRow < 0 || m_dragRow >= static_cast<int>(m_features.size()))
+        return;
+
+    m_dragging = true;
+    SetCapture();
+}
+
+int CFeaturesPage::DropRow(CPoint pagePoint) const
+{
+    CPoint point = pagePoint;
+    ::MapWindowPoints(m_hWnd, m_list.GetSafeHwnd(), &point, 1);
+
+    LVHITTESTINFO hit = {};
+    hit.pt = point;
+    const int row = const_cast<CListCtrl&>(m_list).HitTest(&hit);
+    if (row >= 0)
+        return row;
+
+    // Below the last row means the end. Above the first means the start.
+    const int count = m_list.GetItemCount();
+    CRect rect;
+    if (count > 0 && m_list.GetItemRect(count - 1, &rect, LVIR_BOUNDS) && point.y >= rect.bottom)
+        return count;
+    return 0;
+}
+
+void CFeaturesPage::OnMouseMove(UINT flags, CPoint point)
+{
+    if (!m_dragging)
+    {
+        COperationPage::OnMouseMove(flags, point);
+        return;
+    }
+
+    const int row = DropRow(point);
+    const int highlight = (row < m_list.GetItemCount()) ? row : -1;
+    if (highlight != m_dropHighlight)
+    {
+        if (m_dropHighlight >= 0)
+            m_list.SetItemState(m_dropHighlight, 0, LVIS_DROPHILITED);
+        if (highlight >= 0)
+        {
+            m_list.SetItemState(highlight, LVIS_DROPHILITED, LVIS_DROPHILITED);
+            m_list.EnsureVisible(highlight, FALSE);
+        }
+        m_dropHighlight = highlight;
+    }
+}
+
+void CFeaturesPage::OnLButtonUp(UINT flags, CPoint point)
+{
+    if (!m_dragging)
+    {
+        COperationPage::OnLButtonUp(flags, point);
+        return;
+    }
+
+    // The dragged feature goes before the row it's dropped on.
+    const int from = m_dragRow;
+    int to = DropRow(point);
+    EndDrag();
+
+    if (from < 0 || from >= static_cast<int>(m_features.size()) || to == from || to == from + 1)
+        return;
+
+    PickedGeometry feature = m_features[from];
+    m_features.erase(m_features.begin() + from);
+    if (to > from)
+        --to;
+    m_features.insert(m_features.begin() + to, feature);
+
+    ChangedByUser();
+    SelectRow(to);
+}
+
+void CFeaturesPage::OnCaptureChanged(CWnd* pWnd)
+{
+    if (m_dragging)
+        EndDrag();
+    COperationPage::OnCaptureChanged(pWnd);
+}
+
+void CFeaturesPage::EndDrag()
+{
+    if (!m_dragging)
+        return;
+
+    m_dragging = false;
+    if (m_dropHighlight >= 0)
+        m_list.SetItemState(m_dropHighlight, 0, LVIS_DROPHILITED);
+    m_dropHighlight = -1;
+    if (GetCapture() == this)
+        ReleaseCapture();
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // CDrillingPage
 
 BEGIN_MESSAGE_MAP(CDrillingPage, COperationPage)
@@ -234,8 +680,11 @@ COperationDlg::COperationDlg(CCamTabCommand* pTab, const SequenceStep& step)
     : CDialog(IDD_OPERATION, nullptr)
     , m_pTab(pTab)
     , m_step(step)
+    , m_pFeatures(nullptr)
     , m_pDrilling(nullptr)
     , m_locating(false)
+    , m_selectingFeatures(false)
+    , m_haveFrame(false)
 {
 }
 
@@ -252,13 +701,23 @@ BOOL COperationDlg::OnInitDialog()
     SetDlgItemText(IDC_OP_NAME, FromUtf8(m_step.name).c_str());
 
     m_tabs.SubclassDlgItem(IDC_OP_TABS, this);
+    if (m_pTab != nullptr)
+        m_haveFrame = m_pTab->GetOperationFrame(m_frame);
 
-    // Every operation has these. They're empty until each is built.
-    AddPage(L"Features", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
+    // Every operation has these. The empty ones are still to be built.
+    auto features = std::make_unique<CFeaturesPage>(this);
+    CFeaturesPage* pFeatures = features.get();
+    AddPage(L"Features", std::move(features));
+    if (pFeatures->GetSafeHwnd() != nullptr)
+        m_pFeatures = pFeatures;
+
     AddPage(L"Tool", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
     AddPage(L"Feeds && Speeds", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
     AddPage(L"Clearance", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
-    AddPage(L"Sorting", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
+
+    // Drill has no Sorting tab.
+    if (m_step.type != StepType::Drill)
+        AddPage(L"Sorting", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
 
     // Then its own.
     if (m_step.type == StepType::Drill)
@@ -320,6 +779,8 @@ void COperationDlg::StartLocating()
     if (m_pDrilling == nullptr || m_pTab == nullptr)
         return;
 
+    StopSelectingFeatures();
+
     m_locating = true;
     m_pDrilling->ShowLocating(true);
     m_pTab->BeginLocate();
@@ -353,6 +814,73 @@ void COperationDlg::ShowLocateProblem(const std::wstring& problem)
 {
     if (m_pDrilling != nullptr)
         m_pDrilling->ShowLocateNote(problem);
+}
+
+FeatureFilter COperationDlg::GetFeatureFilter() const
+{
+    // Each operation type has its own filter. Drill needs points.
+    return FeatureFilter::Points;
+}
+
+void COperationDlg::StartSelectingFeatures()
+{
+    if (m_pFeatures == nullptr || m_pTab == nullptr)
+        return;
+
+    // Locate and Select Features both use Alibre's selection, so only one runs.
+    StopLocating();
+
+    // Starting again while selecting puts the view's selection back in step with the list.
+    m_selectingFeatures = true;
+    m_pFeatures->ForgetViewSelection();
+    m_pFeatures->ShowSelecting(true);
+    m_pTab->BeginFeatureSelect();
+}
+
+void COperationDlg::StopSelectingFeatures()
+{
+    if (!m_selectingFeatures)
+        return;
+
+    m_selectingFeatures = false;
+    if (m_pFeatures != nullptr)
+        m_pFeatures->ShowSelecting(false);
+    if (m_pTab != nullptr)
+        m_pTab->EndFeatureSelect();
+
+    // The view's selection was the whole list. Now it follows the chosen rows again.
+    if (m_pFeatures != nullptr && m_pTab != nullptr)
+        m_pFeatures->ShowChosenRows();
+}
+
+std::vector<PickedGeometry> COperationDlg::GetFeatures() const
+{
+    return (m_pFeatures != nullptr) ? m_pFeatures->GetFeatures() : std::vector<PickedGeometry>();
+}
+
+void COperationDlg::SetSelectedFeatures(const std::vector<PickedGeometry>& selected, int ignored)
+{
+    if (m_pFeatures != nullptr)
+        m_pFeatures->SetSelectedFeatures(selected, ignored);
+}
+
+void COperationDlg::ShowFeaturesInView(const std::vector<PickedGeometry>& features)
+{
+    if (m_pTab != nullptr)
+        m_pTab->ShowFeaturesInView(features);
+}
+
+void COperationDlg::ShowFeatureNote(const std::wstring& text)
+{
+    if (m_pFeatures != nullptr)
+        m_pFeatures->ShowNote(text);
+}
+
+bool COperationDlg::GetFrame(camcore::Frame& frame) const
+{
+    if (m_haveFrame)
+        frame = m_frame;
+    return m_haveFrame;
 }
 
 void COperationDlg::PostNcDestroy()
@@ -412,6 +940,8 @@ void COperationDlg::Finish(bool apply)
     g_lastPosition = rect.TopLeft();
     g_lastPage = m_tabs.GetCurSel();
 
+    // Selecting features leaves Alibre's selection full, so it's cleared here.
+    StopSelectingFeatures();
     m_locating = false;
     if (m_pTab != nullptr)
     {

@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include "Features.h"
 #include "Origin.h"
 
 // What a pick may be.
@@ -24,6 +25,18 @@ bool ReadSelectedPick(IADSession* pAssembly, PickFilter filter, camcore::PickedG
 
 // As ReadSelectedPick, for measuring a depth: a design point or plane, a face, or an edge.
 bool ReadSelectedLocate(IADSession* pAssembly, camcore::LocatedGeometry& located, std::wstring& problem);
+
+// Reads every selected item the filter allows, in selection order, and counts
+// the ones it doesn't. Returns false only if the selection can't be read.
+bool ReadSelectedFeatures(IADSession* pAssembly, camcore::FeatureFilter filter,
+                          std::vector<camcore::PickedGeometry>& features, int& ignored);
+
+// Replaces Alibre's selection with the features, found again by their keys.
+// Returns how many were selected. Design points and deleted items can't be.
+int SelectFeatures(IADSession* pAssembly, const std::vector<camcore::PickedGeometry>& features);
+
+// Highlights one feature in the view without changing the selection. Null clears it.
+void HighlightFeature(IADSession* pAssembly, const camcore::PickedGeometry* pFeature);
 
 // The assembly's extents. Returns false if it has no parts or they can't be read.
 bool ReadAssemblyBounds(IADSession* pAssembly, camcore::Vec3& lower, camcore::Vec3& upper);

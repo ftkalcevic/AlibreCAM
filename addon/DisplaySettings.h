@@ -12,8 +12,14 @@ struct DisplayColour
     long alpha;     // 255 is opaque
 };
 
-// The active origin's XY plane, shaded and translucent.
-const DisplayColour kOriginPlaneColour = { 0, 120, 255, 64 };
+// The active origin's XY plane, drawn as an outline with grid lines inside.
+const DisplayColour kOriginPlaneColour = { 0, 120, 255, 255 };
+const DisplayColour kOriginGridColour = { 0, 120, 255, 96 };    // alpha may be ignored
+const float kOriginOutlineLineWeight = 1.5f;
+const float kOriginGridLineWeight = 1.0f;
+
+// About this many grid squares along the plane's longer side.
+const int kOriginGridDivisions = 10;
 
 // The plane reaches past the parts by this fraction of their size.
 const double kOriginPlaneMargin = 0.1;

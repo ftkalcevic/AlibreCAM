@@ -204,6 +204,51 @@ namespace camcore
         return rectangle;
     }
 
+    double GridSpacing(double length, int divisions)
+    {
+        if (!(length > kTinyLength) || divisions < 1)
+            return 0.0;
+
+        // The smallest 1, 2 or 5 step that gives no more than `divisions` squares.
+        const double rough = length / divisions;
+        const double power = std::pow(10.0, std::floor(std::log10(rough)));
+        for (const double step : { 1.0, 2.0, 5.0, 10.0 })
+        {
+            if (step * power >= rough * (1.0 - 1e-9))
+                return step * power;
+        }
+        return 10.0 * power;
+    }
+
+    std::vector<LineSegment> PlaneGrid(const Frame& frame, const PlaneRectangle& rectangle, int divisions)
+    {
+        std::vector<LineSegment> lines;
+
+        // The rectangle's extent in the frame's own X and Y.
+        const Vec3 low = rectangle.corners[0] - frame.origin;
+        const Vec3 high = rectangle.corners[2] - frame.origin;
+        const double uMin = Dot(low, frame.xAxis), uMax = Dot(high, frame.xAxis);
+        const double vMin = Dot(low, frame.yAxis), vMax = Dot(high, frame.yAxis);
+
+        const double spacing = GridSpacing(std::max(uMax - uMin, vMax - vMin), divisions);
+        if (!(spacing > 0.0))
+            return lines;
+
+        // Lines fall on whole multiples of the spacing, so one passes through the origin.
+        const double edgeGap = spacing * 1e-6;
+        for (double u = std::ceil(uMin / spacing) * spacing; u < uMax - edgeGap; u += spacing)
+        {
+            if (u > uMin + edgeGap)
+                lines.push_back({ FramePointToWorld(frame, { u, vMin, 0.0 }), FramePointToWorld(frame, { u, vMax, 0.0 }) });
+        }
+        for (double v = std::ceil(vMin / spacing) * spacing; v < vMax - edgeGap; v += spacing)
+        {
+            if (v > vMin + edgeGap)
+                lines.push_back({ FramePointToWorld(frame, { uMin, v, 0.0 }), FramePointToWorld(frame, { uMax, v, 0.0 }) });
+        }
+        return lines;
+    }
+
     double DistanceAlongZ(const Frame& frame, const LocatedGeometry& geometry)
     {
         const Vec3& z = frame.zAxis;

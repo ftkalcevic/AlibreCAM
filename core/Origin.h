@@ -6,6 +6,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace camcore
 {
@@ -53,19 +54,23 @@ namespace camcore
         PlanarFace,
         CylindricalFace,
         LineEdge,
-        CircleEdge      // a full circle or a circular arc
+        CircleEdge,     // a full circle or a circular arc
+        DesignPoint
     };
 
-    // A face or edge picked in the view.
+    // A face, edge or design point picked in the view.
     struct PickedGeometry
     {
         PickKind kind = PickKind::None;
 
         // Which item was picked, so a later step can find it again. Face and edge
         // keys bind in the part, and parts can share them, so the occurrence is kept too.
+        // Design points have no key, so they're known by name instead. The
+        // occurrence key is empty for the assembly's own design points.
         PersistentKey occurrenceKey;
         PersistentKey targetKey;
         std::string occurrenceName;
+        std::string targetName;     // design points only
 
         Vec3 clicked;       // where the user clicked
 
@@ -73,12 +78,16 @@ namespace camcore
         // Cylindrical face: a point on its axis, and the axis.
         // Circle edge: its centre, and its axis, out of the material where the add-on could tell.
         // Line edge: its start, and the direction from start to end.
+        // Design point: the point.
         Vec3 point;
         Vec3 direction;
 
-        // Line edges only
+        // Line edges: the ends. Cylindrical faces: the centres of the circles at
+        // each end, when the add-on found both, otherwise both are the point.
         Vec3 start;
         Vec3 end;
+
+        double radius = 0.0;    // circle edges and cylindrical faces
     };
 
     struct OriginOptions
@@ -121,6 +130,21 @@ namespace camcore
     };
 
     PlaneRectangle PlaneCoveringBox(const Frame& frame, const Vec3& boxMin, const Vec3& boxMax, double margin);
+
+    struct LineSegment
+    {
+        Vec3 from;
+        Vec3 to;
+    };
+
+    // Grid lines across a rectangle from PlaneCoveringBox, parallel to the frame's
+    // X and Y and through its origin. The spacing is 1, 2 or 5 times a power of
+    // ten, chosen so the longer side has about `divisions` squares. The rectangle's
+    // edges aren't included.
+    std::vector<LineSegment> PlaneGrid(const Frame& frame, const PlaneRectangle& rectangle, int divisions);
+
+    // The grid spacing PlaneGrid uses for a rectangle whose longer side is `length`.
+    double GridSpacing(double length, int divisions);
 
     // Something picked to measure from, in assembly coordinates and millimetres.
     struct LocatedGeometry

@@ -61,14 +61,22 @@
 #define IDC_DWELL_REVOLUTION_COUNT      13100
 #define IDC_DRILL_APPROACH              13101
 #define IDC_DRILL_PECK                  13102
+#define IDD_OP_FEATURES                 13016
+#define IDC_FEATURES_LIST               13110
+#define IDC_FEATURES_SELECT             13111
+#define IDC_FEATURES_DELETE             13112
+#define IDC_FEATURES_NOTE               13113
+#define IDC_FEATURES_ORDER              13114
+#define IDC_FEATURES_CORNER             13115
+#define IDC_FEATURES_SORT               13116
 
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13016
+#define _APS_NEXT_RESOURCE_VALUE        13017
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13103
+#define _APS_NEXT_CONTROL_VALUE         13117
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

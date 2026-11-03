@@ -89,6 +89,12 @@ public:
     // From the operation dialog
     void BeginLocate();
     void EndLocate();
+    void BeginFeatureSelect();
+    void EndFeatureSelect();
+    bool GetOperationFrame(camcore::Frame& frame) const;
+
+    // Shows the rows chosen in the Features list in the view.
+    void ShowFeaturesInView(const std::vector<camcore::PickedGeometry>& features);
     void OnOperationDialogDone(COperationDlg* pDialog, bool apply);
 
     void OnWindowClosing();
@@ -129,6 +135,7 @@ private:
     void OpenOperationDialog(const camcore::SequenceStep& step, const StepRef& target);
     void CloseOperationDialog();
     bool PrepareSelection(const SelectionFilter& wanted);     // false if the view couldn't start
+    bool IsPicking() const;
     void RestoreSelectionFilter();
     void HandleLocate();
 
@@ -165,6 +172,7 @@ private:
     // Only one dialog is open at a time, so this and m_pOriginDlg aren't both set.
     COperationDlg* m_pOperationDlg;
     StepRef m_operationTarget;          // the folder, and the operation in it or kNewStep
+    bool m_showingFeatures;             // Features list rows are selected in the view
 
     // Picking changes Alibre's selection filter. This puts it back.
     bool m_filterChanged;

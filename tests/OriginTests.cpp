@@ -299,6 +299,33 @@ TEST_CASE("the plane rectangle covers a box seen from the side")
     CHECK(Near(rectangle.corners[2], { 0, 40, 20 }));
 }
 
+TEST_CASE("grid spacing is a round number giving about the asked-for squares")
+{
+    CHECK(GridSpacing(100, 10) == doctest::Approx(10));
+    CHECK(GridSpacing(120, 10) == doctest::Approx(20));
+    CHECK(GridSpacing(300, 10) == doctest::Approx(50));
+    CHECK(GridSpacing(7, 10) == doctest::Approx(1));
+    CHECK(GridSpacing(0, 10) == 0);
+}
+
+TEST_CASE("the grid runs through the origin and stops inside the outline")
+{
+    Frame frame;
+    frame.origin = { 0, 0, 10 };
+
+    // -10 to 110 by -10 to 60: a 120 mm longer side gives 20 mm squares.
+    const PlaneRectangle rectangle = PlaneCoveringBox(frame, { 0, 0, 0 }, { 100, 50, 10 }, 0.1);
+    const std::vector<LineSegment> lines = PlaneGrid(frame, rectangle, 10);
+
+    // X = 0, 20 ... 100 across, and Y = 0, 20, 40 along.
+    REQUIRE(lines.size() == 9);
+    CHECK(Near(lines[0].from, { 0, -10, 10 }));
+    CHECK(Near(lines[0].to, { 0, 60, 10 }));
+    CHECK(Near(lines[5].from, { 100, -10, 10 }));
+    CHECK(Near(lines[6].from, { -10, 0, 10 }));
+    CHECK(Near(lines[8].to, { 110, 40, 10 }));
+}
+
 TEST_CASE("an empty box gives a small square plane")
 {
     Frame frame;

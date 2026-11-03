@@ -44,6 +44,9 @@ namespace camcore
         // Set Origin steps only
         OriginDefinition origin;
 
+        // Operations only: the picked geometry, in the order it's machined.
+        std::vector<PickedGeometry> features;
+
         // Drill operations only
         DrillSettings drill;
 

@@ -155,6 +155,7 @@ CCamTabCommand::CCamTabCommand(CAddOnInterface* pAddOn, const std::wstring& sess
     , m_pOriginDlg(nullptr)
     , m_editIndex(kNewStep)
     , m_pOperationDlg(nullptr)
+    , m_showingFeatures(false)
     , m_operationTarget()
     , m_filterChanged(false)
     , m_previousFilter()
@@ -970,6 +971,14 @@ void CCamTabCommand::OnOperationDialogDone(COperationDlg* pDialog, bool apply)
 
     m_pOperationDlg = nullptr;
     RestoreSelectionFilter();
+
+    // Rows chosen in the Features list were selected in the view, so that goes too.
+    if (m_showingFeatures)
+    {
+        m_showingFeatures = false;
+        ClearPickedSelection();
+    }
+
     if (!apply || !CanEditSequence() || !IsFolder(StepRef{ m_operationTarget.step }))
         return;
 
@@ -1065,6 +1074,13 @@ void CCamTabCommand::OnViewTerminated(CCamViewCommand* pView)
         m_pOriginDlg->ShowPickProblem(L"Picking stopped because another command started. Click Pick to try again.");
         RestoreSelectionFilter();
     }
+    if (m_pOperationDlg != nullptr && m_pOperationDlg->IsSelectingFeatures())
+    {
+        m_pOperationDlg->StopSelectingFeatures();
+        m_pOperationDlg->ShowFeatureNote(L"Selecting stopped because another command started. Click Select "
+                                         L"Features to carry on.");
+        RestoreSelectionFilter();
+    }
     if (m_pOperationDlg != nullptr && m_pOperationDlg->IsLocating())
     {
         m_pOperationDlg->StopLocating();
@@ -1121,6 +1137,7 @@ void CCamTabCommand::ReadModelSize()
 void CCamTabCommand::RebuildScene()
 {
     m_scene.hasOrigin = false;
+    m_scene.showPlane = !IsPicking();
 
     // While the dialog is open it shows its own step. Otherwise the selected
     // step shows the origin it runs under.
@@ -1173,7 +1190,15 @@ bool CCamTabCommand::PrepareSelection(const SelectionFilter& wanted)
     {
         Log(L"[pick] could not prepare the pick: hr=0x%08X", static_cast<unsigned>(error.Error()));
     }
+
+    RebuildScene();
     return true;
+}
+
+bool CCamTabCommand::IsPicking() const
+{
+    return (m_pOriginDlg != nullptr && m_pOriginDlg->GetPickSlot() != PickSlot::None) ||
+           (m_pOperationDlg != nullptr && (m_pOperationDlg->IsLocating() || m_pOperationDlg->IsSelectingFeatures()));
 }
 
 void CCamTabCommand::BeginPick(PickSlot slot)
@@ -1210,8 +1235,96 @@ void CCamTabCommand::EndLocate()
     RestoreSelectionFilter();
 }
 
+void CCamTabCommand::BeginFeatureSelect()
+{
+    if (m_pOperationDlg == nullptr)
+        return;
+
+    SelectionFilter wanted;
+    wanted.solid = ADSelectionFilterOption_AD_FACES_EDGES;
+    wanted.points = true;
+    m_showingFeatures = false;
+    if (!PrepareSelection(wanted))
+    {
+        m_pOperationDlg->StopSelectingFeatures();
+        m_pOperationDlg->ShowFeatureNote(L"Selecting couldn't start. Click the CAM tab, then try again.");
+        return;
+    }
+
+    // The list's features start out selected, so the user adds to them or removes them.
+    try
+    {
+        const std::vector<camcore::PickedGeometry> features = m_pOperationDlg->GetFeatures();
+        const int selected = SelectFeatures(GetSession(), features);
+        const int missing = static_cast<int>(features.size()) - selected;
+        if (missing > 0)
+            Log(L"[features] %d listed features couldn't be selected", missing);
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[features] could not find the session: hr=0x%08X", static_cast<unsigned>(error.Error()));
+    }
+}
+
+void CCamTabCommand::EndFeatureSelect()
+{
+    m_showingFeatures = false;
+    try
+    {
+        IADSessionPtr session = GetSession();
+        HighlightFeature(session, nullptr);
+        ClearSelection(session);
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[features] could not find the session: hr=0x%08X", static_cast<unsigned>(error.Error()));
+    }
+    RestoreSelectionFilter();
+}
+
+void CCamTabCommand::ShowFeaturesInView(const std::vector<camcore::PickedGeometry>& features)
+{
+    if (m_pOperationDlg == nullptr)
+        return;
+
+    try
+    {
+        IADSessionPtr session = GetSession();
+        if (m_pOperationDlg->IsSelectingFeatures())
+        {
+            // The selection is the whole list then, so the chosen row is highlighted instead.
+            HighlightFeature(session, features.empty() ? nullptr : &features.front());
+        }
+        else
+        {
+            SelectFeatures(session, features);
+            m_showingFeatures = !features.empty();
+        }
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[features] could not find the session: hr=0x%08X", static_cast<unsigned>(error.Error()));
+    }
+}
+
+bool CCamTabCommand::GetOperationFrame(camcore::Frame& frame) const
+{
+    // An operation runs under the origin its folder does.
+    const size_t active = camcore::ActiveOriginIndex(m_job, m_operationTarget.step);
+    if (active == camcore::kNoStepIndex)
+        return false;
+
+    const camcore::FrameResult result = camcore::BuildFrame(m_job.sequence[active].origin);
+    if (result.ok)
+        frame = result.frame;
+    return result.ok;
+}
+
 void CCamTabCommand::RestoreSelectionFilter()
 {
+    // Picking has ended, so the plane can be drawn again.
+    RebuildScene();
+
     if (!m_filterChanged)
         return;
 
@@ -1231,6 +1344,23 @@ void CCamTabCommand::HandleSelection()
     if (m_pOperationDlg != nullptr && m_pOperationDlg->IsLocating())
     {
         HandleLocate();
+        return;
+    }
+
+    if (m_pOperationDlg != nullptr && m_pOperationDlg->IsSelectingFeatures())
+    {
+        // The whole selection is the feature list, so it's read again on every change.
+        std::vector<camcore::PickedGeometry> features;
+        int ignored = 0;
+        try
+        {
+            if (ReadSelectedFeatures(GetSession(), m_pOperationDlg->GetFeatureFilter(), features, ignored))
+                m_pOperationDlg->SetSelectedFeatures(features, ignored);
+        }
+        catch (const _com_error& error)
+        {
+            Log(L"[features] could not find the session: hr=0x%08X", static_cast<unsigned>(error.Error()));
+        }
         return;
     }
 

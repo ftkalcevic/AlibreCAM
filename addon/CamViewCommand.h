@@ -15,6 +15,10 @@ struct CamScene
 {
     // Only the origin the selected step runs under, or the one being edited.
     bool hasOrigin = false;
+
+    // Alibre picks the plane's mesh instead of the model behind it, so the
+    // plane is left out while the user picks in the view.
+    bool showPlane = true;
     camcore::Frame origin;
     camcore::PlaneRectangle plane;
 

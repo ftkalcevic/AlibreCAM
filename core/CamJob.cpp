@@ -106,6 +106,7 @@ namespace camcore
             case PickKind::CylindricalFace: return "cylindricalFace";
             case PickKind::LineEdge:        return "lineEdge";
             case PickKind::CircleEdge:      return "circleEdge";
+            case PickKind::DesignPoint:     return "designPoint";
             default:                        return "none";
             }
         }
@@ -114,7 +115,8 @@ namespace camcore
         {
             static const PickKind kinds[] =
             {
-                PickKind::PlanarFace, PickKind::CylindricalFace, PickKind::LineEdge, PickKind::CircleEdge
+                PickKind::PlanarFace, PickKind::CylindricalFace, PickKind::LineEdge, PickKind::CircleEdge,
+                PickKind::DesignPoint
             };
             for (PickKind candidate : kinds)
             {
@@ -155,12 +157,60 @@ namespace camcore
                 { "point", WriteVec3(pick.point) },
                 { "direction", WriteVec3(pick.direction) }
             };
-            if (pick.kind == PickKind::LineEdge)
+            if (pick.kind == PickKind::LineEdge || pick.kind == PickKind::CylindricalFace)
             {
                 item["start"] = WriteVec3(pick.start);
                 item["end"] = WriteVec3(pick.end);
             }
+            if (pick.kind == PickKind::CircleEdge || pick.kind == PickKind::CylindricalFace)
+                item["radius"] = pick.radius;
+            if (pick.kind == PickKind::DesignPoint)
+                item["targetName"] = pick.targetName;
             return item;
+        }
+
+        bool ReadPickObject(const json& item, PickedGeometry& pick)
+        {
+            pick = PickedGeometry();
+            if (!item.is_object())
+                return false;
+
+            std::string kind;
+            if (!ReadString(item, "kind", kind) || !PickKindFromName(kind, pick.kind))
+                return false;
+
+            if (!ReadKey(item, "occurrence", pick.occurrenceKey) || !ReadKey(item, "target", pick.targetKey) ||
+                !ReadString(item, "occurrenceName", pick.occurrenceName) || !ReadVec3(item, "clicked", pick.clicked) ||
+                !ReadVec3(item, "point", pick.point) || !ReadVec3(item, "direction", pick.direction))
+                return false;
+
+            switch (pick.kind)
+            {
+            case PickKind::LineEdge:
+                return ReadVec3(item, "start", pick.start) && ReadVec3(item, "end", pick.end);
+
+            case PickKind::CylindricalFace:
+                // Origins picked before the ends were recorded have neither.
+                if (!ReadVec3(item, "start", pick.start) || !ReadVec3(item, "end", pick.end))
+                    pick.start = pick.end = pick.point;
+                break;
+
+            case PickKind::DesignPoint:
+                return ReadString(item, "targetName", pick.targetName);
+
+            default:
+                break;
+            }
+
+            // Picks saved before the radius was recorded have none.
+            const auto radius = item.find("radius");
+            if (radius != item.end())
+            {
+                if (!radius->is_number())
+                    return false;
+                pick.radius = radius->get<double>();
+            }
+            return true;
         }
 
         bool ReadPick(const json& parent, const char* name, PickedGeometry& pick)
@@ -170,20 +220,34 @@ namespace camcore
             const auto item = parent.find(name);
             if (item == parent.end() || item->is_null())
                 return true;
-            if (!item->is_object())
+            return ReadPickObject(*item, pick);
+        }
+
+        json WriteFeatures(const std::vector<PickedGeometry>& features)
+        {
+            json list = json::array();
+            for (const PickedGeometry& feature : features)
+                list.push_back(WritePick(feature));
+            return list;
+        }
+
+        // Operations saved before the Features tab existed have none.
+        bool ReadFeatures(const json& item, std::vector<PickedGeometry>& features)
+        {
+            features.clear();
+            const auto list = item.find("features");
+            if (list == item.end())
+                return true;
+            if (!list->is_array())
                 return false;
 
-            std::string kind;
-            if (!ReadString(*item, "kind", kind) || !PickKindFromName(kind, pick.kind))
-                return false;
-
-            if (!ReadKey(*item, "occurrence", pick.occurrenceKey) || !ReadKey(*item, "target", pick.targetKey) ||
-                !ReadString(*item, "occurrenceName", pick.occurrenceName) || !ReadVec3(*item, "clicked", pick.clicked) ||
-                !ReadVec3(*item, "point", pick.point) || !ReadVec3(*item, "direction", pick.direction))
-                return false;
-
-            if (pick.kind == PickKind::LineEdge)
-                return ReadVec3(*item, "start", pick.start) && ReadVec3(*item, "end", pick.end);
+            for (const json& entry : *list)
+            {
+                PickedGeometry feature;
+                if (!ReadPickObject(entry, feature))
+                    return false;
+                features.push_back(feature);
+            }
             return true;
         }
 
@@ -281,7 +345,8 @@ namespace camcore
 
             // The other tabs' settings join this as each is built.
             if (step.type == StepType::Drill)
-                return { { "type", "drill" }, { "id", step.id }, { "name", step.name }, { "drilling", WriteDrilling(step.drill) } };
+                return { { "type", "drill" }, { "id", step.id }, { "name", step.name },
+                         { "features", WriteFeatures(step.features) }, { "drilling", WriteDrilling(step.drill) } };
 
             const OriginDefinition& origin = step.origin;
             return
@@ -332,6 +397,8 @@ namespace camcore
             {
                 // Drills saved before the Drilling tab existed have no settings yet.
                 step.type = StepType::Drill;
+                if (!ReadFeatures(item, step.features))
+                    return false;
                 const auto drilling = item.find("drilling");
                 return drilling == item.end() || ReadDrilling(*drilling, step.drill);
             }

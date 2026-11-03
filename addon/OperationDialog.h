@@ -1,6 +1,6 @@
 // OperationDialog.h : the modeless dialog that edits one operation.
 //
-// Every operation has the same first five tabs, then tabs of its own. It's
+// Operations share their first tabs, then have tabs of their own. It's
 // modeless so tabs can pick in the view. Tabs are built one at a time; the
 // ones not built yet are an empty COperationPage.
 
@@ -8,6 +8,7 @@
 
 #include "resource.h"
 #include "CamJob.h"
+#include "Features.h"
 
 #include <memory>
 #include <vector>
@@ -42,6 +43,66 @@ protected:
 
 private:
     UINT m_templateId;
+};
+
+// The Features tab every operation has: the geometry it machines, in order.
+class CFeaturesPage : public COperationPage
+{
+public:
+    explicit CFeaturesPage(COperationDlg* pOwner);
+
+    void Load(const camcore::SequenceStep& step) override;
+    bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
+
+    const std::vector<camcore::PickedGeometry>& GetFeatures() const { return m_features; }
+    void SetSelectedFeatures(const std::vector<camcore::PickedGeometry>& selected, int ignored);
+    void ForgetViewSelection();     // before selecting starts, so the next selection is all new
+    void ShowSelecting(bool selecting);
+    void ShowNote(const std::wstring& text);
+
+    // Shows the chosen rows in the view.
+    void ShowChosenRows();
+
+    enum { IDD = IDD_OP_FEATURES };
+
+protected:
+    BOOL OnInitDialog() override;
+    afx_msg void OnSelectFeatures();
+    afx_msg void OnDelete();
+    afx_msg void OnSort();
+    afx_msg void OnOrderChanged();
+    afx_msg void OnListKeyDown(NMHDR* pNotify, LRESULT* pResult);
+    afx_msg void OnListRightClick(NMHDR* pNotify, LRESULT* pResult);
+    afx_msg void OnListBeginDrag(NMHDR* pNotify, LRESULT* pResult);
+    afx_msg void OnListSelectionChanged(NMHDR* pNotify, LRESULT* pResult);
+    afx_msg void OnMouseMove(UINT flags, CPoint point);
+    afx_msg void OnLButtonUp(UINT flags, CPoint point);
+    afx_msg void OnCaptureChanged(CWnd* pWnd);
+    afx_msg LRESULT OnRowsChosen(WPARAM wParam, LPARAM lParam);
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    void FillList();
+    void SelectRow(int row);
+    void UpdateButtons();
+    int DropRow(CPoint pagePoint) const;     // the row to insert before; the row count means the end
+    void EndDrag();
+    void ChangedByUser();
+
+    std::vector<camcore::PickedGeometry> m_features;
+
+    // What the view had selected when the list last heard, while selecting.
+    std::vector<camcore::PickedGeometry> m_viewSelection;
+
+    CListCtrl m_list;
+    CComboBox m_order;
+    CComboBox m_corner;
+    bool m_dragging;
+    int m_dragRow;
+    int m_dropHighlight;
+    bool m_filling;             // the list is being refilled, so its changes aren't the user's
+    bool m_rowsChosenPosted;    // one message covers a burst of row changes
 };
 
 // The Drill operation's own tab.
@@ -87,6 +148,19 @@ public:
     void SetLocatedDepth(double depth);
     void ShowLocateProblem(const std::wstring& problem);
 
+    // Select Features on the Features tab turns Alibre's selection into the list.
+    camcore::FeatureFilter GetFeatureFilter() const;
+    bool IsSelectingFeatures() const { return m_selectingFeatures; }
+    void StartSelectingFeatures();
+    void StopSelectingFeatures();
+    std::vector<camcore::PickedGeometry> GetFeatures() const;
+    void SetSelectedFeatures(const std::vector<camcore::PickedGeometry>& selected, int ignored);
+    void ShowFeatureNote(const std::wstring& text);
+    void ShowFeaturesInView(const std::vector<camcore::PickedGeometry>& features);
+
+    // The frame of the origin the operation runs under. False if it has none yet.
+    bool GetFrame(camcore::Frame& frame) const;
+
     enum { IDD = IDD_OPERATION };
 
 protected:
@@ -109,6 +183,10 @@ private:
     camcore::SequenceStep m_step;
     CTabCtrl m_tabs;
     std::vector<std::unique_ptr<COperationPage>> m_pages;
+    CFeaturesPage* m_pFeatures;     // owned by m_pages
     CDrillingPage* m_pDrilling;     // owned by m_pages. Null for other operations.
     bool m_locating;
+    bool m_selectingFeatures;
+    bool m_haveFrame;
+    camcore::Frame m_frame;
 };
