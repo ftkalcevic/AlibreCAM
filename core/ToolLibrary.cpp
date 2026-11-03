@@ -2,9 +2,7 @@
 
 #include "ToolLibrary.h"
 
-#include <cstdio>
 #include <exception>
-#include <random>
 #include <set>
 #include <stdexcept>
 #include <system_error>
@@ -102,17 +100,7 @@ namespace camcore
 
     std::string NewToolId()
     {
-        std::random_device device;
-        std::uniform_int_distribution<unsigned> byte(0, 255);
-
-        std::string id;
-        char text[3];
-        for (int i = 0; i < 16; ++i)
-        {
-            std::snprintf(text, sizeof(text), "%02x", byte(device));
-            id += text;
-        }
-        return id;
+        return NewStableId();
     }
 
     std::vector<std::string> ValidateTool(const Tool& tool)

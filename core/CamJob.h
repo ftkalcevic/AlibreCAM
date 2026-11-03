@@ -6,11 +6,15 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
+
+#include "Origin.h"
 
 namespace camcore
 {
     // The newest .cam format this build can read and the one it writes.
-    constexpr int kCamFormatVersion = 1;
+    // Version 2 added Set Origin steps to the sequence.
+    constexpr int kCamFormatVersion = 2;
 
     // Which assembly a job belongs to. The GUID comes from the assembly file,
     // and is empty if it couldn't be read.
@@ -20,7 +24,23 @@ namespace camcore
         std::string guid;
     };
 
-    // Machine, stock and the operation sequence are added in later steps.
+    enum class StepType
+    {
+        SetOrigin       // operations join the sequence from step 4
+    };
+
+    // One step in the ordered sequence under Operations.
+    struct SequenceStep
+    {
+        StepType type = StepType::SetOrigin;
+        std::string id;         // stable, from NewStableId
+        std::string name;
+
+        // Set Origin steps only
+        OriginDefinition origin;
+    };
+
+    // Machine and stock are added in later steps.
     struct Job
     {
         AssemblyIdentity assembly;
@@ -31,6 +51,9 @@ namespace camcore
 
         // The ID of the selected tool in the library, or empty.
         std::string selectedToolId;
+
+        // Run from top to bottom. The first step is always a Set Origin.
+        std::vector<SequenceStep> sequence;
     };
 
     enum class LoadStatus
@@ -62,6 +85,9 @@ namespace camcore
         Different,
         Unknown     // at least one GUID is missing, so they can't be compared
     };
+
+    // 32 random hex digits, for IDs that must survive renaming and reordering.
+    std::string NewStableId();
 
     LoadResult LoadJob(const std::filesystem::path& path);
 

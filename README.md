@@ -85,8 +85,12 @@ Visual Studio. The project launches `Alibre Design.exe` and breakpoints in
 | `AddOnInterface.cpp/.h` | `IAlibreAddOn`: menu tree (root *AlibreCAM* → *CAM Tab*, *About*), `UseDedicatedRibbonTab` = TRUE, `MenuIcon`, and `InvokeCommand` |
 | `AboutDlg.cpp/.h`, `AlibreCAM.rc` | The About dialog |
 | `CamTabCommand.cpp/.h` | The CAM tab: its window, job tree, and loading and saving the `.cam` file |
+| `CamViewCommand.cpp/.h` | The view command that runs while the tab has focus, draws origins, and receives picks |
 | `CommandBase.cpp/.h` | Default `IAlibreAddOnCommand` behaviour |
+| `DisplaySettings.h` | Colours and sizes for CAM graphics, until program settings exist |
+| `GeometryReader.cpp/.h` | Reads picked faces and edges, and the assembly's extents, in assembly millimetres |
 | `ModelReader.cpp/.h` | Reads Alibre data into plain data for `CamCore` |
+| `OriginDialog.cpp/.h` | The modeless Set Origin dialog |
 | `Log.cpp/.h` | The log file |
 | `ToolDialogs.cpp/.h` | The tool library and tool editing dialogs |
 | `AlibreCAM.adc` | Add-on manifest. `specificationVersion="2"` is required for the ribbon tab and icons |

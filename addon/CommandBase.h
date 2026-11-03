@@ -53,6 +53,9 @@ public:
     STDMETHOD(get_Extents)(SAFEARRAY** ppExtents) override;
     STDMETHOD(On3DRender)() override;
 
+    // Empty before Alibre sets it and after the command ends.
+    IADAddOnCommandSite* Site() const { return m_site; }
+
 protected:
     const wchar_t* m_name;
     IADAddOnCommandSitePtr m_site;

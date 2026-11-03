@@ -4,6 +4,8 @@
 #include "AlibreCAM.h"
 #include "AddOnInterface.h"
 #include "CamTabCommand.h"
+#include "DisplaySettings.h"
+#include "GeometryReader.h"
 #include "ModelReader.h"
 #include "ToolDialogs.h"
 #include "Log.h"
@@ -16,15 +18,28 @@ namespace fs = std::filesystem;
 
 namespace
 {
+    // The resize timer also checks whether the tab has focus.
     const UINT_PTR kResizeTimer = 1;
     const UINT kResizeMilliseconds = 250;
     const UINT WM_APP_LOAD_JOB = WM_APP + 1;
+    const UINT WM_APP_CLEAR_SELECTION = WM_APP + 2;
+
+    // m_editIndex while the dialog makes a new step.
+    const size_t kNewStep = static_cast<size_t>(-1);
+    const size_t kNoStep = static_cast<size_t>(-1);
 
     enum
     {
         IDC_CAM_TREE = 14001,
         IDC_CAM_STATUS,
-        IDC_CAM_SAVE
+        IDC_CAM_SAVE,
+        IDC_CAM_REFRESH,
+        IDC_CAM_FOREGROUND,
+
+        // Tree menu commands
+        ID_CAM_ADD_ORIGIN,
+        ID_CAM_EDIT_STEP,
+        ID_CAM_DELETE_STEP
     };
 
     std::wstring FileName(const fs::path& path)
@@ -41,6 +56,19 @@ namespace
     {
         ::MessageBoxW(theApp.m_hAlibreWnd, message.c_str(), L"AlibreCAM", MB_OK | MB_ICONERROR);
     }
+
+    // "Set Origin 2", using the lowest number no step already has.
+    std::string NewOriginName(const camcore::Job& job)
+    {
+        for (int number = 1;; ++number)
+        {
+            const std::string name = "Set Origin " + std::to_string(number);
+            const bool used = std::any_of(job.sequence.begin(), job.sequence.end(),
+                                          [&](const camcore::SequenceStep& step) { return step.name == name; });
+            if (!used)
+                return name;
+        }
+    }
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -53,6 +81,13 @@ CCamTabCommand::CCamTabCommand(CAddOnInterface* pAddOn, const std::wstring& sess
     , m_pWnd(nullptr)
     , m_saveBlocked(false)
     , m_unsavedChanges(false)
+    , m_selectedStep(kNoStep)
+    , m_pView(nullptr)
+    , m_haveBounds(false)
+    , m_pOriginDlg(nullptr)
+    , m_editIndex(kNewStep)
+    , m_filterChanged(false)
+    , m_previousFilter(ADSelectionFilterOption_AD_FACES_EDGES)
 {
 }
 
@@ -69,8 +104,24 @@ void CCamTabCommand::SetStatus(const std::wstring& text)
 {
     Log(L"[tab] status: %s", text.c_str());
     m_jobStatus = text;
-    if (m_pWnd != nullptr)
-        m_pWnd->SetStatusText(m_toolStatus.empty() ? m_jobStatus : m_jobStatus + L"\n" + m_toolStatus);
+    ShowStatus();
+}
+
+void CCamTabCommand::ShowStatus()
+{
+    if (m_pWnd == nullptr)
+        return;
+
+    std::wstring text;
+    for (const std::wstring* pLine : { &m_jobStatus, &m_toolStatus, &m_sequenceStatus })
+    {
+        if (pLine->empty())
+            continue;
+        if (!text.empty())
+            text += L"\n";
+        text += *pLine;
+    }
+    m_pWnd->SetStatusText(text);
 }
 
 void CCamTabCommand::SetSaveBlocked(bool blocked)
@@ -129,6 +180,8 @@ STDMETHODIMP CCamTabCommand::OnTerminate()
 
     Log(L"[tab] OnTerminate");
 
+    CloseOriginDialog(true);
+    StopView(L"tab closing");
     WarnIfUnsaved();
     DestroyWindowIfOpen();
     m_site = nullptr;
@@ -163,6 +216,8 @@ void CCamTabCommand::LeaveAddOn()
 void CCamTabCommand::CloseFromAddOn()
 {
     m_pAddOn = nullptr;
+    CloseOriginDialog(true);
+    StopView(L"add-on unloading");
     WarnIfUnsaved();
     DestroyWindowIfOpen();
 }
@@ -216,8 +271,11 @@ void CCamTabCommand::WarnIfUnsaved()
 void CCamTabCommand::OnWindowGone()
 {
     // Closing the assembly destroys the tab window without calling OnTerminate.
+    // The session may be going, so nothing here calls Alibre. Alibre ends the
+    // view command itself.
     Log(L"[tab] window destroyed by Alibre");
     m_pWnd = nullptr;
+    CloseOriginDialog(false);
     LeaveAddOn();
 }
 
@@ -323,6 +381,16 @@ void CCamTabCommand::SelectToolByIndex(size_t index)
 }
 
 void CCamTabCommand::LoadJobFile()
+{
+    ReadJobFile();
+
+    m_selectedStep = m_job.sequence.empty() ? kNoStep : 0;
+    ShowSequence();
+    ReadModelSize();
+    RebuildScene();
+}
+
+void CCamTabCommand::ReadJobFile()
 {
     AssemblyInfo current;
     bool haveAssembly = false;
@@ -476,6 +544,425 @@ void CCamTabCommand::SaveJobFile()
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// The operation sequence
+
+bool CCamTabCommand::CanEditSequence() const
+{
+    return !m_saveBlocked;
+}
+
+void CCamTabCommand::ShowSequence()
+{
+    m_sequenceStatus = m_job.sequence.empty() ? L"Right-click Operations to add a Set Origin." : L"";
+    ShowStatus();
+
+    if (m_pWnd != nullptr)
+        m_pWnd->ShowSequence(m_job, m_selectedStep);
+}
+
+void CCamTabCommand::AddSetOrigin()
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    if (!CanEditSequence())
+        return;
+
+    camcore::SequenceStep step;
+    step.type = camcore::StepType::SetOrigin;
+    step.id = camcore::NewStableId();
+    step.name = NewOriginName(m_job);
+    OpenOriginDialog(step, kNewStep);
+}
+
+void CCamTabCommand::EditStep(size_t index)
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    if (!CanEditSequence() || index >= m_job.sequence.size())
+        return;
+
+    OpenOriginDialog(m_job.sequence[index], index);
+}
+
+void CCamTabCommand::DeleteStep(size_t index)
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    // The first step is the job's starting origin, so it can only be edited.
+    if (!CanEditSequence() || index == 0 || index >= m_job.sequence.size())
+        return;
+    if (m_pOriginDlg != nullptr)
+    {
+        ShowError(L"Close the Set Origin dialog first.");
+        return;
+    }
+
+    const std::wstring name = FromUtf8(m_job.sequence[index].name);
+    if (AskYesNo(L"Delete " + name + L"?") != IDYES)
+        return;
+
+    Log(L"[sequence] deleted step %zu, %s", index, name.c_str());
+    m_job.sequence.erase(m_job.sequence.begin() + static_cast<ptrdiff_t>(index));
+    if (m_selectedStep != kNoStep && m_selectedStep >= m_job.sequence.size())
+        m_selectedStep = m_job.sequence.size() - 1;
+
+    MarkJobChanged();
+    ShowSequence();
+    RebuildScene();
+}
+
+void CCamTabCommand::SelectStep(size_t index)
+{
+    if (index >= m_job.sequence.size() || index == m_selectedStep)
+        return;
+
+    m_selectedStep = index;
+    RebuildScene();
+}
+
+void CCamTabCommand::OpenOriginDialog(const camcore::SequenceStep& step, size_t editIndex)
+{
+    if (m_pOriginDlg != nullptr)
+    {
+        m_pOriginDlg->SetForegroundWindow();
+        return;
+    }
+
+    // The dialog draws a preview from the moment it's created, so set these first.
+    m_editIndex = editIndex;
+    m_pOriginDlg = new COriginDlg(this, step);
+    if (!m_pOriginDlg->CreateModeless(CWnd::FromHandle(theApp.m_hAlibreWnd)))
+    {
+        Log(L"[origin] could not create the Set Origin dialog");
+        delete m_pOriginDlg;
+        m_pOriginDlg = nullptr;
+        RebuildScene();
+        return;
+    }
+    m_pOriginDlg->ShowWindow(SW_SHOW);
+    Log(L"[origin] editing %s", editIndex == kNewStep ? L"a new step" : FromUtf8(step.name).c_str());
+}
+
+void CCamTabCommand::CloseOriginDialog(bool callAlibre)
+{
+    if (m_pOriginDlg == nullptr)
+        return;
+
+    COriginDlg* pDialog = m_pOriginDlg;
+    m_pOriginDlg = nullptr;
+    pDialog->DetachFromTab();
+    pDialog->DestroyWindow();
+
+    if (callAlibre)
+        RestoreSelectionFilter();
+    else
+        m_filterChanged = false;
+}
+
+void CCamTabCommand::OnOriginDialogDone(COriginDlg* pDialog, bool apply)
+{
+    if (pDialog != m_pOriginDlg)
+        return;
+
+    m_pOriginDlg = nullptr;
+    RestoreSelectionFilter();
+
+    if (apply && CanEditSequence())
+    {
+        const camcore::SequenceStep& step = pDialog->GetStep();
+        if (m_editIndex == kNewStep)
+        {
+            m_job.sequence.push_back(step);
+            m_selectedStep = m_job.sequence.size() - 1;
+        }
+        else if (m_editIndex < m_job.sequence.size())
+        {
+            m_job.sequence[m_editIndex] = step;
+            m_selectedStep = m_editIndex;
+        }
+        Log(L"[origin] applied %s", FromUtf8(step.name).c_str());
+        MarkJobChanged();
+        ShowSequence();
+    }
+
+    RebuildScene();
+}
+
+void CCamTabCommand::OnOriginPreviewChanged()
+{
+    RebuildScene();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// The view command and picking
+
+bool CCamTabCommand::StartView(const wchar_t* reason)
+{
+    if (m_pView != nullptr)
+        return true;
+    if (m_site == nullptr)
+    {
+        Log(L"[tab] can't start the view, no command site (%s)", reason);
+        return false;
+    }
+
+    ReadModelSize();
+    RebuildScene();
+
+    CCamViewCommand* pView = new CCamViewCommand(this);
+    pView->AddRef();
+    m_pView = pView;
+
+    const HRESULT hr = m_site->InvokeNewCommand(pView);
+    Log(L"[tab] InvokeNewCommand (%s) hr=0x%08X", reason, static_cast<unsigned>(hr));
+
+    if (FAILED(hr))
+    {
+        m_pView = nullptr;
+        pView->Release();
+        return false;
+    }
+
+    if (m_pView != nullptr)
+        m_pView->Refresh();
+    return m_pView != nullptr;
+}
+
+void CCamTabCommand::StopView(const wchar_t* reason)
+{
+    if (m_pView == nullptr)
+        return;
+
+    Log(L"[tab] stopping the view (%s)", reason);
+
+    // Keep the command alive across Terminate, which calls OnViewTerminated.
+    CCamViewCommand* pView = m_pView;
+    pView->AddRef();
+    pView->Refresh();
+    if (pView->Site() != nullptr)
+    {
+        const HRESULT hr = pView->Site()->Terminate();
+        Log(L"[tab] view Terminate hr=0x%08X", static_cast<unsigned>(hr));
+    }
+    pView->Release();
+}
+
+void CCamTabCommand::OnViewTerminated(CCamViewCommand* pView)
+{
+    if (m_pView != pView)
+        return;
+
+    m_pView = nullptr;
+    pView->Release();
+
+    // A native command, or leaving the tab, ends picking too.
+    if (m_pOriginDlg != nullptr && m_pOriginDlg->GetPickSlot() != PickSlot::None)
+    {
+        m_pOriginDlg->StopPicking();
+        m_pOriginDlg->ShowPickProblem(L"Picking stopped because another command started. Click Pick to try again.");
+        RestoreSelectionFilter();
+    }
+}
+
+void CCamTabCommand::OnTabVisibilityChanged(bool visible)
+{
+    Log(L"[focus] tab %s", visible ? L"gained focus" : L"lost focus");
+    if (visible)
+        StartView(L"tab gained focus");
+    else
+        StopView(L"tab lost focus");
+}
+
+void CCamTabCommand::RefreshView()
+{
+    if (m_pView != nullptr)
+    {
+        ReadModelSize();
+        RebuildScene();
+    }
+    else
+    {
+        StartView(L"refresh button");
+    }
+}
+
+void CCamTabCommand::SetForeground(bool foreground)
+{
+    m_scene.foreground = foreground;
+    RebuildScene();
+}
+
+void CCamTabCommand::ReadModelSize()
+{
+    try
+    {
+        IADSessionPtr session = GetSession();
+        IADDesignSessionPtr design;
+        session->QueryInterface(__uuidof(IADDesignSession), reinterpret_cast<void**>(&design));
+        m_scene.millimetresPerUnit = MillimetresPerModelUnit(design);
+        m_haveBounds = ReadAssemblyBounds(session, m_boundsLower, m_boundsUpper);
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[tab] could not read the assembly's size: hr=0x%08X", static_cast<unsigned>(error.Error()));
+        m_haveBounds = false;
+    }
+}
+
+void CCamTabCommand::RebuildScene()
+{
+    m_scene.origins.clear();
+    m_scene.hasPlane = false;
+
+    // While the dialog is open, its step replaces the one it edits.
+    const bool editing = (m_pOriginDlg != nullptr);
+    const size_t highlighted = editing ? m_editIndex : m_selectedStep;
+
+    const auto addOrigin = [&](const camcore::OriginDefinition& definition, bool selected)
+    {
+        const camcore::FrameResult result = camcore::BuildFrame(definition);
+        if (!result.ok)
+            return;
+
+        CamScene::Origin origin;
+        origin.frame = result.frame;
+        origin.selected = selected;
+        m_scene.origins.push_back(origin);
+
+        if (selected)
+        {
+            const camcore::Vec3 lower = m_haveBounds ? m_boundsLower : result.frame.origin;
+            const camcore::Vec3 upper = m_haveBounds ? m_boundsUpper : result.frame.origin;
+            m_scene.plane = camcore::PlaneCoveringBox(result.frame, lower, upper, kOriginPlaneMargin);
+            m_scene.hasPlane = true;
+        }
+    };
+
+    for (size_t i = 0; i < m_job.sequence.size(); ++i)
+    {
+        const bool replaced = editing && i == m_editIndex;
+        addOrigin(replaced ? m_pOriginDlg->GetStep().origin : m_job.sequence[i].origin, i == highlighted);
+    }
+    if (editing && m_editIndex == kNewStep)
+        addOrigin(m_pOriginDlg->GetStep().origin, true);
+
+    if (m_pView != nullptr)
+        m_pView->Refresh();
+}
+
+void CCamTabCommand::BeginPick(PickSlot slot)
+{
+    if (!StartView(L"picking"))
+    {
+        if (m_pOriginDlg != nullptr)
+        {
+            m_pOriginDlg->StopPicking();
+            m_pOriginDlg->ShowPickProblem(L"Picking couldn't start. Click the CAM tab, then click Pick again.");
+        }
+        return;
+    }
+
+    try
+    {
+        IADSessionPtr session = GetSession();
+        const ADSelectionFilterOption wanted =
+            (slot == PickSlot::Plane) ? ADSelectionFilterOption_AD_FACES_EDGES : ADSelectionFilterOption_AD_EDGES;
+        const ADSelectionFilterOption previous = SetSolidSelectionFilter(session, wanted);
+        if (!m_filterChanged)
+        {
+            m_previousFilter = previous;
+            m_filterChanged = true;
+        }
+        ClearSelection(session);
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[pick] could not prepare the pick: hr=0x%08X", static_cast<unsigned>(error.Error()));
+    }
+}
+
+void CCamTabCommand::EndPick()
+{
+    RestoreSelectionFilter();
+}
+
+void CCamTabCommand::RestoreSelectionFilter()
+{
+    if (!m_filterChanged)
+        return;
+
+    m_filterChanged = false;
+    try
+    {
+        SetSolidSelectionFilter(GetSession(), m_previousFilter);
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[pick] could not restore the selection filter: hr=0x%08X", static_cast<unsigned>(error.Error()));
+    }
+}
+
+void CCamTabCommand::HandleSelection()
+{
+    if (m_pOriginDlg == nullptr)
+        return;
+
+    const PickSlot slot = m_pOriginDlg->GetPickSlot();
+    if (slot == PickSlot::None)
+        return;
+
+    camcore::PickedGeometry pick;
+    std::wstring problem;
+    bool read = false;
+    try
+    {
+        const PickFilter filter = (slot == PickSlot::Plane) ? PickFilter::FacesAndEdges : PickFilter::Edges;
+        read = ReadSelectedPick(GetSession(), filter, pick, problem);
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[pick] could not find the session: hr=0x%08X", static_cast<unsigned>(error.Error()));
+    }
+
+    // Clearing the selection calls this again with nothing selected.
+    if (!read && problem.empty())
+        return;
+
+    if (read && slot == PickSlot::XDirection && pick.kind != camcore::PickKind::LineEdge)
+    {
+        read = false;
+        problem = L"The X direction needs a straight edge.";
+    }
+
+    if (read)
+    {
+        m_pOriginDlg->SetPick(slot, pick);
+        RestoreSelectionFilter();
+    }
+    else
+    {
+        m_pOriginDlg->ShowPickProblem(problem);
+    }
+
+    // Clear the selection after Alibre has finished with this one, so the same
+    // item can be picked again.
+    if (m_pWnd != nullptr)
+        m_pWnd->PostClearSelection();
+}
+
+void CCamTabCommand::ClearPickedSelection()
+{
+    try
+    {
+        ClearSelection(GetSession());
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[pick] could not find the session: hr=0x%08X", static_cast<unsigned>(error.Error()));
+    }
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // CCamTabWnd
 
 BEGIN_MESSAGE_MAP(CCamTabWnd, CWnd)
@@ -484,15 +971,21 @@ BEGIN_MESSAGE_MAP(CCamTabWnd, CWnd)
     ON_WM_SIZE()
     ON_WM_TIMER()
     ON_BN_CLICKED(IDC_CAM_SAVE, &CCamTabWnd::OnSave)
+    ON_BN_CLICKED(IDC_CAM_REFRESH, &CCamTabWnd::OnRefresh)
+    ON_BN_CLICKED(IDC_CAM_FOREGROUND, &CCamTabWnd::OnForeground)
     ON_NOTIFY(TVN_SELCHANGED, IDC_CAM_TREE, &CCamTabWnd::OnTreeSelectionChanged)
     ON_NOTIFY(NM_DBLCLK, IDC_CAM_TREE, &CCamTabWnd::OnTreeDoubleClick)
+    ON_NOTIFY(NM_RCLICK, IDC_CAM_TREE, &CCamTabWnd::OnTreeRightClick)
     ON_MESSAGE(WM_APP_LOAD_JOB, &CCamTabWnd::OnLoadJob)
+    ON_MESSAGE(WM_APP_CLEAR_SELECTION, &CCamTabWnd::OnClearSelection)
 END_MESSAGE_MAP()
 
 CCamTabWnd::CCamTabWnd(CCamTabCommand* pTab)
     : m_pTab(pTab)
     , m_hTools(nullptr)
+    , m_hOperations(nullptr)
     , m_fillingTree(false)
+    , m_visible(false)
 {
 }
 
@@ -524,11 +1017,20 @@ int CCamTabWnd::OnCreate(LPCREATESTRUCT pCreate)
     m_tree.InsertItem(L"Machine", hSetup);
     m_hTools = m_tree.InsertItem(L"Tools", hSetup);
     m_tree.InsertItem(L"Stock", hSetup);
-    m_tree.InsertItem(L"Operations");
+    m_hOperations = m_tree.InsertItem(L"Operations");
     m_tree.Expand(hSetup, TVE_EXPAND);
 
     m_status.Create(L"", WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX, CRect(0, 0, 10, 10), this, IDC_CAM_STATUS);
     m_status.SetFont(pFont);
+
+    m_refresh.Create(L"Refresh view", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, CRect(0, 0, 10, 10), this,
+                     IDC_CAM_REFRESH);
+    m_refresh.SetFont(pFont);
+
+    m_foreground.Create(L"Draw over model", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                        CRect(0, 0, 10, 10), this, IDC_CAM_FOREGROUND);
+    m_foreground.SetFont(pFont);
+    m_foreground.SetCheck(BST_CHECKED);
 
     m_save.Create(L"Save", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, CRect(0, 0, 10, 10), this, IDC_CAM_SAVE);
     m_save.SetFont(pFont);
@@ -569,16 +1071,21 @@ void CCamTabWnd::LayoutControls(int cx, int cy)
 
     const int margin = 4;
     const int buttonHeight = 23;
+    const int checkHeight = 18;
     const int statusHeight = 60;
     const int width = (cx > margin * 2) ? cx - margin * 2 : 1;
 
-    const int buttonY = cy - margin - buttonHeight;
-    const int statusY = buttonY - margin - statusHeight;
+    const int saveY = cy - margin - buttonHeight;
+    const int refreshY = saveY - margin - buttonHeight;
+    const int foregroundY = refreshY - margin - checkHeight;
+    const int statusY = foregroundY - margin - statusHeight;
     const int treeHeight = statusY - margin * 2;
 
     m_tree.MoveWindow(margin, margin, width, (treeHeight > 40) ? treeHeight : 40);
     m_status.MoveWindow(margin, statusY, width, statusHeight);
-    m_save.MoveWindow(margin, buttonY, width, buttonHeight);
+    m_foreground.MoveWindow(margin, foregroundY, width, checkHeight);
+    m_refresh.MoveWindow(margin, refreshY, width, buttonHeight);
+    m_save.MoveWindow(margin, saveY, width, buttonHeight);
 }
 
 void CCamTabWnd::OnSize(UINT type, int cx, int cy)
@@ -604,12 +1111,50 @@ void CCamTabWnd::OnTimer(UINT_PTR id)
     GetClientRect(&own);
     if (parentClient.Width() != own.Width() || parentClient.Height() != own.Height())
         MoveWindow(0, 0, parentClient.Width(), parentClient.Height());
+
+    // The tab has focus while its window is visible.
+    const bool visible = (::IsWindowVisible(m_hWnd) != FALSE);
+    if (visible != m_visible)
+    {
+        m_visible = visible;
+        if (m_pTab != nullptr)
+            m_pTab->OnTabVisibilityChanged(visible);
+    }
 }
 
 void CCamTabWnd::OnSave()
 {
     if (m_pTab != nullptr)
         m_pTab->SaveJobFile();
+}
+
+void CCamTabWnd::OnRefresh()
+{
+    if (m_pTab != nullptr)
+        m_pTab->RefreshView();
+}
+
+void CCamTabWnd::OnForeground()
+{
+    if (m_pTab != nullptr)
+        m_pTab->SetForeground(m_foreground.GetCheck() == BST_CHECKED);
+}
+
+bool CCamTabWnd::IsStepItem(HTREEITEM hItem) const
+{
+    return hItem != nullptr && m_tree.GetParentItem(hItem) == m_hOperations;
+}
+
+HTREEITEM CCamTabWnd::ItemUnderCursor(bool select)
+{
+    CPoint point;
+    ::GetCursorPos(&point);
+    m_tree.ScreenToClient(&point);
+
+    const HTREEITEM hItem = m_tree.HitTest(point);
+    if (select && hItem != nullptr)
+        m_tree.SelectItem(hItem);
+    return hItem;
 }
 
 void CCamTabWnd::OnTreeSelectionChanged(NMHDR* /*pNotify*/, LRESULT* pResult)
@@ -622,6 +1167,50 @@ void CCamTabWnd::OnTreeSelectionChanged(NMHDR* /*pNotify*/, LRESULT* pResult)
     const HTREEITEM hItem = m_tree.GetSelectedItem();
     if (hItem != nullptr && m_tree.GetParentItem(hItem) == m_hTools)
         m_pTab->SelectToolByIndex(static_cast<size_t>(m_tree.GetItemData(hItem)));
+    else if (IsStepItem(hItem))
+        m_pTab->SelectStep(static_cast<size_t>(m_tree.GetItemData(hItem)));
+}
+
+void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
+{
+    *pResult = 1;
+
+    if (m_pTab == nullptr)
+        return;
+
+    const HTREEITEM hItem = ItemUnderCursor(true);
+    const bool onStep = IsStepItem(hItem);
+    if (hItem != m_hOperations && !onStep)
+        return;
+
+    const size_t index = onStep ? static_cast<size_t>(m_tree.GetItemData(hItem)) : 0;
+    const UINT editable = m_pTab->CanEditSequence() ? MF_ENABLED : MF_GRAYED;
+
+    CMenu menu;
+    menu.CreatePopupMenu();
+    menu.AppendMenu(MF_STRING | editable, ID_CAM_ADD_ORIGIN, L"Add Set Origin...");
+    if (onStep)
+    {
+        menu.AppendMenu(MF_STRING | editable, ID_CAM_EDIT_STEP, L"Edit...");
+        menu.AppendMenu(MF_STRING | ((index == 0) ? MF_GRAYED : editable), ID_CAM_DELETE_STEP, L"Delete");
+    }
+
+    CPoint point;
+    ::GetCursorPos(&point);
+    const UINT command = menu.TrackPopupMenu(TPM_LEFTALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY,
+                                             point.x, point.y, this);
+
+    // The menu can outlive the command, if Alibre closed the tab meanwhile.
+    if (m_pTab == nullptr)
+        return;
+
+    switch (command)
+    {
+    case ID_CAM_ADD_ORIGIN:  m_pTab->AddSetOrigin(); break;
+    case ID_CAM_EDIT_STEP:   m_pTab->EditStep(index); break;
+    case ID_CAM_DELETE_STEP: m_pTab->DeleteStep(index); break;
+    default:                 break;
+    }
 }
 
 void CCamTabWnd::OnTreeDoubleClick(NMHDR* /*pNotify*/, LRESULT* pResult)
@@ -642,6 +1231,62 @@ void CCamTabWnd::OnTreeDoubleClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         *pResult = 1;
         m_pTab->OpenToolLibrary();
     }
+    else if (IsStepItem(hItem))
+    {
+        *pResult = 1;
+        m_pTab->EditStep(static_cast<size_t>(m_tree.GetItemData(hItem)));
+    }
+    else if (hItem == m_hOperations && m_tree.GetChildItem(m_hOperations) == nullptr)
+    {
+        // An empty Operations item has nothing to expand, so start the first step.
+        *pResult = 1;
+        m_pTab->AddSetOrigin();
+    }
+}
+
+void CCamTabWnd::ShowSequence(const camcore::Job& job, size_t selectedStep)
+{
+    m_fillingTree = true;
+
+    HTREEITEM hChild = m_tree.GetChildItem(m_hOperations);
+    while (hChild != nullptr)
+    {
+        const HTREEITEM hNext = m_tree.GetNextSiblingItem(hChild);
+        m_tree.DeleteItem(hChild);
+        hChild = hNext;
+    }
+
+    HTREEITEM hSelect = nullptr;
+    for (size_t i = 0; i < job.sequence.size(); ++i)
+    {
+        const camcore::SequenceStep& step = job.sequence[i];
+        std::wstring text = FromUtf8(step.name);
+        if (!camcore::BuildFrame(step.origin).ok)
+            text += L" (incomplete)";
+
+        const HTREEITEM hItem = m_tree.InsertItem(text.c_str(), m_hOperations);
+        m_tree.SetItemData(hItem, static_cast<DWORD_PTR>(i));
+        if (i == selectedStep)
+            hSelect = hItem;
+    }
+
+    m_tree.Expand(m_hOperations, TVE_EXPAND);
+    if (hSelect != nullptr)
+        m_tree.SelectItem(hSelect);
+
+    m_fillingTree = false;
+}
+
+void CCamTabWnd::PostClearSelection()
+{
+    PostMessage(WM_APP_CLEAR_SELECTION);
+}
+
+LRESULT CCamTabWnd::OnClearSelection(WPARAM, LPARAM)
+{
+    if (m_pTab != nullptr)
+        m_pTab->ClearPickedSelection();
+    return 0;
 }
 
 void CCamTabWnd::ShowTools(const camcore::ToolLibrary& library, const std::string& selectedToolId)

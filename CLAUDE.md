@@ -54,15 +54,16 @@ Target Alibre 27.0.1.27039. The API docs describe v29, so a documented call may 
 
 ## Current state
 
-- Step 1 is finished and committed: tab, tree, `.cam` load and save, unsaved warnings.
-- The tool library is written and **not yet built or tested on Frank's machine**, and it's uncommitted. Tools hold no cutting settings. It covers `core\ToolLibrary`, `core\FileIO`, `addon\ToolDialogs`, and tool selection in the tree.
-- Still to confirm from step 1: answering Yes when closing the assembly or exiting Alibre, the different-assembly prompt, the command being greyed in the Part workspace, and a `CamCoreTests.exe` run.
+- Steps 1 and 2 are committed: tab, tree, `.cam` load and save, unsaved warnings, and the tool library.
+- Still to confirm from step 1: answering Yes when closing the assembly or exiting Alibre, the different-assembly prompt, and the command being greyed in the Part workspace.
+- Step 3, `Set Origin`, is written, built, and installed, but **not yet tested in Alibre** and uncommitted. It covers `core\Origin`, the sequence in `core\CamJob` (format version 2), `addon\CamViewCommand`, `addon\GeometryReader`, `addon\OriginDialog`, and `addon\DisplaySettings.h`.
+- Unproven in Alibre: whether `DrawMesh` honours alpha (the plane is meant to be translucent), whether `IsSenseReversed` gives the outward face normal, and keyboard use in the modeless dialog. Alibre's message loop doesn't call `IsDialogMessage`, so Tab and Enter may not work there.
 
 ## Build order
 
 1. Done: CAM tab, tree, and `.cam` file.
-2. Tool library and selecting a tool in the tree. **This is the current step.** Build it, install it, and give Frank a test list.
-3. `Set Origin` and its drawing in the view.
+2. Done: tool library and selecting a tool in the tree.
+3. `Set Origin` and its drawing in the view. **This is the current step.** Built and installed, awaiting Frank's test.
 4. Drill: picking geometry and drawing the toolpath with the selected tool.
 5. Machine, post language, and stock, through to G-code that can be cut on the router.
 6. Facing, Contour, and Pocket.
@@ -83,6 +84,8 @@ Target Alibre 27.0.1.27039. The API docs describe v29, so a documented call may 
 - **Out-of-date toolpaths:** keep and draw stale paths, mark them out of date, and provide a refresh button.
 - **Toolpath display:** paths are visible when the CAM tab has focus, with a foreground toggle.
 - **Geometry picking:** faces and edges only.
+- **Set Origin:** Z points out of the material from a flat face. A circular edge gives its axis and centre, and a cylindrical face gives its axis. Position comes from an edge: the nearer end of a straight edge, or a circle's centre. X comes from an optional straight edge, otherwise assembly X projected onto the plane (assembly Y if that's too close to the tool axis). There are Flip Z, X quarter turns, and offsets in the origin's own axes. The full rules are in the spec.
+- **Origin display:** axes for every origin, and a translucent shaded XY plane for the selected one only, covering the parts (and later the stock) plus 10%. The colour is `kOriginPlaneColour` in `DisplaySettings.h` until program settings exist.
 - **Open:** arc fitting at Contour and Pocket (Clipper2 gives straight lines only). Where machine and post files live is proposed but unconfirmed: installed `machines\`, with `%APPDATA%\AlibreCAM\` overriding it.
 
 ## Proven Alibre API behaviour (27.0.1)

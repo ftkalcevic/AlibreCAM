@@ -11,6 +11,7 @@
 
 #include "CamJob.h"
 #include "FileIO.h"
+#include "Origin.h"
 #include "ToolLibrary.h"
 
 namespace fs = std::filesystem;
@@ -117,7 +118,7 @@ TEST_CASE("the file records its format and version")
 
     const std::string text = ReadText(path);
     CHECK(text.find("\"format\": \"AlibreCAM\"") != std::string::npos);
-    CHECK(text.find("\"formatVersion\": 1") != std::string::npos);
+    CHECK(text.find("\"formatVersion\": 2") != std::string::npos);
     CHECK(text.find("\"sequence\": []") != std::string::npos);
 }
 

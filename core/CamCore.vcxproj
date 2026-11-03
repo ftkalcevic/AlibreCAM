@@ -64,11 +64,13 @@
   <ItemGroup>
     <ClCompile Include="CamJob.cpp" />
     <ClCompile Include="FileIO.cpp" />
+    <ClCompile Include="Origin.cpp" />
     <ClCompile Include="ToolLibrary.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CamJob.h" />
     <ClInclude Include="FileIO.h" />
+    <ClInclude Include="Origin.h" />
     <ClInclude Include="ToolLibrary.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

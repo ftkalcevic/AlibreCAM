@@ -25,14 +25,31 @@
 #define IDC_TOOL_OVERALL_LENGTH         13046
 #define IDC_TOOL_FLUTE_COUNT            13047
 #define IDC_TOOL_POINT_ANGLE            13048
+#define IDD_SET_ORIGIN                  13012
+#define IDC_ORIGIN_NAME                 13060
+#define IDC_ORIGIN_PLANE_TEXT           13061
+#define IDC_ORIGIN_PLANE_PICK           13062
+#define IDC_ORIGIN_POSITION_TEXT        13063
+#define IDC_ORIGIN_POSITION_PICK        13064
+#define IDC_ORIGIN_POSITION_CLEAR       13065
+#define IDC_ORIGIN_X_TEXT               13066
+#define IDC_ORIGIN_X_PICK               13067
+#define IDC_ORIGIN_X_CLEAR              13068
+#define IDC_ORIGIN_FLIP_Z               13069
+#define IDC_ORIGIN_X_ROTATION           13070
+#define IDC_ORIGIN_OFFSET_X             13071
+#define IDC_ORIGIN_OFFSET_Y             13072
+#define IDC_ORIGIN_OFFSET_Z             13073
+#define IDC_ORIGIN_PROMPT               13074
+#define IDC_ORIGIN_RESULT               13075
 
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13012
+#define _APS_NEXT_RESOURCE_VALUE        13013
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13049
+#define _APS_NEXT_CONTROL_VALUE         13076
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

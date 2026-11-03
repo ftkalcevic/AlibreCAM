@@ -66,6 +66,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="CamCoreTests.cpp" />
+    <ClCompile Include="OriginTests.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\core\CamCore.vcxproj">

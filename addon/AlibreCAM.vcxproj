@@ -106,9 +106,12 @@
     <ClCompile Include="AboutDlg.cpp" />
     <ClCompile Include="AddOnInterface.cpp" />
     <ClCompile Include="CamTabCommand.cpp" />
+    <ClCompile Include="CamViewCommand.cpp" />
     <ClCompile Include="CommandBase.cpp" />
+    <ClCompile Include="GeometryReader.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="ModelReader.cpp" />
+    <ClCompile Include="OriginDialog.cpp" />
     <ClCompile Include="ToolDialogs.cpp" />
     <ClCompile Include="AlibreCAM.cpp" />
     <ClCompile Include="stdafx.cpp">
@@ -119,9 +122,13 @@
     <ClInclude Include="AboutDlg.h" />
     <ClInclude Include="AddOnInterface.h" />
     <ClInclude Include="CamTabCommand.h" />
+    <ClInclude Include="CamViewCommand.h" />
     <ClInclude Include="CommandBase.h" />
+    <ClInclude Include="DisplaySettings.h" />
+    <ClInclude Include="GeometryReader.h" />
     <ClInclude Include="Log.h" />
     <ClInclude Include="ModelReader.h" />
+    <ClInclude Include="OriginDialog.h" />
     <ClInclude Include="ToolDialogs.h" />
     <ClInclude Include="AlibreCAM.h" />
     <ClInclude Include="resource.h" />

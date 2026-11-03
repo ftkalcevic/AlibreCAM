@@ -1,8 +1,7 @@
-> Exported from the Claude doc "Alibre CAM Add-on: Version 1 Specification" on 3 November 2026 (rev 55).
+> Exported from the Claude doc "Alibre CAM Add-on: Version 1 Specification" on 3 November 2026 (rev 57).
 > The Claude doc is the master copy: https://claude.ai/artifact/JZEKmxczFdEn2eV32A5acB
 > The two diagrams are redrawn here in Mermaid, because they don't export from the doc.
 > Update this copy after spec changes, or note here if it becomes the master.
-
 # Alibre CAM Add-on: Version 1 Specification
 
 Nov 3, 2026 · @Frank
@@ -123,6 +122,19 @@ Each `Set Origin` step defines a position and orientation, and its Z axis is the
 | Z axis (tool axis) | Picked face or edge | Set separately |
 | X axis | Optional picked edge; otherwise calculated | Set separately |
 | Linked to | Picked geometry | Stock |
+
+The geometry method follows these rules:
+
+- **Z from a flat face:** Z points out of the material, so the tool comes down onto the face.
+- **Z from a cylindrical face:** Z is the cylinder's axis. This suits 4th-axis work.
+- **Z from a circular edge:** Z is the circle's axis, pointing out of the material when the edge borders a flat face square to that axis. A circular edge also gives its centre as the position.
+- **Z from a straight edge:** Z runs along the edge.
+- **Position:** An edge picked for the position. If none is picked, the plane pick supplies it when it's an edge. A face alone gives no position.
+- **X from an edge:** A straight edge, projected onto the XY plane, pointing away from the end nearer the click. An edge too close to the tool axis is refused.
+- **Calculated X:** Assembly X projected onto the XY plane. If that is within about 6 degrees of the tool axis, assembly Y is used instead.
+- **Adjustments:** Flip Z, turn X about Z in 90 degree steps, and offset the origin along its own X, Y, and Z axes in millimetres. The offset is applied last.
+- **Display:** Every origin draws X, Y, and Z axes in red, green, and blue. The selected origin's axes are bolder, and its XY plane is shaded in a translucent colour. The plane covers the parts, and later the stock, plus 10%. The colour and axis length are fixed for now and will become program settings.
+- **Editing:** Right-click Operations to add a `Set Origin`, and double-click a step to edit it. A modeless dialog stays open while you pick in the view, and the view shows a live preview. The first step can be edited but not deleted.
 
 - **Changes:** If the source geometry or stock changes, the origin and every operation that depends on it are marked out of date.
 - **Deleted geometry:** If the source geometry is deleted, the origin is marked as needing repair, and its operations can't be posted until it's fixed.
@@ -263,7 +275,7 @@ CAM data is saved in a separate `.cam` file next to the assembly, such as `Brack
 - **Pairing:** The file is found by matching its name and location to the assembly, then confirmed using the assembly identity stored inside it.
 - **References:** The file stores references to components. On opening, the add-on checks them and marks anything it can't match as needing repair.
 - **Windows file association:** Other software also uses `.cam`, so version 1 doesn't register the extension. Files are opened through the add-on.
-- **Format:** Each file includes a format version number so older files can be migrated.
+- **Format:** Each file includes a format version number so older files can be migrated. Version 2 added `Set Origin` steps, which store their picks with persistent keys plus the options. The frame is recalculated on loading rather than stored.
 - **Future changes:** All saving and loading go through a single storage layer, so the data can move into the assembly later without rewriting the CAM logic.
 - **Saving:** A Save button on the CAM tab writes the file, separately from saving the assembly. It writes a temporary file first, so a failed save leaves the existing file as it was.
 - **Protected files:** A file from a newer build or one that can't be read isn't opened, and saving stays off so it can't be overwritten.
