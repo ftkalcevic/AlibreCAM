@@ -26,6 +26,7 @@
     <ClCompile Include="GeometryReader.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Log.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ModelReader.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="OperationDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="OriginDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ToolDialogs.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AlibreCAM.cpp"><Filter>Source Files</Filter></ClCompile>
@@ -41,6 +42,7 @@
     <ClInclude Include="GeometryReader.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Log.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ModelReader.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="OperationDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="OriginDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ToolDialogs.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AlibreCAM.h"><Filter>Header Files</Filter></ClInclude>

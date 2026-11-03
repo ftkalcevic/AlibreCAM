@@ -1,4 +1,4 @@
-> Exported from the Claude doc "Alibre CAM Add-on: Version 1 Specification" on 3 November 2026 (rev 57).
+> Exported from the Claude doc "Alibre CAM Add-on: Version 1 Specification" on 3 November 2026 (rev 61).
 > The Claude doc is the master copy: https://claude.ai/artifact/JZEKmxczFdEn2eV32A5acB
 > The two diagrams are redrawn here in Mermaid, because they don't export from the doc.
 > Update this copy after spec changes, or note here if it becomes the master.
@@ -133,7 +133,7 @@ The geometry method follows these rules:
 - **X from an edge:** A straight edge, projected onto the XY plane, pointing away from the end nearer the click. An edge too close to the tool axis is refused.
 - **Calculated X:** Assembly X projected onto the XY plane. If that is within about 6 degrees of the tool axis, assembly Y is used instead.
 - **Adjustments:** Flip Z, turn X about Z in 90 degree steps, and offset the origin along its own X, Y, and Z axes in millimetres. The offset is applied last.
-- **Display:** Every origin draws X, Y, and Z axes in red, green, and blue. The selected origin's axes are bolder, and its XY plane is shaded in a translucent colour. The plane covers the parts, and later the stock, plus 10%. The colour and axis length are fixed for now and will become program settings.
+- **Display:** Only one origin is drawn: the one a step runs under, which is the selected step if it's a Set Origin, and otherwise the nearest Set Origin above it. While the Set Origin dialog is open, its step is drawn instead. The origin draws X, Y, and Z axes in red, green, and blue, and its XY plane is shaded in a translucent colour. The plane covers the parts, and later the stock, plus 10%. The colour and axis length are fixed for now and will become program settings.
 - **Editing:** Right-click Operations to add a `Set Origin`, and double-click a step to edit it. A modeless dialog stays open while you pick in the view, and the view shows a live preview. The first step can be edited but not deleted.
 
 - **Changes:** If the source geometry or stock changes, the origin and every operation that depends on it are marked out of date.
@@ -185,6 +185,10 @@ These rules keep group behaviour predictable:
 - **Origins stay outside groups:** `Set Origin` remains a step in the main sequence, so a group can't change the origin partway through.
 - **Moves are checked:** Moving a group or operation past a `Set Origin` step changes its active origin, so affected operations are marked out of date.
 - **Partial posts stay safe:** Posting one group still outputs the program start, the active origin, and any orientation move it needs.
+- **Shown as folders:** In the tree a group is a folder. Right-click Operations and choose Add Folder to add one at the end of the sequence, with no dialog. Its name, such as "Folder 1", is ready to type over. The sequence must start with a `Set Origin`, so Add Folder is unavailable until one exists.
+- **Folder menu:** Right-clicking a folder offers Rename, which edits the name in place, and Delete. Deleting a folder that holds operations asks first, and an empty folder is deleted without asking. Below a separator, an Add Holes submenu holds Drill, which opens the Drill dialog for a new operation in that folder.
+- **Operations live in folders:** An operation can only be created inside a folder, and runs under the folder's origin. Right-clicking an operation offers Edit, Rename (in place), and Delete, which asks first. Double-clicking it opens its dialog.
+- **Operation dialog:** A modeless dialog with a name and tabs. Every operation has Features (its geometry), Tool (a drill or flat end mill), Feeds & Speeds, Clearance, and Sorting. Drill adds a Drilling tab for drill depth, geometry location (top, bottom, or from the model), dwell (off, time, or revolutions), and engage and retract distances. The tabs are built one at a time.
 
 ## Out-of-date tracking
 
@@ -275,7 +279,7 @@ CAM data is saved in a separate `.cam` file next to the assembly, such as `Brack
 - **Pairing:** The file is found by matching its name and location to the assembly, then confirmed using the assembly identity stored inside it.
 - **References:** The file stores references to components. On opening, the add-on checks them and marks anything it can't match as needing repair.
 - **Windows file association:** Other software also uses `.cam`, so version 1 doesn't register the extension. Files are opened through the add-on.
-- **Format:** Each file includes a format version number so older files can be migrated. Version 2 added `Set Origin` steps, which store their picks with persistent keys plus the options. The frame is recalculated on loading rather than stored.
+- **Format:** Each file includes a format version number so older files can be migrated. Version 2 added `Set Origin` steps, which store their picks with persistent keys plus the options. Groups store their operations in order. The frame is recalculated on loading rather than stored.
 - **Future changes:** All saving and loading go through a single storage layer, so the data can move into the assembly later without rewriting the CAM logic.
 - **Saving:** A Save button on the CAM tab writes the file, separately from saving the assembly. It writes a temporary file first, so a failed save leaves the existing file as it was.
 - **Protected files:** A file from a newer build or one that can't be read isn't opened, and saving stays off so it can't be overwritten.

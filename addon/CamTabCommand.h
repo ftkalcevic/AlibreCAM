@@ -9,11 +9,23 @@
 #include "CommandBase.h"
 #include "CamJob.h"
 #include "CamViewCommand.h"
+#include "OperationDialog.h"
 #include "OriginDialog.h"
 #include "ToolLibrary.h"
 
 class CAddOnInterface;
 class CCamTabWnd;
+
+// A place in the sequence: a top-level step, or an operation in a group.
+struct StepRef
+{
+    static constexpr size_t kNone = camcore::kNoStepIndex;
+
+    size_t step = kNone;        // index in the sequence
+    size_t child = kNone;       // index in that group, for an operation
+
+    bool IsOperation() const { return child != kNone; }
+};
 
 class CCamTabCommand : public CCommandBase
 {
@@ -31,9 +43,17 @@ public:
 
     // The operation sequence
     void AddSetOrigin();
-    void EditStep(size_t index);
-    void DeleteStep(size_t index);
-    void SelectStep(size_t index);
+    void AddFolder();
+    void AddDrill(size_t folder);
+    bool CanAddFolder() const;
+    bool IsFolder(const StepRef& ref) const;
+    bool IsOperation(const StepRef& ref) const;
+    bool CanRename(const StepRef& ref) const;
+    bool CanDelete(const StepRef& ref) const;
+    bool RenameStep(const StepRef& ref, const std::wstring& name);      // false keeps the old name
+    void EditStep(const StepRef& ref);
+    void DeleteStep(const StepRef& ref);
+    void SelectStep(const StepRef& ref);
     bool CanEditSequence() const;
 
     // The view command, which draws while the tab has focus
@@ -50,6 +70,9 @@ public:
     void EndPick();
     void OnOriginPreviewChanged();
     void OnOriginDialogDone(COriginDlg* pDialog, bool apply);
+
+    // From the operation dialog
+    void OnOperationDialogDone(COperationDlg* pDialog, bool apply);
 
     void OnWindowClosing();
     void OnWindowGone();
@@ -80,8 +103,14 @@ private:
     void StopView(const wchar_t* reason);
     void ReadModelSize();
     void RebuildScene();
+    camcore::SequenceStep* FindStep(const StepRef& ref);
+    const camcore::SequenceStep* FindStep(const StepRef& ref) const;
+    bool IsDialogOpen() const;
+    bool FocusOpenDialog();         // true if a dialog was open
     void OpenOriginDialog(const camcore::SequenceStep& step, size_t editIndex);
     void CloseOriginDialog(bool callAlibre);
+    void OpenOperationDialog(const camcore::SequenceStep& step, const StepRef& target);
+    void CloseOperationDialog();
     void RestoreSelectionFilter();
 
     CAddOnInterface* m_pAddOn;
@@ -102,8 +131,8 @@ private:
     std::wstring m_toolStatus;
     std::wstring m_sequenceStatus;
 
-    // The step drawn with its plane. Not saved.
-    size_t m_selectedStep;
+    // The selected step. The view draws the origin it runs under. Not saved.
+    StepRef m_selected;
 
     CCamViewCommand* m_pView;           // holds a reference while the view is active
     CamScene m_scene;
@@ -113,6 +142,10 @@ private:
 
     COriginDlg* m_pOriginDlg;
     size_t m_editIndex;                 // the step the dialog edits, or kNewStep
+
+    // Only one dialog is open at a time, so this and m_pOriginDlg aren't both set.
+    COperationDlg* m_pOperationDlg;
+    StepRef m_operationTarget;          // the folder, and the operation in it or kNewStep
 
     // Picking changes Alibre's selection filter. This puts it back.
     bool m_filterChanged;
@@ -134,7 +167,10 @@ public:
     void EnableSave(bool enable);
     void ShowTools(const camcore::ToolLibrary& library, const std::string& selectedToolId);
     void MarkSelectedTool(const camcore::ToolLibrary& library, const std::string& selectedToolId);
-    void ShowSequence(const camcore::Job& job, size_t selectedStep);
+    void ShowSequence(const camcore::Job& job, const StepRef& selected);
+
+    // Starts editing a step's name in place.
+    void StartRename(const StepRef& ref);
 
     // Clears Alibre's selection once the pick that made it has been handled.
     void PostClearSelection();
@@ -150,6 +186,8 @@ protected:
     afx_msg void OnTreeSelectionChanged(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnTreeDoubleClick(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnTreeRightClick(NMHDR* pNotify, LRESULT* pResult);
+    afx_msg void OnTreeBeginRename(NMHDR* pNotify, LRESULT* pResult);
+    afx_msg void OnTreeEndRename(NMHDR* pNotify, LRESULT* pResult);
     afx_msg LRESULT OnLoadJob(WPARAM wParam, LPARAM lParam);
     afx_msg LRESULT OnClearSelection(WPARAM wParam, LPARAM lParam);
 
@@ -161,6 +199,8 @@ private:
     void LayoutControls(int cx, int cy);
     HTREEITEM ItemUnderCursor(bool select);
     bool IsStepItem(HTREEITEM hItem) const;
+    StepRef StepOfItem(HTREEITEM hItem) const;
+    HTREEITEM FindStepItem(const StepRef& ref) const;
 
     CCamTabCommand* m_pTab;
     CTreeCtrl m_tree;

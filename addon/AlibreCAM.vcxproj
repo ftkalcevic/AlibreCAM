@@ -111,6 +111,7 @@
     <ClCompile Include="GeometryReader.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="ModelReader.cpp" />
+    <ClCompile Include="OperationDialog.cpp" />
     <ClCompile Include="OriginDialog.cpp" />
     <ClCompile Include="ToolDialogs.cpp" />
     <ClCompile Include="AlibreCAM.cpp" />
@@ -128,6 +129,7 @@
     <ClInclude Include="GeometryReader.h" />
     <ClInclude Include="Log.h" />
     <ClInclude Include="ModelReader.h" />
+    <ClInclude Include="OperationDialog.h" />
     <ClInclude Include="OriginDialog.h" />
     <ClInclude Include="ToolDialogs.h" />
     <ClInclude Include="AlibreCAM.h" />

@@ -90,6 +90,7 @@ Visual Studio. The project launches `Alibre Design.exe` and breakpoints in
 | `DisplaySettings.h` | Colours and sizes for CAM graphics, until program settings exist |
 | `GeometryReader.cpp/.h` | Reads picked faces and edges, and the assembly's extents, in assembly millimetres |
 | `ModelReader.cpp/.h` | Reads Alibre data into plain data for `CamCore` |
+| `OperationDialog.cpp/.h` | The modeless operation dialog and its tabs |
 | `OriginDialog.cpp/.h` | The modeless Set Origin dialog |
 | `Log.cpp/.h` | The log file |
 | `ToolDialogs.cpp/.h` | The tool library and tool editing dialogs |

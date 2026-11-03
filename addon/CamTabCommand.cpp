@@ -26,7 +26,6 @@ namespace
 
     // m_editIndex while the dialog makes a new step.
     const size_t kNewStep = static_cast<size_t>(-1);
-    const size_t kNoStep = static_cast<size_t>(-1);
 
     enum
     {
@@ -38,7 +37,10 @@ namespace
 
         // Tree menu commands
         ID_CAM_ADD_ORIGIN,
+        ID_CAM_ADD_FOLDER,
+        ID_CAM_ADD_DRILL,
         ID_CAM_EDIT_STEP,
+        ID_CAM_RENAME_STEP,
         ID_CAM_DELETE_STEP
     };
 
@@ -58,16 +60,47 @@ namespace
     }
 
     // "Set Origin 2", using the lowest number no step already has.
-    std::string NewOriginName(const camcore::Job& job)
+    std::string NewStepName(const camcore::Job& job, const std::string& base)
     {
         for (int number = 1;; ++number)
         {
-            const std::string name = "Set Origin " + std::to_string(number);
+            const std::string name = base + " " + std::to_string(number);
             const bool used = std::any_of(job.sequence.begin(), job.sequence.end(),
                                           [&](const camcore::SequenceStep& step) { return step.name == name; });
             if (!used)
                 return name;
         }
+    }
+
+    // "Drill 2", unique across the operations in every folder.
+    std::string NewOperationName(const camcore::Job& job, const std::string& base)
+    {
+        for (int number = 1;; ++number)
+        {
+            const std::string name = base + " " + std::to_string(number);
+            bool used = false;
+            for (const camcore::SequenceStep& step : job.sequence)
+            {
+                used = used || std::any_of(step.children.begin(), step.children.end(),
+                                           [&](const camcore::SequenceStep& child) { return child.name == name; });
+            }
+            if (!used)
+                return name;
+        }
+    }
+
+    // A tree item's data for a step: the step's index in the high half, and the
+    // operation's index plus one in the low half, or 0 for a top-level step.
+    DWORD_PTR StepItemData(const StepRef& ref)
+    {
+        const DWORD_PTR child = ref.IsOperation() ? static_cast<DWORD_PTR>(ref.child) + 1 : 0;
+        return (static_cast<DWORD_PTR>(ref.step) << 32) | child;
+    }
+
+    StepRef StepFromItemData(DWORD_PTR data)
+    {
+        const DWORD_PTR child = data & 0xFFFFFFFFu;
+        return StepRef{ static_cast<size_t>(data >> 32), child == 0 ? StepRef::kNone : static_cast<size_t>(child - 1) };
     }
 }
 
@@ -81,11 +114,13 @@ CCamTabCommand::CCamTabCommand(CAddOnInterface* pAddOn, const std::wstring& sess
     , m_pWnd(nullptr)
     , m_saveBlocked(false)
     , m_unsavedChanges(false)
-    , m_selectedStep(kNoStep)
+    , m_selected()
     , m_pView(nullptr)
     , m_haveBounds(false)
     , m_pOriginDlg(nullptr)
     , m_editIndex(kNewStep)
+    , m_pOperationDlg(nullptr)
+    , m_operationTarget()
     , m_filterChanged(false)
     , m_previousFilter(ADSelectionFilterOption_AD_FACES_EDGES)
 {
@@ -181,6 +216,7 @@ STDMETHODIMP CCamTabCommand::OnTerminate()
     Log(L"[tab] OnTerminate");
 
     CloseOriginDialog(true);
+    CloseOperationDialog();
     StopView(L"tab closing");
     WarnIfUnsaved();
     DestroyWindowIfOpen();
@@ -217,6 +253,7 @@ void CCamTabCommand::CloseFromAddOn()
 {
     m_pAddOn = nullptr;
     CloseOriginDialog(true);
+    CloseOperationDialog();
     StopView(L"add-on unloading");
     WarnIfUnsaved();
     DestroyWindowIfOpen();
@@ -276,6 +313,7 @@ void CCamTabCommand::OnWindowGone()
     Log(L"[tab] window destroyed by Alibre");
     m_pWnd = nullptr;
     CloseOriginDialog(false);
+    CloseOperationDialog();
     LeaveAddOn();
 }
 
@@ -384,7 +422,7 @@ void CCamTabCommand::LoadJobFile()
 {
     ReadJobFile();
 
-    m_selectedStep = m_job.sequence.empty() ? kNoStep : 0;
+    m_selected = m_job.sequence.empty() ? StepRef() : StepRef{ 0 };
     ShowSequence();
     ReadModelSize();
     RebuildScene();
@@ -551,83 +589,221 @@ bool CCamTabCommand::CanEditSequence() const
     return !m_saveBlocked;
 }
 
+bool CCamTabCommand::IsDialogOpen() const
+{
+    return m_pOriginDlg != nullptr || m_pOperationDlg != nullptr;
+}
+
+camcore::SequenceStep* CCamTabCommand::FindStep(const StepRef& ref)
+{
+    if (ref.step >= m_job.sequence.size())
+        return nullptr;
+
+    camcore::SequenceStep& step = m_job.sequence[ref.step];
+    if (!ref.IsOperation())
+        return &step;
+    return (ref.child < step.children.size()) ? &step.children[ref.child] : nullptr;
+}
+
+const camcore::SequenceStep* CCamTabCommand::FindStep(const StepRef& ref) const
+{
+    return const_cast<CCamTabCommand*>(this)->FindStep(ref);
+}
+
 void CCamTabCommand::ShowSequence()
 {
     m_sequenceStatus = m_job.sequence.empty() ? L"Right-click Operations to add a Set Origin." : L"";
     ShowStatus();
 
     if (m_pWnd != nullptr)
-        m_pWnd->ShowSequence(m_job, m_selectedStep);
+        m_pWnd->ShowSequence(m_job, m_selected);
+}
+
+bool CCamTabCommand::FocusOpenDialog()
+{
+    if (m_pOriginDlg != nullptr)
+        m_pOriginDlg->SetForegroundWindow();
+    else if (m_pOperationDlg != nullptr)
+        m_pOperationDlg->SetForegroundWindow();
+    else
+        return false;
+    return true;
 }
 
 void CCamTabCommand::AddSetOrigin()
 {
     AFX_MANAGE_STATE(AfxGetStaticModuleState());
 
-    if (!CanEditSequence())
+    if (!CanEditSequence() || FocusOpenDialog())
         return;
 
     camcore::SequenceStep step;
     step.type = camcore::StepType::SetOrigin;
     step.id = camcore::NewStableId();
-    step.name = NewOriginName(m_job);
+    step.name = NewStepName(m_job, "Set Origin");
     OpenOriginDialog(step, kNewStep);
 }
 
-void CCamTabCommand::EditStep(size_t index)
+bool CCamTabCommand::CanAddFolder() const
 {
-    AFX_MANAGE_STATE(AfxGetStaticModuleState());
-
-    if (!CanEditSequence() || index >= m_job.sequence.size())
-        return;
-
-    OpenOriginDialog(m_job.sequence[index], index);
+    // The sequence must start with a Set Origin, and folders can't hold one.
+    return CanEditSequence() && !m_job.sequence.empty();
 }
 
-void CCamTabCommand::DeleteStep(size_t index)
+bool CCamTabCommand::IsFolder(const StepRef& ref) const
+{
+    const camcore::SequenceStep* pStep = FindStep(ref);
+    return pStep != nullptr && pStep->type == camcore::StepType::Group;
+}
+
+bool CCamTabCommand::IsOperation(const StepRef& ref) const
+{
+    const camcore::SequenceStep* pStep = FindStep(ref);
+    return pStep != nullptr && camcore::IsOperation(pStep->type);
+}
+
+bool CCamTabCommand::CanRename(const StepRef& ref) const
+{
+    // Set Origin steps are renamed in their dialog.
+    return CanEditSequence() && (IsFolder(ref) || IsOperation(ref));
+}
+
+bool CCamTabCommand::CanDelete(const StepRef& ref) const
+{
+    // The first step is the job's starting origin, so it can only be edited.
+    return CanEditSequence() && FindStep(ref) != nullptr && (ref.IsOperation() || ref.step > 0);
+}
+
+void CCamTabCommand::AddFolder()
+{
+    if (!CanAddFolder())
+        return;
+
+    camcore::SequenceStep folder;
+    folder.type = camcore::StepType::Group;
+    folder.id = camcore::NewStableId();
+    folder.name = NewStepName(m_job, "Folder");
+    m_job.sequence.push_back(folder);
+    Log(L"[sequence] added %s", FromUtf8(folder.name).c_str());
+
+    m_selected = StepRef{ m_job.sequence.size() - 1 };
+    MarkJobChanged();
+    ShowSequence();
+    RebuildScene();
+
+    // There's no dialog, so the new folder's name is ready to type over.
+    if (m_pWnd != nullptr)
+        m_pWnd->StartRename(m_selected);
+}
+
+void CCamTabCommand::AddDrill(size_t folder)
 {
     AFX_MANAGE_STATE(AfxGetStaticModuleState());
 
-    // The first step is the job's starting origin, so it can only be edited.
-    if (!CanEditSequence() || index == 0 || index >= m_job.sequence.size())
+    if (!CanEditSequence() || !IsFolder(StepRef{ folder }) || FocusOpenDialog())
         return;
-    if (m_pOriginDlg != nullptr)
+
+    camcore::SequenceStep drill;
+    drill.type = camcore::StepType::Drill;
+    drill.id = camcore::NewStableId();
+    drill.name = NewOperationName(m_job, "Drill");
+    OpenOperationDialog(drill, StepRef{ folder, kNewStep });
+}
+
+bool CCamTabCommand::RenameStep(const StepRef& ref, const std::wstring& name)
+{
+    camcore::SequenceStep* pStep = FindStep(ref);
+    if (!CanRename(ref) || pStep == nullptr)
+        return false;
+
+    CString trimmed(name.c_str());
+    trimmed.Trim();
+    if (trimmed.IsEmpty())
+        return false;
+
+    const std::string newName = ToUtf8(static_cast<LPCWSTR>(trimmed));
+    if (newName == pStep->name)
+        return true;
+
+    Log(L"[sequence] renamed %s to %s", FromUtf8(pStep->name).c_str(), static_cast<LPCWSTR>(trimmed));
+    pStep->name = newName;
+    MarkJobChanged();
+    return true;
+}
+
+void CCamTabCommand::EditStep(const StepRef& ref)
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    const camcore::SequenceStep* pStep = FindStep(ref);
+    if (!CanEditSequence() || pStep == nullptr || FocusOpenDialog())
+        return;
+
+    if (pStep->type == camcore::StepType::SetOrigin)
+        OpenOriginDialog(*pStep, ref.step);
+    else if (camcore::IsOperation(pStep->type))
+        OpenOperationDialog(*pStep, ref);
+}
+
+void CCamTabCommand::DeleteStep(const StepRef& ref)
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    const camcore::SequenceStep* pStep = FindStep(ref);
+    if (!CanDelete(ref) || pStep == nullptr)
+        return;
+    if (IsDialogOpen())
     {
-        ShowError(L"Close the Set Origin dialog first.");
+        ShowError(L"Close the open dialog first.");
         return;
     }
 
-    const std::wstring name = FromUtf8(m_job.sequence[index].name);
-    if (AskYesNo(L"Delete " + name + L"?") != IDYES)
+    const std::wstring name = FromUtf8(pStep->name);
+    if (pStep->type == camcore::StepType::Group)
+    {
+        // An empty folder goes without asking.
+        const size_t count = pStep->children.size();
+        if (count > 0 &&
+            AskYesNo(L"Delete " + name + L" and the " + std::to_wstring(count) +
+                     (count == 1 ? L" operation" : L" operations") + L" in it?") != IDYES)
+            return;
+    }
+    else if (AskYesNo(L"Delete " + name + L"?") != IDYES)
+    {
         return;
+    }
 
-    Log(L"[sequence] deleted step %zu, %s", index, name.c_str());
-    m_job.sequence.erase(m_job.sequence.begin() + static_cast<ptrdiff_t>(index));
-    if (m_selectedStep != kNoStep && m_selectedStep >= m_job.sequence.size())
-        m_selectedStep = m_job.sequence.size() - 1;
+    Log(L"[sequence] deleted %s", name.c_str());
+    if (ref.IsOperation())
+    {
+        std::vector<camcore::SequenceStep>& children = m_job.sequence[ref.step].children;
+        children.erase(children.begin() + static_cast<ptrdiff_t>(ref.child));
+        m_selected = StepRef{ ref.step };
+    }
+    else
+    {
+        m_job.sequence.erase(m_job.sequence.begin() + static_cast<ptrdiff_t>(ref.step));
+        m_selected = StepRef{ (std::min)(ref.step, m_job.sequence.size() - 1) };
+    }
 
     MarkJobChanged();
     ShowSequence();
     RebuildScene();
 }
 
-void CCamTabCommand::SelectStep(size_t index)
+void CCamTabCommand::SelectStep(const StepRef& ref)
 {
-    if (index >= m_job.sequence.size() || index == m_selectedStep)
+    if (FindStep(ref) == nullptr)
         return;
 
-    m_selectedStep = index;
-    RebuildScene();
+    const bool originChanges = (ref.step != m_selected.step);
+    m_selected = ref;
+    if (originChanges)
+        RebuildScene();
 }
 
 void CCamTabCommand::OpenOriginDialog(const camcore::SequenceStep& step, size_t editIndex)
 {
-    if (m_pOriginDlg != nullptr)
-    {
-        m_pOriginDlg->SetForegroundWindow();
-        return;
-    }
-
     // The dialog draws a preview from the moment it's created, so set these first.
     m_editIndex = editIndex;
     m_pOriginDlg = new COriginDlg(this, step);
@@ -673,12 +849,12 @@ void CCamTabCommand::OnOriginDialogDone(COriginDlg* pDialog, bool apply)
         if (m_editIndex == kNewStep)
         {
             m_job.sequence.push_back(step);
-            m_selectedStep = m_job.sequence.size() - 1;
+            m_selected = StepRef{ m_job.sequence.size() - 1 };
         }
         else if (m_editIndex < m_job.sequence.size())
         {
             m_job.sequence[m_editIndex] = step;
-            m_selectedStep = m_editIndex;
+            m_selected = StepRef{ m_editIndex };
         }
         Log(L"[origin] applied %s", FromUtf8(step.name).c_str());
         MarkJobChanged();
@@ -690,6 +866,64 @@ void CCamTabCommand::OnOriginDialogDone(COriginDlg* pDialog, bool apply)
 
 void CCamTabCommand::OnOriginPreviewChanged()
 {
+    RebuildScene();
+}
+
+void CCamTabCommand::OpenOperationDialog(const camcore::SequenceStep& step, const StepRef& target)
+{
+    m_operationTarget = target;
+    m_pOperationDlg = new COperationDlg(this, step);
+    if (!m_pOperationDlg->CreateModeless(CWnd::FromHandle(theApp.m_hAlibreWnd)))
+    {
+        Log(L"[operation] could not create the operation dialog");
+        delete m_pOperationDlg;
+        m_pOperationDlg = nullptr;
+        return;
+    }
+    m_pOperationDlg->ShowWindow(SW_SHOW);
+    Log(L"[operation] editing %s", target.child == kNewStep ? L"a new operation" : FromUtf8(step.name).c_str());
+}
+
+void CCamTabCommand::CloseOperationDialog()
+{
+    if (m_pOperationDlg == nullptr)
+        return;
+
+    COperationDlg* pDialog = m_pOperationDlg;
+    m_pOperationDlg = nullptr;
+    pDialog->DetachFromTab();
+    pDialog->DestroyWindow();
+}
+
+void CCamTabCommand::OnOperationDialogDone(COperationDlg* pDialog, bool apply)
+{
+    if (pDialog != m_pOperationDlg)
+        return;
+
+    m_pOperationDlg = nullptr;
+    if (!apply || !CanEditSequence() || !IsFolder(StepRef{ m_operationTarget.step }))
+        return;
+
+    std::vector<camcore::SequenceStep>& children = m_job.sequence[m_operationTarget.step].children;
+    const camcore::SequenceStep& step = pDialog->GetStep();
+    if (m_operationTarget.child == kNewStep)
+    {
+        children.push_back(step);
+        m_selected = StepRef{ m_operationTarget.step, children.size() - 1 };
+    }
+    else if (m_operationTarget.child < children.size())
+    {
+        children[m_operationTarget.child] = step;
+        m_selected = m_operationTarget;
+    }
+    else
+    {
+        return;
+    }
+
+    Log(L"[operation] applied %s", FromUtf8(step.name).c_str());
+    MarkJobChanged();
+    ShowSequence();
     RebuildScene();
 }
 
@@ -811,40 +1045,34 @@ void CCamTabCommand::ReadModelSize()
 
 void CCamTabCommand::RebuildScene()
 {
-    m_scene.origins.clear();
-    m_scene.hasPlane = false;
+    m_scene.hasOrigin = false;
 
-    // While the dialog is open, its step replaces the one it edits.
-    const bool editing = (m_pOriginDlg != nullptr);
-    const size_t highlighted = editing ? m_editIndex : m_selectedStep;
-
-    const auto addOrigin = [&](const camcore::OriginDefinition& definition, bool selected)
+    // While the dialog is open it shows its own step. Otherwise the selected
+    // step shows the origin it runs under.
+    const camcore::OriginDefinition* pDefinition = nullptr;
+    if (m_pOriginDlg != nullptr)
     {
-        const camcore::FrameResult result = camcore::BuildFrame(definition);
-        if (!result.ok)
-            return;
+        pDefinition = &m_pOriginDlg->GetStep().origin;
+    }
+    else
+    {
+        const size_t active = camcore::ActiveOriginIndex(m_job, m_selected.step);
+        if (active != camcore::kNoStepIndex)
+            pDefinition = &m_job.sequence[active].origin;
+    }
 
-        CamScene::Origin origin;
-        origin.frame = result.frame;
-        origin.selected = selected;
-        m_scene.origins.push_back(origin);
-
-        if (selected)
+    if (pDefinition != nullptr)
+    {
+        const camcore::FrameResult result = camcore::BuildFrame(*pDefinition);
+        if (result.ok)
         {
             const camcore::Vec3 lower = m_haveBounds ? m_boundsLower : result.frame.origin;
             const camcore::Vec3 upper = m_haveBounds ? m_boundsUpper : result.frame.origin;
+            m_scene.origin = result.frame;
             m_scene.plane = camcore::PlaneCoveringBox(result.frame, lower, upper, kOriginPlaneMargin);
-            m_scene.hasPlane = true;
+            m_scene.hasOrigin = true;
         }
-    };
-
-    for (size_t i = 0; i < m_job.sequence.size(); ++i)
-    {
-        const bool replaced = editing && i == m_editIndex;
-        addOrigin(replaced ? m_pOriginDlg->GetStep().origin : m_job.sequence[i].origin, i == highlighted);
     }
-    if (editing && m_editIndex == kNewStep)
-        addOrigin(m_pOriginDlg->GetStep().origin, true);
 
     if (m_pView != nullptr)
         m_pView->Refresh();
@@ -976,6 +1204,8 @@ BEGIN_MESSAGE_MAP(CCamTabWnd, CWnd)
     ON_NOTIFY(TVN_SELCHANGED, IDC_CAM_TREE, &CCamTabWnd::OnTreeSelectionChanged)
     ON_NOTIFY(NM_DBLCLK, IDC_CAM_TREE, &CCamTabWnd::OnTreeDoubleClick)
     ON_NOTIFY(NM_RCLICK, IDC_CAM_TREE, &CCamTabWnd::OnTreeRightClick)
+    ON_NOTIFY(TVN_BEGINLABELEDIT, IDC_CAM_TREE, &CCamTabWnd::OnTreeBeginRename)
+    ON_NOTIFY(TVN_ENDLABELEDIT, IDC_CAM_TREE, &CCamTabWnd::OnTreeEndRename)
     ON_MESSAGE(WM_APP_LOAD_JOB, &CCamTabWnd::OnLoadJob)
     ON_MESSAGE(WM_APP_CLEAR_SELECTION, &CCamTabWnd::OnClearSelection)
 END_MESSAGE_MAP()
@@ -1008,8 +1238,9 @@ int CCamTabWnd::OnCreate(LPCREATESTRUCT pCreate)
 
     CFont* pFont = CFont::FromHandle(static_cast<HFONT>(::GetStockObject(DEFAULT_GUI_FONT)));
 
+    // Labels can be edited, but OnTreeBeginRename allows it only for folders and operations.
     m_tree.Create(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | TVS_HASBUTTONS | TVS_HASLINES |
-                      TVS_LINESATROOT | TVS_SHOWSELALWAYS,
+                      TVS_LINESATROOT | TVS_SHOWSELALWAYS | TVS_EDITLABELS,
                   CRect(0, 0, 10, 10), this, IDC_CAM_TREE);
     m_tree.SetFont(pFont);
 
@@ -1142,7 +1373,37 @@ void CCamTabWnd::OnForeground()
 
 bool CCamTabWnd::IsStepItem(HTREEITEM hItem) const
 {
-    return hItem != nullptr && m_tree.GetParentItem(hItem) == m_hOperations;
+    // A top-level step, or an operation in a folder.
+    if (hItem == nullptr)
+        return false;
+    const HTREEITEM hParent = m_tree.GetParentItem(hItem);
+    return hParent == m_hOperations || (hParent != nullptr && m_tree.GetParentItem(hParent) == m_hOperations);
+}
+
+StepRef CCamTabWnd::StepOfItem(HTREEITEM hItem) const
+{
+    return IsStepItem(hItem) ? StepFromItemData(m_tree.GetItemData(hItem)) : StepRef();
+}
+
+HTREEITEM CCamTabWnd::FindStepItem(const StepRef& ref) const
+{
+    for (HTREEITEM hItem = m_tree.GetChildItem(m_hOperations); hItem != nullptr;
+         hItem = m_tree.GetNextSiblingItem(hItem))
+    {
+        if (StepOfItem(hItem).step != ref.step)
+            continue;
+        if (!ref.IsOperation())
+            return hItem;
+
+        for (HTREEITEM hChild = m_tree.GetChildItem(hItem); hChild != nullptr;
+             hChild = m_tree.GetNextSiblingItem(hChild))
+        {
+            if (StepOfItem(hChild).child == ref.child)
+                return hChild;
+        }
+        return nullptr;
+    }
+    return nullptr;
 }
 
 HTREEITEM CCamTabWnd::ItemUnderCursor(bool select)
@@ -1168,7 +1429,7 @@ void CCamTabWnd::OnTreeSelectionChanged(NMHDR* /*pNotify*/, LRESULT* pResult)
     if (hItem != nullptr && m_tree.GetParentItem(hItem) == m_hTools)
         m_pTab->SelectToolByIndex(static_cast<size_t>(m_tree.GetItemData(hItem)));
     else if (IsStepItem(hItem))
-        m_pTab->SelectStep(static_cast<size_t>(m_tree.GetItemData(hItem)));
+        m_pTab->SelectStep(StepOfItem(hItem));
 }
 
 void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
@@ -1183,16 +1444,41 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     if (hItem != m_hOperations && !onStep)
         return;
 
-    const size_t index = onStep ? static_cast<size_t>(m_tree.GetItemData(hItem)) : 0;
+    const StepRef ref = StepOfItem(hItem);
     const UINT editable = m_pTab->CanEditSequence() ? MF_ENABLED : MF_GRAYED;
+    const UINT renamable = m_pTab->CanRename(ref) ? MF_ENABLED : MF_GRAYED;
+    const UINT deletable = m_pTab->CanDelete(ref) ? MF_ENABLED : MF_GRAYED;
 
     CMenu menu;
     menu.CreatePopupMenu();
-    menu.AppendMenu(MF_STRING | editable, ID_CAM_ADD_ORIGIN, L"Add Set Origin...");
-    if (onStep)
+    CMenu holes;
+    if (onStep && m_pTab->IsFolder(ref))
+    {
+        menu.AppendMenu(MF_STRING | renamable, ID_CAM_RENAME_STEP, L"Rename");
+        menu.AppendMenu(MF_STRING | deletable, ID_CAM_DELETE_STEP, L"Delete");
+        menu.AppendMenu(MF_SEPARATOR);
+
+        holes.CreatePopupMenu();
+        holes.AppendMenu(MF_STRING | editable, ID_CAM_ADD_DRILL, L"Drill...");
+        menu.AppendMenu(MF_POPUP | editable, reinterpret_cast<UINT_PTR>(holes.GetSafeHmenu()), L"Add Holes");
+    }
+    else if (onStep && m_pTab->IsOperation(ref))
     {
         menu.AppendMenu(MF_STRING | editable, ID_CAM_EDIT_STEP, L"Edit...");
-        menu.AppendMenu(MF_STRING | ((index == 0) ? MF_GRAYED : editable), ID_CAM_DELETE_STEP, L"Delete");
+        menu.AppendMenu(MF_STRING | renamable, ID_CAM_RENAME_STEP, L"Rename");
+        menu.AppendMenu(MF_STRING | deletable, ID_CAM_DELETE_STEP, L"Delete");
+    }
+    else
+    {
+        menu.AppendMenu(MF_STRING | editable, ID_CAM_ADD_ORIGIN, L"Add Set Origin...");
+        menu.AppendMenu(MF_STRING | (m_pTab->CanAddFolder() ? MF_ENABLED : MF_GRAYED), ID_CAM_ADD_FOLDER,
+                        L"Add Folder");
+        if (onStep)
+        {
+            menu.AppendMenu(MF_SEPARATOR);
+            menu.AppendMenu(MF_STRING | editable, ID_CAM_EDIT_STEP, L"Edit...");
+            menu.AppendMenu(MF_STRING | deletable, ID_CAM_DELETE_STEP, L"Delete");
+        }
     }
 
     CPoint point;
@@ -1207,10 +1493,49 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     switch (command)
     {
     case ID_CAM_ADD_ORIGIN:  m_pTab->AddSetOrigin(); break;
-    case ID_CAM_EDIT_STEP:   m_pTab->EditStep(index); break;
-    case ID_CAM_DELETE_STEP: m_pTab->DeleteStep(index); break;
+    case ID_CAM_ADD_FOLDER:  m_pTab->AddFolder(); break;
+    case ID_CAM_ADD_DRILL:   m_pTab->AddDrill(ref.step); break;
+    case ID_CAM_EDIT_STEP:   m_pTab->EditStep(ref); break;
+    case ID_CAM_RENAME_STEP: m_tree.EditLabel(hItem); break;
+    case ID_CAM_DELETE_STEP: m_pTab->DeleteStep(ref); break;
     default:                 break;
     }
+}
+
+void CCamTabWnd::OnTreeBeginRename(NMHDR* pNotify, LRESULT* pResult)
+{
+    // Non-zero cancels the edit. Only folders and operations are renamed in place.
+    const NMTVDISPINFO* pInfo = reinterpret_cast<NMTVDISPINFO*>(pNotify);
+    const bool allowed = m_pTab != nullptr && m_pTab->CanRename(StepOfItem(pInfo->item.hItem));
+    *pResult = allowed ? 0 : 1;
+}
+
+void CCamTabWnd::OnTreeEndRename(NMHDR* pNotify, LRESULT* pResult)
+{
+    // Non-zero keeps the typed text as the label. No text means it was cancelled.
+    const NMTVDISPINFO* pInfo = reinterpret_cast<NMTVDISPINFO*>(pNotify);
+    *pResult = 0;
+    if (m_pTab == nullptr || pInfo->item.pszText == nullptr || !IsStepItem(pInfo->item.hItem))
+        return;
+
+    if (m_pTab->RenameStep(StepOfItem(pInfo->item.hItem), pInfo->item.pszText))
+    {
+        // The tree shows the text as typed, so trim it to match the job.
+        CString name(pInfo->item.pszText);
+        name.Trim();
+        m_tree.SetItemText(pInfo->item.hItem, name);
+    }
+}
+
+void CCamTabWnd::StartRename(const StepRef& ref)
+{
+    const HTREEITEM hItem = FindStepItem(ref);
+    if (hItem == nullptr)
+        return;
+
+    m_tree.SetFocus();
+    m_tree.SelectItem(hItem);
+    m_tree.EditLabel(hItem);
 }
 
 void CCamTabWnd::OnTreeDoubleClick(NMHDR* /*pNotify*/, LRESULT* pResult)
@@ -1225,16 +1550,17 @@ void CCamTabWnd::OnTreeDoubleClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     m_tree.ScreenToClient(&point);
 
     const HTREEITEM hItem = m_tree.HitTest(point);
+    const StepRef ref = StepOfItem(hItem);
     if (hItem != nullptr && (hItem == m_hTools || m_tree.GetParentItem(hItem) == m_hTools))
     {
         // Handled, so the tree doesn't also expand or collapse the item.
         *pResult = 1;
         m_pTab->OpenToolLibrary();
     }
-    else if (IsStepItem(hItem))
+    else if (IsStepItem(hItem) && !m_pTab->IsFolder(ref))
     {
         *pResult = 1;
-        m_pTab->EditStep(static_cast<size_t>(m_tree.GetItemData(hItem)));
+        m_pTab->EditStep(ref);
     }
     else if (hItem == m_hOperations && m_tree.GetChildItem(m_hOperations) == nullptr)
     {
@@ -1244,7 +1570,7 @@ void CCamTabWnd::OnTreeDoubleClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     }
 }
 
-void CCamTabWnd::ShowSequence(const camcore::Job& job, size_t selectedStep)
+void CCamTabWnd::ShowSequence(const camcore::Job& job, const StepRef& selected)
 {
     m_fillingTree = true;
 
@@ -1256,22 +1582,27 @@ void CCamTabWnd::ShowSequence(const camcore::Job& job, size_t selectedStep)
         hChild = hNext;
     }
 
-    HTREEITEM hSelect = nullptr;
     for (size_t i = 0; i < job.sequence.size(); ++i)
     {
         const camcore::SequenceStep& step = job.sequence[i];
         std::wstring text = FromUtf8(step.name);
-        if (!camcore::BuildFrame(step.origin).ok)
+        if (step.type == camcore::StepType::SetOrigin && !camcore::BuildFrame(step.origin).ok)
             text += L" (incomplete)";
 
         const HTREEITEM hItem = m_tree.InsertItem(text.c_str(), m_hOperations);
-        m_tree.SetItemData(hItem, static_cast<DWORD_PTR>(i));
-        if (i == selectedStep)
-            hSelect = hItem;
+        m_tree.SetItemData(hItem, StepItemData(StepRef{ i }));
+
+        // A folder's operations sit under it.
+        for (size_t c = 0; c < step.children.size(); ++c)
+        {
+            const HTREEITEM hOperation = m_tree.InsertItem(FromUtf8(step.children[c].name).c_str(), hItem);
+            m_tree.SetItemData(hOperation, StepItemData(StepRef{ i, c }));
+        }
+        m_tree.Expand(hItem, TVE_EXPAND);
     }
 
     m_tree.Expand(m_hOperations, TVE_EXPAND);
-    if (hSelect != nullptr)
+    if (const HTREEITEM hSelect = FindStepItem(selected))
         m_tree.SelectItem(hSelect);
 
     m_fillingTree = false;

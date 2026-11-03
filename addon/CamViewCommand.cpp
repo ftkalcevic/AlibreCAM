@@ -229,38 +229,29 @@ STDMETHODIMP CCamViewCommand::On3DRender()
 
 void CCamViewCommand::DrawScene(IADAddOnCanvasDisplay* pCanvas, const CamScene& scene)
 {
+    if (!scene.hasOrigin)
+        return;
+
     const double unit = scene.millimetresPerUnit;
+    const camcore::Frame& frame = scene.origin;
 
-    if (scene.hasPlane)
+    DrawPlane(pCanvas, scene.plane, frame.zAxis, scene.foreground, unit);
+
+    const struct
     {
-        for (const CamScene::Origin& origin : scene.origins)
-        {
-            if (origin.selected)
-                DrawPlane(pCanvas, scene.plane, origin.frame.zAxis, scene.foreground, unit);
-        }
-    }
-
-    for (const CamScene::Origin& origin : scene.origins)
+        const wchar_t* name;
+        const DisplayColour& colour;
+        const Vec3& axis;
+    } axes[] =
     {
-        const camcore::Frame& frame = origin.frame;
-        const float weight = origin.selected ? kSelectedOriginLineWeight : kOtherOriginLineWeight;
+        { L"Origin X", kOriginXColour, frame.xAxis },
+        { L"Origin Y", kOriginYColour, frame.yAxis },
+        { L"Origin Z", kOriginZColour, frame.zAxis }
+    };
 
-        const struct
-        {
-            const wchar_t* name;
-            const DisplayColour& colour;
-            const Vec3& axis;
-        } axes[] =
-        {
-            { L"Origin X", kOriginXColour, frame.xAxis },
-            { L"Origin Y", kOriginYColour, frame.yAxis },
-            { L"Origin Z", kOriginZColour, frame.zAxis }
-        };
-
-        for (const auto& axis : axes)
-        {
-            const __int64 segment = AddSegment(pCanvas, axis.name, axis.colour, weight, scene.foreground);
-            DrawLine(pCanvas, segment, frame.origin, frame.origin + axis.axis * kOriginAxisLengthMm, unit);
-        }
+    for (const auto& axis : axes)
+    {
+        const __int64 segment = AddSegment(pCanvas, axis.name, axis.colour, kOriginLineWeight, scene.foreground);
+        DrawLine(pCanvas, segment, frame.origin, frame.origin + axis.axis * kOriginAxisLengthMm, unit);
     }
 }

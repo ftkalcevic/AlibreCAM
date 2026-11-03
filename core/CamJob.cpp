@@ -189,6 +189,19 @@ namespace camcore
 
         json WriteStep(const SequenceStep& step)
         {
+            if (step.type == StepType::Group)
+            {
+                json children = json::array();
+                for (const SequenceStep& child : step.children)
+                    children.push_back(WriteStep(child));
+
+                return { { "type", "group" }, { "id", step.id }, { "name", step.name }, { "children", children } };
+            }
+
+            // Drill settings join this as each dialog tab is built.
+            if (step.type == StepType::Drill)
+                return { { "type", "drill" }, { "id", step.id }, { "name", step.name } };
+
             const OriginDefinition& origin = step.origin;
             return
             {
@@ -210,12 +223,39 @@ namespace camcore
         bool ReadStep(const json& item, SequenceStep& step)
         {
             std::string type;
-            if (!item.is_object() || !ReadString(item, "type", type) || type != "setOrigin")
+            if (!item.is_object() || !ReadString(item, "type", type))
                 return false;
-
-            step.type = StepType::SetOrigin;
             if (!ReadString(item, "id", step.id) || step.id.empty() || !ReadString(item, "name", step.name))
                 return false;
+
+            if (type == "group")
+            {
+                step.type = StepType::Group;
+
+                const auto children = item.find("children");
+                if (children == item.end() || !children->is_array())
+                    return false;
+
+                for (const json& childItem : *children)
+                {
+                    // Groups hold only operations.
+                    SequenceStep child;
+                    if (!ReadStep(childItem, child) || !IsOperation(child.type))
+                        return false;
+                    step.children.push_back(child);
+                }
+                return true;
+            }
+
+            if (type == "drill")
+            {
+                step.type = StepType::Drill;
+                return true;
+            }
+
+            if (type != "setOrigin")
+                return false;
+            step.type = StepType::SetOrigin;
 
             OriginDefinition& origin = step.origin;
             if (!ReadPick(item, "plane", origin.plane) || !ReadPick(item, "position", origin.position) ||
@@ -229,6 +269,11 @@ namespace camcore
                    origin.options.xQuarterTurns >= 0 && origin.options.xQuarterTurns <= 3 &&
                    ReadVec3(*options, "offset", origin.options.offset);
         }
+    }
+
+    bool IsOperation(StepType type)
+    {
+        return type == StepType::Drill;
     }
 
     std::string NewStableId()
@@ -323,8 +368,9 @@ namespace camcore
 
             for (const json& item : *sequence)
             {
+                // Operations only go in groups.
                 SequenceStep step;
-                if (!ReadStep(item, step))
+                if (!ReadStep(item, step) || IsOperation(step.type))
                 {
                     return LoadFailure(LoadStatus::NotACamFile,
                                        "Step " + std::to_string(result.job.sequence.size() + 1) +
@@ -375,6 +421,19 @@ namespace camcore
 
         result.ok = WriteFileAtomically(path, text, result.message);
         return result;
+    }
+
+    size_t ActiveOriginIndex(const Job& job, size_t stepIndex)
+    {
+        if (stepIndex >= job.sequence.size())
+            return kNoStepIndex;
+
+        for (size_t i = stepIndex + 1; i-- > 0;)
+        {
+            if (job.sequence[i].type == StepType::SetOrigin)
+                return i;
+        }
+        return kNoStepIndex;
     }
 
     IdentityMatch CompareIdentity(const AssemblyIdentity& a, const AssemblyIdentity& b)

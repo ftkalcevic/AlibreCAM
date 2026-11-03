@@ -379,6 +379,129 @@ TEST_CASE("a damaged Set Origin step stops the file loading")
     CHECK(LoadJob(file.Path()).status == LoadStatus::NotACamFile);
 }
 
+TEST_CASE("groups load back in their place in the sequence")
+{
+    TempFile file;
+
+    Job job;
+    job.assembly.name = "Bracket";
+    job.assembly.guid = "guid";
+
+    SequenceStep origin;
+    origin.id = NewStableId();
+    origin.name = "Set Origin 1";
+    job.sequence.push_back(origin);
+
+    SequenceStep group;
+    group.type = StepType::Group;
+    group.id = NewStableId();
+    group.name = "Roughing";
+    job.sequence.push_back(group);
+
+    REQUIRE(SaveJob(job, file.Path()).ok);
+
+    const LoadResult loaded = LoadJob(file.Path());
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    REQUIRE(loaded.job.sequence.size() == 2);
+    CHECK(loaded.job.sequence[0].type == StepType::SetOrigin);
+    CHECK(loaded.job.sequence[1].type == StepType::Group);
+    CHECK(loaded.job.sequence[1].id == group.id);
+    CHECK(loaded.job.sequence[1].name == "Roughing");
+    CHECK(loaded.job.sequence[1].children.empty());
+}
+
+TEST_CASE("a group holding a Set Origin or another group stops the file loading")
+{
+    TempFile file;
+    const auto write = [&](const std::string& children)
+    {
+        std::ofstream out(file.Path(), std::ios::binary);
+        out << R"({"format":"AlibreCAM","formatVersion":2,"assembly":{"name":"a","guid":"b"},"sequence":[)"
+            << R"({"type":"group","id":"g","name":"Roughing","children":)" << children << "}]}";
+    };
+
+    write("[]");
+    CHECK(LoadJob(file.Path()).status == LoadStatus::Ok);
+
+    write(R"([{"type":"group","id":"h","name":"Inner","children":[]}])");
+    CHECK(LoadJob(file.Path()).status == LoadStatus::NotACamFile);
+
+    write(R"([{"type":"setOrigin","id":"o","name":"n","options":{"flipZ":false,"xQuarterTurns":0,"offset":[0,0,0]}}])");
+    CHECK(LoadJob(file.Path()).status == LoadStatus::NotACamFile);
+
+    write("{}");
+    CHECK(LoadJob(file.Path()).status == LoadStatus::NotACamFile);
+}
+
+TEST_CASE("drill operations load back inside their group")
+{
+    TempFile file;
+
+    Job job;
+    SequenceStep origin;
+    origin.id = NewStableId();
+    origin.name = "Set Origin 1";
+    job.sequence.push_back(origin);
+
+    SequenceStep group;
+    group.type = StepType::Group;
+    group.id = NewStableId();
+    group.name = "Holes";
+
+    SequenceStep drill;
+    drill.type = StepType::Drill;
+    drill.id = NewStableId();
+    drill.name = "Drill 1";
+    group.children.push_back(drill);
+    job.sequence.push_back(group);
+
+    REQUIRE(SaveJob(job, file.Path()).ok);
+
+    const LoadResult loaded = LoadJob(file.Path());
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    REQUIRE(loaded.job.sequence.size() == 2);
+    REQUIRE(loaded.job.sequence[1].children.size() == 1);
+    CHECK(loaded.job.sequence[1].children[0].type == StepType::Drill);
+    CHECK(loaded.job.sequence[1].children[0].id == drill.id);
+    CHECK(loaded.job.sequence[1].children[0].name == "Drill 1");
+}
+
+TEST_CASE("an operation outside a group stops the file loading")
+{
+    TempFile file;
+    {
+        std::ofstream out(file.Path(), std::ios::binary);
+        out << R"({"format":"AlibreCAM","formatVersion":2,"assembly":{"name":"a","guid":"b"},)"
+            << R"("sequence":[{"type":"drill","id":"d","name":"Drill 1"}]})";
+    }
+    CHECK(LoadJob(file.Path()).status == LoadStatus::NotACamFile);
+}
+
+TEST_CASE("a step runs under the nearest Set Origin at or above it")
+{
+    Job job;
+    const auto add = [&](StepType type)
+    {
+        SequenceStep step;
+        step.type = type;
+        job.sequence.push_back(step);
+    };
+
+    add(StepType::Group);       // 0: before any origin
+    add(StepType::SetOrigin);   // 1
+    add(StepType::SetOrigin);   // 2
+    add(StepType::Group);       // 3
+    add(StepType::SetOrigin);   // 4
+
+    CHECK(ActiveOriginIndex(job, 0) == kNoStepIndex);
+    CHECK(ActiveOriginIndex(job, 1) == 1);
+    CHECK(ActiveOriginIndex(job, 2) == 2);
+    CHECK(ActiveOriginIndex(job, 3) == 2);
+    CHECK(ActiveOriginIndex(job, 4) == 4);
+    CHECK(ActiveOriginIndex(job, 5) == kNoStepIndex);
+    CHECK(ActiveOriginIndex(job, kNoStepIndex) == kNoStepIndex);
+}
+
 TEST_CASE("stable IDs are long and unique")
 {
     CHECK(NewStableId().size() == 32);

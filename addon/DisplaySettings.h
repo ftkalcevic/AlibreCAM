@@ -12,7 +12,7 @@ struct DisplayColour
     long alpha;     // 255 is opaque
 };
 
-// The selected origin's XY plane, shaded and translucent.
+// The active origin's XY plane, shaded and translucent.
 const DisplayColour kOriginPlaneColour = { 0, 120, 255, 64 };
 
 // The plane reaches past the parts by this fraction of their size.
@@ -23,5 +23,4 @@ const DisplayColour kOriginYColour = { 40, 200, 40, 255 };
 const DisplayColour kOriginZColour = { 40, 90, 255, 255 };
 
 const double kOriginAxisLengthMm = 25.0;
-const float kSelectedOriginLineWeight = 3.0f;
-const float kOtherOriginLineWeight = 1.5f;
+const float kOriginLineWeight = 3.0f;

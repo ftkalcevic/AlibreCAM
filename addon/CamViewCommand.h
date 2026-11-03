@@ -8,23 +8,14 @@
 #include "CommandBase.h"
 #include "Origin.h"
 
-#include <vector>
-
 class CCamTabCommand;
 
 // What the view draws, in assembly millimetres. The tab builds it.
 struct CamScene
 {
-    struct Origin
-    {
-        camcore::Frame frame;
-        bool selected = false;
-    };
-
-    std::vector<Origin> origins;
-
-    // The selected origin's plane, if there is one.
-    bool hasPlane = false;
+    // Only the origin the selected step runs under, or the one being edited.
+    bool hasOrigin = false;
+    camcore::Frame origin;
     camcore::PlaneRectangle plane;
 
     bool foreground = true;     // drawn over the model, rather than hidden by it

@@ -13,7 +13,7 @@
 namespace camcore
 {
     // The newest .cam format this build can read and the one it writes.
-    // Version 2 added Set Origin steps to the sequence.
+    // Version 2 added Set Origin steps and groups to the sequence.
     constexpr int kCamFormatVersion = 2;
 
     // Which assembly a job belongs to. The GUID comes from the assembly file,
@@ -26,8 +26,12 @@ namespace camcore
 
     enum class StepType
     {
-        SetOrigin       // operations join the sequence from step 4
+        SetOrigin,
+        Group,          // shown as a folder in the tree
+        Drill           // an operation. Operations only go in groups.
     };
+
+    bool IsOperation(StepType type);
 
     // One step in the ordered sequence under Operations.
     struct SequenceStep
@@ -38,6 +42,10 @@ namespace camcore
 
         // Set Origin steps only
         OriginDefinition origin;
+
+        // Groups only. Operations run in this order. Groups don't nest, and a
+        // Set Origin stays outside them, so a group can't hold either.
+        std::vector<SequenceStep> children;
     };
 
     // Machine and stock are added in later steps.
@@ -88,6 +96,12 @@ namespace camcore
 
     // 32 random hex digits, for IDs that must survive renaming and reordering.
     std::string NewStableId();
+
+    constexpr size_t kNoStepIndex = static_cast<size_t>(-1);
+
+    // The Set Origin a step runs under: the step itself if it's a Set Origin,
+    // otherwise the nearest one above it. kNoStepIndex if there's none.
+    size_t ActiveOriginIndex(const Job& job, size_t stepIndex);
 
     LoadResult LoadJob(const std::filesystem::path& path);
 

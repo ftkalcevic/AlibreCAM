@@ -57,14 +57,16 @@ Target Alibre 27.0.1.27039. The API docs describe v29, so a documented call may 
 - Steps 1 and 2 are committed: tab, tree, `.cam` load and save, unsaved warnings, and the tool library.
 - Still to confirm from step 1: answering Yes when closing the assembly or exiting Alibre, the different-assembly prompt, and the command being greyed in the Part workspace.
 - Step 3, `Set Origin`, is written, built, and installed, but **not yet tested in Alibre** and uncommitted. It covers `core\Origin`, the sequence in `core\CamJob` (format version 2), `addon\CamViewCommand`, `addon\GeometryReader`, `addon\OriginDialog`, and `addon\DisplaySettings.h`.
-- Unproven in Alibre: whether `DrawMesh` honours alpha (the plane is meant to be translucent), whether `IsSenseReversed` gives the outward face normal, and keyboard use in the modeless dialog. Alibre's message loop doesn't call `IsDialogMessage`, so Tab and Enter may not work there.
+- Folders (spec "groups", `StepType::Group`) are also written and installed, but untested and uncommitted: Add Folder on Operations, plus Rename (edited in place in the tree) and Delete on a folder.
+- Step 4 has started. A Drill operation (`StepType::Drill`, saved with only its ID and name) can be added from a folder's Add Holes ▸ Drill. Operation items can be edited, renamed and deleted. `addon\OperationDialog` is the modeless operation dialog. Its six tabs (Features, Tool, Feeds & Speeds, Clearance, Sorting, Drilling) are empty `COperationPage`s, to be built one at a time, each becoming its own page class. Built and installed, but untested. Tree items for steps carry a `StepRef` (step index, plus operation index inside a folder) packed into the item data.
+- Unproven in Alibre: whether typing a folder name in the tree's in-place edit reaches the edit, or whether Alibre takes the keys as shortcuts. Also whether `DrawMesh` honours alpha (the plane is meant to be translucent), whether `IsSenseReversed` gives the outward face normal, and keyboard use in the modeless dialog. Alibre's message loop doesn't call `IsDialogMessage`, so Tab and Enter may not work there.
 
 ## Build order
 
 1. Done: CAM tab, tree, and `.cam` file.
 2. Done: tool library and selecting a tool in the tree.
 3. `Set Origin` and its drawing in the view. **This is the current step.** Built and installed, awaiting Frank's test.
-4. Drill: picking geometry and drawing the toolpath with the selected tool.
+4. Drill: picking geometry and drawing the toolpath with the selected tool. **Started:** the menus and an empty tabbed dialog are built, and the tabs come next, one at a time.
 5. Machine, post language, and stock, through to G-code that can be cut on the router.
 6. Facing, Contour, and Pocket.
 7. Groups, out-of-date marking, and repair.
@@ -85,7 +87,7 @@ Target Alibre 27.0.1.27039. The API docs describe v29, so a documented call may 
 - **Toolpath display:** paths are visible when the CAM tab has focus, with a foreground toggle.
 - **Geometry picking:** faces and edges only.
 - **Set Origin:** Z points out of the material from a flat face. A circular edge gives its axis and centre, and a cylindrical face gives its axis. Position comes from an edge: the nearer end of a straight edge, or a circle's centre. X comes from an optional straight edge, otherwise assembly X projected onto the plane (assembly Y if that's too close to the tool axis). There are Flip Z, X quarter turns, and offsets in the origin's own axes. The full rules are in the spec.
-- **Origin display:** axes for every origin, and a translucent shaded XY plane for the selected one only, covering the parts (and later the stock) plus 10%. The colour is `kOriginPlaneColour` in `DisplaySettings.h` until program settings exist.
+- **Origin display:** only the active origin is drawn, with its axes and a translucent shaded XY plane. That's the selected step if it's a Set Origin, otherwise the nearest Set Origin above it (`ActiveOriginIndex`), or the dialog's step while it's open. The plane covers the parts (and later the stock) plus 10%. The colour is `kOriginPlaneColour` in `DisplaySettings.h` until program settings exist.
 - **Open:** arc fitting at Contour and Pocket (Clipper2 gives straight lines only). Where machine and post files live is proposed but unconfirmed: installed `machines\`, with `%APPDATA%\AlibreCAM\` overriding it.
 
 ## Proven Alibre API behaviour (27.0.1)
