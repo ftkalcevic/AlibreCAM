@@ -81,14 +81,25 @@
 #define IDC_TOOL_LIST                   13130
 #define IDC_TOOL_DETAILS                13131
 #define IDC_TOOL_NOTE                   13132
+#define IDD_OP_FEEDS                    13019
+#define IDC_FEEDS_SPINDLE               13140
+#define IDC_FEEDS_PLUNGE                13141
+#define IDC_FEEDS_APPROACH              13142
+#define IDC_FEEDS_ENGAGE                13143
+#define IDC_FEEDS_CUT                   13144
+#define IDC_FEEDS_RETRACT               13145
+#define IDC_FEEDS_DEPARTURE             13146
+#define IDC_FEEDS_TRANSFER_RAPID        13147
+#define IDC_FEEDS_TRANSFER_SET          13148
+#define IDC_FEEDS_TRANSFER              13149
 
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13019
+#define _APS_NEXT_RESOURCE_VALUE        13020
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13133
+#define _APS_NEXT_CONTROL_VALUE         13150
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

@@ -677,6 +677,79 @@ void CToolPage::OnToolChanged(NMHDR* pNotify, LRESULT* pResult)
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// CFeedsPage
+
+BEGIN_MESSAGE_MAP(CFeedsPage, COperationPage)
+    ON_BN_CLICKED(IDC_FEEDS_TRANSFER_RAPID, &CFeedsPage::OnTransferChanged)
+    ON_BN_CLICKED(IDC_FEEDS_TRANSFER_SET, &CFeedsPage::OnTransferChanged)
+END_MESSAGE_MAP()
+
+CFeedsPage::CFeedsPage(COperationDlg* pOwner)
+    : COperationPage(IDD_OP_FEEDS, pOwner)
+{
+}
+
+void CFeedsPage::Load(const SequenceStep& step)
+{
+    const FeedSettings& feeds = step.feeds;
+    SetNumber(IDC_FEEDS_SPINDLE, feeds.spindleRpm);
+    SetNumber(IDC_FEEDS_PLUNGE, feeds.plunge);
+    SetNumber(IDC_FEEDS_APPROACH, feeds.approach);
+    SetNumber(IDC_FEEDS_ENGAGE, feeds.engage);
+    SetNumber(IDC_FEEDS_CUT, feeds.cut);
+    SetNumber(IDC_FEEDS_RETRACT, feeds.retract);
+    SetNumber(IDC_FEEDS_DEPARTURE, feeds.departure);
+    SetNumber(IDC_FEEDS_TRANSFER, feeds.transfer);
+    CheckRadioButton(IDC_FEEDS_TRANSFER_RAPID, IDC_FEEDS_TRANSFER_SET,
+                     feeds.transferAtRapid ? IDC_FEEDS_TRANSFER_RAPID : IDC_FEEDS_TRANSFER_SET);
+    UpdateFields();
+}
+
+bool CFeedsPage::Save(SequenceStep& step, std::wstring& problems)
+{
+    FeedSettings feeds = step.feeds;
+    std::wstring found;
+
+    ReadNumber(IDC_FEEDS_SPINDLE, L"The spindle speed", feeds.spindleRpm, found);
+    ReadNumber(IDC_FEEDS_PLUNGE, L"The plunge feed", feeds.plunge, found);
+    ReadNumber(IDC_FEEDS_APPROACH, L"The approach feed", feeds.approach, found);
+    ReadNumber(IDC_FEEDS_ENGAGE, L"The engage feed", feeds.engage, found);
+    ReadNumber(IDC_FEEDS_CUT, L"The cut feed", feeds.cut, found);
+    ReadNumber(IDC_FEEDS_RETRACT, L"The retract feed", feeds.retract, found);
+    ReadNumber(IDC_FEEDS_DEPARTURE, L"The departure feed", feeds.departure, found);
+
+    // The transfer feed is only read when it's used.
+    feeds.transferAtRapid = IsDlgButtonChecked(IDC_FEEDS_TRANSFER_SET) != BST_CHECKED;
+    if (!feeds.transferAtRapid)
+        ReadNumber(IDC_FEEDS_TRANSFER, L"The transfer feed", feeds.transfer, found);
+
+    if (found.empty())
+    {
+        for (const std::string& problem : ValidateFeeds(feeds))
+            AppendProblem(found, FromUtf8(problem));
+    }
+
+    if (!found.empty())
+    {
+        AppendProblem(problems, found);
+        return false;
+    }
+
+    step.feeds = feeds;
+    return true;
+}
+
+void CFeedsPage::UpdateFields()
+{
+    GetDlgItem(IDC_FEEDS_TRANSFER)->EnableWindow(IsDlgButtonChecked(IDC_FEEDS_TRANSFER_SET) == BST_CHECKED);
+}
+
+void CFeedsPage::OnTransferChanged()
+{
+    UpdateFields();
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // CClearancePage
 
 BEGIN_MESSAGE_MAP(CClearancePage, COperationPage)
@@ -942,7 +1015,7 @@ BOOL COperationDlg::OnInitDialog()
         m_pFeatures = pFeatures;
 
     AddPage(L"Tool", std::make_unique<CToolPage>(this));
-    AddPage(L"Feeds && Speeds", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
+    AddPage(L"Feeds && Speeds", std::make_unique<CFeedsPage>(this));
     AddPage(L"Clearance", std::make_unique<CClearancePage>(this));
 
     // Drill and Facing have no Sorting tab.

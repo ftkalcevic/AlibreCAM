@@ -66,6 +66,7 @@
     <ClCompile Include="Clearance.cpp" />
     <ClCompile Include="Drill.cpp" />
     <ClCompile Include="Features.cpp" />
+    <ClCompile Include="Feeds.cpp" />
     <ClCompile Include="FileIO.cpp" />
     <ClCompile Include="Origin.cpp" />
     <ClCompile Include="ToolLibrary.cpp" />
@@ -75,6 +76,7 @@
     <ClInclude Include="Clearance.h" />
     <ClInclude Include="Drill.h" />
     <ClInclude Include="Features.h" />
+    <ClInclude Include="Feeds.h" />
     <ClInclude Include="FileIO.h" />
     <ClInclude Include="Origin.h" />
     <ClInclude Include="ToolLibrary.h" />

@@ -285,6 +285,37 @@ namespace camcore
             return false;
         }
 
+        json WriteFeeds(const FeedSettings& feeds)
+        {
+            return
+            {
+                { "spindleRpm", feeds.spindleRpm },
+                { "plunge", feeds.plunge },
+                { "approach", feeds.approach },
+                { "engage", feeds.engage },
+                { "cut", feeds.cut },
+                { "retract", feeds.retract },
+                { "departure", feeds.departure },
+                { "transferAtRapid", feeds.transferAtRapid },
+                { "transfer", feeds.transfer }
+            };
+        }
+
+        // Operations saved before the Feeds & Speeds tab existed have the defaults.
+        bool ReadFeeds(const json& step, FeedSettings& feeds)
+        {
+            feeds = FeedSettings();
+            const auto item = step.find("feeds");
+            if (item == step.end())
+                return true;
+            return item->is_object() && ReadNumber(*item, "spindleRpm", feeds.spindleRpm) &&
+                   ReadNumber(*item, "plunge", feeds.plunge) && ReadNumber(*item, "approach", feeds.approach) &&
+                   ReadNumber(*item, "engage", feeds.engage) && ReadNumber(*item, "cut", feeds.cut) &&
+                   ReadNumber(*item, "retract", feeds.retract) && ReadNumber(*item, "departure", feeds.departure) &&
+                   ReadBool(*item, "transferAtRapid", feeds.transferAtRapid) &&
+                   ReadNumber(*item, "transfer", feeds.transfer);
+        }
+
         // Operations saved before the Tool tab existed have no tool.
         bool ReadTool(const json& step, std::string& toolId)
         {
@@ -413,10 +444,12 @@ namespace camcore
             // Facing settings join this when the Facing tab is built.
             if (step.type == StepType::Facing)
                 return { { "type", "facing" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
+                         { "feeds", WriteFeeds(step.feeds) },
                          { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) } };
 
             if (step.type == StepType::Drill)
                 return { { "type", "drill" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
+                         { "feeds", WriteFeeds(step.feeds) },
                          { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
                          { "drilling", WriteDrilling(step.drill) } };
 
@@ -468,7 +501,7 @@ namespace camcore
             if (type == "facing")
             {
                 step.type = StepType::Facing;
-                return ReadTool(item, step.toolId) && ReadFeatures(item, step.features) &&
+                return ReadTool(item, step.toolId) && ReadFeeds(item, step.feeds) && ReadFeatures(item, step.features) &&
                        ReadClearance(item, step.clearance);
             }
 
@@ -476,7 +509,7 @@ namespace camcore
             {
                 // Drills saved before the Drilling tab existed have no settings yet.
                 step.type = StepType::Drill;
-                if (!ReadTool(item, step.toolId) || !ReadFeatures(item, step.features) ||
+                if (!ReadTool(item, step.toolId) || !ReadFeeds(item, step.feeds) || !ReadFeatures(item, step.features) ||
                     !ReadClearance(item, step.clearance))
                     return false;
                 const auto drilling = item.find("drilling");

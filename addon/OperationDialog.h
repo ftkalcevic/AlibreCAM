@@ -133,6 +133,26 @@ private:
     CListCtrl m_details;
 };
 
+// The Feeds & Speeds tab every operation has.
+class CFeedsPage : public COperationPage
+{
+public:
+    explicit CFeedsPage(COperationDlg* pOwner);
+
+    void Load(const camcore::SequenceStep& step) override;
+    bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
+
+    enum { IDD = IDD_OP_FEEDS };
+
+protected:
+    afx_msg void OnTransferChanged();
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    void UpdateFields();
+};
+
 // The Clearance tab every operation has.
 class CClearancePage : public COperationPage
 {

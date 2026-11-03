@@ -115,6 +115,11 @@ TEST_CASE("clearance settings load back unchanged, and default when missing")
     drill.id = NewStableId();
     drill.name = "D1";
     drill.toolId = "tool-7";
+    drill.feeds.spindleRpm = 12000;
+    drill.feeds.plunge = 150;
+    drill.feeds.departure = 2500;
+    drill.feeds.transferAtRapid = false;
+    drill.feeds.transfer = 4000;
     drill.clearance.mode = ClearanceMode::StockMaxZ;
     drill.clearance.partDistance = 3;
     drill.clearance.stockDistance = 7.5;
@@ -138,6 +143,14 @@ TEST_CASE("clearance settings load back unchanged, and default when missing")
     CHECK(back.stockDistance == 7.5);
     CHECK(back.absoluteZ == -2);
     CHECK(loaded.job.sequence[1].children[0].toolId == "tool-7");
+    const FeedSettings& feeds = loaded.job.sequence[1].children[0].feeds;
+    CHECK(feeds.spindleRpm == 12000);
+    CHECK(feeds.plunge == 150);
+    CHECK(feeds.cut == FeedSettings().cut);
+    CHECK(feeds.departure == 2500);
+    CHECK_FALSE(feeds.transferAtRapid);
+    CHECK(feeds.transfer == 4000);
+    CHECK(loaded.job.sequence[1].children[1].feeds.transferAtRapid);
     CHECK(loaded.job.sequence[1].children[1].toolId.empty());
     CHECK(loaded.job.sequence[1].children[1].clearance.mode == ClearanceMode::AbsoluteZ);
 
@@ -179,6 +192,20 @@ TEST_CASE("clearance distances can't be negative, but an absolute Z can")
     CHECK(ValidateClearance(settings).size() == 1);
     settings.mode = ClearanceMode::AbsoluteZ;
     CHECK(ValidateClearance(settings).empty());
+}
+
+TEST_CASE("speeds and feeds must be more than 0, and the transfer feed only when it's used")
+{
+    FeedSettings feeds;
+    CHECK(ValidateFeeds(feeds).empty());
+
+    feeds.spindleRpm = 0;
+    feeds.cut = -5;
+    feeds.transfer = 0;     // rapid is used, so this isn't checked
+    CHECK(ValidateFeeds(feeds).size() == 2);
+
+    feeds.transferAtRapid = false;
+    CHECK(ValidateFeeds(feeds).size() == 3);
 }
 
 TEST_CASE("Drill accepts things that reduce to a point")

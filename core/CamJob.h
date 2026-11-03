@@ -10,6 +10,7 @@
 
 #include "Clearance.h"
 #include "Drill.h"
+#include "Feeds.h"
 #include "Origin.h"
 
 namespace camcore
@@ -51,8 +52,10 @@ namespace camcore
         std::vector<PickedGeometry> features;
         ClearanceSettings clearance;
 
-        // Operations only: the ID of the tool in the job's library, or empty.
+        // Operations only: the ID of the tool in the job's library, or empty, and
+        // the speeds and feeds to use it at.
         std::string toolId;
+        FeedSettings feeds;
 
         // Drill operations only
         DrillSettings drill;
