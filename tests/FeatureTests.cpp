@@ -43,6 +43,58 @@ namespace
     }
 }
 
+TEST_CASE("Facing accepts flat faces and edges")
+{
+    CHECK(FeatureAllowed(FeatureFilter::FacingArea, PickKind::PlanarFace));
+    CHECK(FeatureAllowed(FeatureFilter::FacingArea, PickKind::LineEdge));
+    CHECK(FeatureAllowed(FeatureFilter::FacingArea, PickKind::CircleEdge));
+    CHECK_FALSE(FeatureAllowed(FeatureFilter::FacingArea, PickKind::CylindricalFace));
+    CHECK_FALSE(FeatureAllowed(FeatureFilter::FacingArea, PickKind::DesignPoint));
+}
+
+TEST_CASE("a facing operation is an operation, and loads back inside its folder")
+{
+    CHECK(IsOperation(StepType::Facing));
+    CHECK_FALSE(IsOperation(StepType::Group));
+
+    const fs::path path = TempCam();
+
+    Job job;
+    SequenceStep origin;
+    origin.id = NewStableId();
+    origin.name = "O1";
+    job.sequence.push_back(origin);
+
+    SequenceStep group;
+    group.type = StepType::Group;
+    group.id = NewStableId();
+    group.name = "F1";
+
+    SequenceStep facing;
+    facing.type = StepType::Facing;
+    facing.id = NewStableId();
+    facing.name = "Facing 1";
+    PickedGeometry top;
+    top.kind = PickKind::PlanarFace;
+    top.targetKey = { 17, "09" };
+    top.direction = { 0, 0, 1 };
+    facing.features.push_back(top);
+    group.children.push_back(facing);
+    job.sequence.push_back(group);
+
+    REQUIRE(SaveJob(job, path).ok);
+    const LoadResult loaded = LoadJob(path);
+    std::error_code ignored;
+    fs::remove(path, ignored);
+
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    const SequenceStep& back = loaded.job.sequence[1].children[0];
+    CHECK(back.type == StepType::Facing);
+    CHECK(back.name == "Facing 1");
+    REQUIRE(back.features.size() == 1);
+    CHECK(back.features[0].targetKey.hex == "09");
+}
+
 TEST_CASE("Drill accepts things that reduce to a point")
 {
     CHECK(FeatureAllowed(FeatureFilter::Points, PickKind::CircleEdge));

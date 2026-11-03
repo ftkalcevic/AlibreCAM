@@ -15,7 +15,9 @@ namespace camcore
     // What an operation's Features tab accepts.
     enum class FeatureFilter
     {
-        Points      // Drill: anything that reduces to a point
+        Points,     // Drill: anything that reduces to a point
+        FacingArea  // Facing: flat faces, and edges around the area. The edges
+                    // needn't make a closed shape.
     };
 
     bool FeatureAllowed(FeatureFilter filter, PickKind kind);

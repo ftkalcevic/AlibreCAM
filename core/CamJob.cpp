@@ -344,6 +344,11 @@ namespace camcore
             }
 
             // The other tabs' settings join this as each is built.
+            // Facing settings join this when the Facing tab is built.
+            if (step.type == StepType::Facing)
+                return { { "type", "facing" }, { "id", step.id }, { "name", step.name },
+                         { "features", WriteFeatures(step.features) } };
+
             if (step.type == StepType::Drill)
                 return { { "type", "drill" }, { "id", step.id }, { "name", step.name },
                          { "features", WriteFeatures(step.features) }, { "drilling", WriteDrilling(step.drill) } };
@@ -393,6 +398,12 @@ namespace camcore
                 return true;
             }
 
+            if (type == "facing")
+            {
+                step.type = StepType::Facing;
+                return ReadFeatures(item, step.features);
+            }
+
             if (type == "drill")
             {
                 // Drills saved before the Drilling tab existed have no settings yet.
@@ -423,7 +434,7 @@ namespace camcore
 
     bool IsOperation(StepType type)
     {
-        return type == StepType::Drill;
+        return type == StepType::Drill || type == StepType::Facing;
     }
 
     std::string NewStableId()

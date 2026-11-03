@@ -54,7 +54,7 @@ public:
     // The operation sequence
     void AddSetOrigin();
     void AddFolder();
-    void AddDrill(size_t folder);
+    void AddOperation(size_t folder, camcore::StepType type);
     bool CanAddFolder() const;
     bool IsFolder(const StepRef& ref) const;
     bool IsOperation(const StepRef& ref) const;

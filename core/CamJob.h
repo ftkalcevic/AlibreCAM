@@ -29,7 +29,8 @@ namespace camcore
     {
         SetOrigin,
         Group,          // shown as a folder in the tree
-        Drill           // an operation. Operations only go in groups.
+        Drill,          // an operation. Operations only go in groups.
+        Facing          // an operation
     };
 
     bool IsOperation(StepType type);

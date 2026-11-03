@@ -23,7 +23,12 @@ namespace
 
     const wchar_t* OperationTitle(StepType type)
     {
-        return (type == StepType::Drill) ? L"Drill" : L"Operation";
+        switch (type)
+        {
+        case StepType::Drill:  return L"Drill";
+        case StepType::Facing: return L"Facing";
+        default:               return L"Operation";
+        }
     }
 
     std::wstring FormatNumber(double value)
@@ -116,6 +121,8 @@ namespace
         case PickKind::CylindricalFace: return L"Hole";
         case PickKind::CircleEdge:      return L"Circle";
         case PickKind::DesignPoint:     return L"Point";
+        case PickKind::PlanarFace:      return L"Face";
+        case PickKind::LineEdge:        return L"Edge";
         default:                        return L"Other";
         }
     }
@@ -273,7 +280,9 @@ void CFeaturesPage::SetSelectedFeatures(const std::vector<PickedGeometry>& selec
     if (ignored > 0)
     {
         note += L" " + std::to_wstring(ignored) + (ignored == 1 ? L" selected item isn't" : L" selected items aren't") +
-                L" a circle, hole or point, and was left out.";
+                (m_pOwner->GetFeatureFilter() == FeatureFilter::FacingArea ? L" a flat face or an edge"
+                                                                           : L" a circle, hole or point") +
+                L", and was left out.";
     }
     ShowNote(note);
 }
@@ -715,12 +724,16 @@ BOOL COperationDlg::OnInitDialog()
     AddPage(L"Feeds && Speeds", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
     AddPage(L"Clearance", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
 
-    // Drill has no Sorting tab.
-    if (m_step.type != StepType::Drill)
+    // Drill and Facing have no Sorting tab.
+    if (m_step.type != StepType::Drill && m_step.type != StepType::Facing)
         AddPage(L"Sorting", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
 
     // Then its own.
-    if (m_step.type == StepType::Drill)
+    if (m_step.type == StepType::Facing)
+    {
+        AddPage(L"Facing", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
+    }
+    else if (m_step.type == StepType::Drill)
     {
         auto drilling = std::make_unique<CDrillingPage>(this);
         CDrillingPage* pDrilling = drilling.get();
@@ -818,8 +831,8 @@ void COperationDlg::ShowLocateProblem(const std::wstring& problem)
 
 FeatureFilter COperationDlg::GetFeatureFilter() const
 {
-    // Each operation type has its own filter. Drill needs points.
-    return FeatureFilter::Points;
+    // Each operation type has its own filter. Drill needs points, and Facing faces and edges.
+    return (m_step.type == StepType::Facing) ? FeatureFilter::FacingArea : FeatureFilter::Points;
 }
 
 void COperationDlg::StartSelectingFeatures()

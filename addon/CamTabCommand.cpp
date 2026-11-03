@@ -39,6 +39,7 @@ namespace
         ID_CAM_ADD_ORIGIN,
         ID_CAM_ADD_FOLDER,
         ID_CAM_ADD_DRILL,
+        ID_CAM_ADD_FACING,
         ID_CAM_EDIT_STEP,
         ID_CAM_RENAME_STEP,
         ID_CAM_DELETE_STEP
@@ -732,18 +733,18 @@ void CCamTabCommand::AddFolder()
         m_pWnd->StartRename(m_selected);
 }
 
-void CCamTabCommand::AddDrill(size_t folder)
+void CCamTabCommand::AddOperation(size_t folder, camcore::StepType type)
 {
     AFX_MANAGE_STATE(AfxGetStaticModuleState());
 
-    if (!CanEditSequence() || !IsFolder(StepRef{ folder }) || FocusOpenDialog())
+    if (!camcore::IsOperation(type) || !CanEditSequence() || !IsFolder(StepRef{ folder }) || FocusOpenDialog())
         return;
 
-    camcore::SequenceStep drill;
-    drill.type = camcore::StepType::Drill;
-    drill.id = camcore::NewStableId();
-    drill.name = NewOperationName(m_job, "Drill");
-    OpenOperationDialog(drill, StepRef{ folder, kNewStep });
+    camcore::SequenceStep operation;
+    operation.type = type;
+    operation.id = camcore::NewStableId();
+    operation.name = NewOperationName(m_job, type == camcore::StepType::Facing ? "Facing" : "Drill");
+    OpenOperationDialog(operation, StepRef{ folder, kNewStep });
 }
 
 bool CCamTabCommand::RenameStep(const StepRef& ref, const std::wstring& name)
@@ -1736,6 +1737,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     CMenu menu;
     menu.CreatePopupMenu();
     CMenu holes;
+    CMenu twoAndAHalfAxis;
     if (onStep && m_pTab->IsFolder(ref))
     {
         menu.AppendMenu(MF_STRING | renamable, ID_CAM_RENAME_STEP, L"Rename");
@@ -1745,6 +1747,11 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         holes.CreatePopupMenu();
         holes.AppendMenu(MF_STRING | editable, ID_CAM_ADD_DRILL, L"Drill...");
         menu.AppendMenu(MF_POPUP | editable, reinterpret_cast<UINT_PTR>(holes.GetSafeHmenu()), L"Add Holes");
+
+        twoAndAHalfAxis.CreatePopupMenu();
+        twoAndAHalfAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_FACING, L"Facing...");
+        menu.AppendMenu(MF_POPUP | editable, reinterpret_cast<UINT_PTR>(twoAndAHalfAxis.GetSafeHmenu()),
+                        L"Add 2 1/2 Axis");
     }
     else if (onStep && m_pTab->IsOperation(ref))
     {
@@ -1778,7 +1785,8 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     {
     case ID_CAM_ADD_ORIGIN:  m_pTab->AddSetOrigin(); break;
     case ID_CAM_ADD_FOLDER:  m_pTab->AddFolder(); break;
-    case ID_CAM_ADD_DRILL:   m_pTab->AddDrill(ref.step); break;
+    case ID_CAM_ADD_DRILL:   m_pTab->AddOperation(ref.step, camcore::StepType::Drill); break;
+    case ID_CAM_ADD_FACING:  m_pTab->AddOperation(ref.step, camcore::StepType::Facing); break;
     case ID_CAM_EDIT_STEP:   m_pTab->EditStep(ref); break;
     case ID_CAM_RENAME_STEP: m_tree.EditLabel(hItem); break;
     case ID_CAM_DELETE_STEP: m_pTab->DeleteStep(ref); break;
