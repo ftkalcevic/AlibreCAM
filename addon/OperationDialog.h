@@ -223,6 +223,38 @@ private:
     bool m_updating;                        // the page is setting its own boxes
 };
 
+// The Entry/Exit tab, for operations that cut in levels (not Drill).
+class CEntryExitPage : public COperationPage
+{
+public:
+    explicit CEntryExitPage(COperationDlg* pOwner);
+
+    void Load(const camcore::SequenceStep& step) override;
+    bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
+
+    enum { IDD = IDD_OP_ENTRY_EXIT };
+
+protected:
+    afx_msg void OnChoiceChanged();
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    // The control IDs of one engage or retract motion's group.
+    struct LeadControls
+    {
+        int group, linear, radial, lengthLabel, length, angleLabel, angle, radiusLabel, radius;
+    };
+
+    void LoadLead(const LeadControls& ids, const camcore::LeadMotion& lead);
+    void SaveLead(const LeadControls& ids, const wchar_t* name, camcore::LeadMotion& lead, std::wstring& found);
+    void EnableLead(const LeadControls& ids, bool enabled);
+    void UpdateFields();
+
+    static const LeadControls kEngage;
+    static const LeadControls kRetract;
+};
+
 // The Drill operation's own tab.
 class CDrillingPage : public COperationPage
 {

@@ -116,14 +116,44 @@
 #define IDC_CUT_USE_MODEL               13175
 #define IDC_CUT_DEPTH_FIRST             13176
 #define IDC_CUT_LEVEL_FIRST             13177
+#define IDD_OP_ENTRY_EXIT               13022
+#define IDC_EE_ENTRY_NONE               13180
+#define IDC_EE_ENTRY_2D                 13181
+#define IDC_EE_ENTRY_3D                 13182
+#define IDC_EE_ENGAGE_GROUP             13183
+#define IDC_EE_ENGAGE_LINEAR            13184
+#define IDC_EE_ENGAGE_RADIAL            13185
+#define IDC_EE_ENGAGE_LENGTH_LABEL      13186
+#define IDC_EE_ENGAGE_LENGTH            13187
+#define IDC_EE_ENGAGE_ANGLE_LABEL       13188
+#define IDC_EE_ENGAGE_ANGLE             13189
+#define IDC_EE_ENGAGE_RADIUS_LABEL      13190
+#define IDC_EE_ENGAGE_RADIUS            13191
+#define IDC_EE_PATH_GROUP               13192
+#define IDC_EE_PATH_ANGLE_LABEL         13193
+#define IDC_EE_PATH_ANGLE               13194
+#define IDC_EE_PATH_HEIGHT_LABEL        13195
+#define IDC_EE_PATH_HEIGHT              13196
+#define IDC_EE_EXIT_NONE                13197
+#define IDC_EE_EXIT_2D                  13198
+#define IDC_EE_RETRACT_GROUP            13199
+#define IDC_EE_RETRACT_LINEAR           13200
+#define IDC_EE_RETRACT_RADIAL           13201
+#define IDC_EE_RETRACT_LENGTH_LABEL     13202
+#define IDC_EE_RETRACT_LENGTH           13203
+#define IDC_EE_RETRACT_ANGLE_LABEL      13204
+#define IDC_EE_RETRACT_ANGLE            13205
+#define IDC_EE_RETRACT_RADIUS_LABEL     13206
+#define IDC_EE_RETRACT_RADIUS           13207
+#define IDC_EE_EACH_LEVEL               13208
 
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13022
+#define _APS_NEXT_RESOURCE_VALUE        13023
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13178
+#define _APS_NEXT_CONTROL_VALUE         13209
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

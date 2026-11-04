@@ -11,6 +11,7 @@
 #include "Clearance.h"
 #include "CutLevels.h"
 #include "Drill.h"
+#include "EntryExit.h"
 #include "Feeds.h"
 #include "Origin.h"
 #include "Toolpath.h"
@@ -67,6 +68,7 @@ namespace camcore
 
         // Operations that cut in levels, such as Facing
         CutLevelSettings cutLevels;
+        EntryExitSettings entryExit;
 
         // Groups only. Operations run in this order. Groups don't nest, and a
         // Set Origin stays outside them, so a group can't hold either.

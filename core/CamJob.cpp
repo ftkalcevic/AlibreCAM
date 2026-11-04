@@ -428,6 +428,95 @@ namespace camcore
             return true;
         }
 
+        json WriteLead(const LeadMotion& lead)
+        {
+            return
+            {
+                { "shape", lead.shape == LeadShape::Radial ? "radial" : "linear" },
+                { "length", lead.length },
+                { "angle", lead.angle },
+                { "radius", lead.radius }
+            };
+        }
+
+        bool ReadLead(const json& parent, const char* name, LeadMotion& lead)
+        {
+            const auto item = parent.find(name);
+            if (item == parent.end() || !item->is_object())
+                return false;
+
+            std::string shape;
+            if (!ReadString(*item, "shape", shape) || !ReadNumber(*item, "length", lead.length) ||
+                !ReadNumber(*item, "angle", lead.angle) || !ReadNumber(*item, "radius", lead.radius))
+                return false;
+            if (shape == "linear")
+                lead.shape = LeadShape::Linear;
+            else if (shape == "radial")
+                lead.shape = LeadShape::Radial;
+            else
+                return false;
+            return true;
+        }
+
+        const char* EntryModeName(EntryMode mode)
+        {
+            switch (mode)
+            {
+            case EntryMode::Entry2D:     return "2d";
+            case EntryMode::AlongPath3D: return "alongPath";
+            default:                     return "none";
+            }
+        }
+
+        json WriteEntryExit(const EntryExitSettings& settings)
+        {
+            return
+            {
+                { "entry", EntryModeName(settings.entry) },
+                { "engage", WriteLead(settings.engage) },
+                { "alongPathAngle", settings.alongPathAngle },
+                { "alongPathHeight", settings.alongPathHeight },
+                { "exit", settings.exit == ExitMode::Exit2D ? "2d" : "none" },
+                { "retract", WriteLead(settings.retract) },
+                { "eachCutLevel", settings.eachCutLevel }
+            };
+        }
+
+        // Operations saved before the Entry/Exit tab existed have the defaults.
+        bool ReadEntryExit(const json& step, EntryExitSettings& settings)
+        {
+            settings = EntryExitSettings();
+            const auto item = step.find("entryExit");
+            if (item == step.end())
+                return true;
+            if (!item->is_object())
+                return false;
+
+            std::string entry, exit;
+            if (!ReadString(*item, "entry", entry) || !ReadLead(*item, "engage", settings.engage) ||
+                !ReadNumber(*item, "alongPathAngle", settings.alongPathAngle) ||
+                !ReadNumber(*item, "alongPathHeight", settings.alongPathHeight) || !ReadString(*item, "exit", exit) ||
+                !ReadLead(*item, "retract", settings.retract) || !ReadBool(*item, "eachCutLevel", settings.eachCutLevel))
+                return false;
+
+            if (entry == EntryModeName(EntryMode::None))
+                settings.entry = EntryMode::None;
+            else if (entry == EntryModeName(EntryMode::Entry2D))
+                settings.entry = EntryMode::Entry2D;
+            else if (entry == EntryModeName(EntryMode::AlongPath3D))
+                settings.entry = EntryMode::AlongPath3D;
+            else
+                return false;
+
+            if (exit == "none")
+                settings.exit = ExitMode::None;
+            else if (exit == "2d")
+                settings.exit = ExitMode::Exit2D;
+            else
+                return false;
+            return true;
+        }
+
         // Operations saved before the Tool tab existed have no tool.
         bool ReadTool(const json& step, std::string& toolId)
         {
@@ -558,7 +647,7 @@ namespace camcore
                 return { { "type", "facing" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
                          { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
                          { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
-                         { "cutLevels", WriteCutLevels(step.cutLevels) } };
+                         { "cutLevels", WriteCutLevels(step.cutLevels) }, { "entryExit", WriteEntryExit(step.entryExit) } };
 
             if (step.type == StepType::Drill)
                 return { { "type", "drill" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
@@ -616,6 +705,7 @@ namespace camcore
                 step.type = StepType::Facing;
                 return ReadTool(item, step.toolId) && ReadFeeds(item, step.feeds) && ReadToolpath(item, step.toolpath) &&
                        ReadFeatures(item, step.features) && ReadCutLevels(item, step.cutLevels) &&
+                       ReadEntryExit(item, step.entryExit) &&
                        ReadClearance(item, step.clearance);
             }
 

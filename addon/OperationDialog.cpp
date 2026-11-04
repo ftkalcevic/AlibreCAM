@@ -1152,6 +1152,164 @@ void CCutLevelsPage::SetDepthToHeight(double z)
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// CEntryExitPage
+
+const CEntryExitPage::LeadControls CEntryExitPage::kEngage =
+{
+    IDC_EE_ENGAGE_GROUP, IDC_EE_ENGAGE_LINEAR, IDC_EE_ENGAGE_RADIAL, IDC_EE_ENGAGE_LENGTH_LABEL,
+    IDC_EE_ENGAGE_LENGTH, IDC_EE_ENGAGE_ANGLE_LABEL, IDC_EE_ENGAGE_ANGLE, IDC_EE_ENGAGE_RADIUS_LABEL,
+    IDC_EE_ENGAGE_RADIUS
+};
+
+const CEntryExitPage::LeadControls CEntryExitPage::kRetract =
+{
+    IDC_EE_RETRACT_GROUP, IDC_EE_RETRACT_LINEAR, IDC_EE_RETRACT_RADIAL, IDC_EE_RETRACT_LENGTH_LABEL,
+    IDC_EE_RETRACT_LENGTH, IDC_EE_RETRACT_ANGLE_LABEL, IDC_EE_RETRACT_ANGLE, IDC_EE_RETRACT_RADIUS_LABEL,
+    IDC_EE_RETRACT_RADIUS
+};
+
+BEGIN_MESSAGE_MAP(CEntryExitPage, COperationPage)
+    ON_BN_CLICKED(IDC_EE_ENTRY_NONE, &CEntryExitPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_EE_ENTRY_2D, &CEntryExitPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_EE_ENTRY_3D, &CEntryExitPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_EE_ENGAGE_LINEAR, &CEntryExitPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_EE_ENGAGE_RADIAL, &CEntryExitPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_EE_EXIT_NONE, &CEntryExitPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_EE_EXIT_2D, &CEntryExitPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_EE_RETRACT_LINEAR, &CEntryExitPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_EE_RETRACT_RADIAL, &CEntryExitPage::OnChoiceChanged)
+END_MESSAGE_MAP()
+
+CEntryExitPage::CEntryExitPage(COperationDlg* pOwner)
+    : COperationPage(IDD_OP_ENTRY_EXIT, pOwner)
+{
+}
+
+void CEntryExitPage::LoadLead(const LeadControls& ids, const LeadMotion& lead)
+{
+    CheckRadioButton(ids.linear, ids.radial, lead.shape == LeadShape::Radial ? ids.radial : ids.linear);
+    SetNumber(ids.length, lead.length);
+    SetNumber(ids.angle, lead.angle);
+    SetNumber(ids.radius, lead.radius);
+}
+
+void CEntryExitPage::Load(const SequenceStep& step)
+{
+    const EntryExitSettings& settings = step.entryExit;
+
+    const int entry = (settings.entry == EntryMode::Entry2D)       ? IDC_EE_ENTRY_2D
+                      : (settings.entry == EntryMode::AlongPath3D) ? IDC_EE_ENTRY_3D
+                                                                   : IDC_EE_ENTRY_NONE;
+    CheckRadioButton(IDC_EE_ENTRY_NONE, IDC_EE_ENTRY_3D, entry);
+    LoadLead(kEngage, settings.engage);
+    SetNumber(IDC_EE_PATH_ANGLE, settings.alongPathAngle);
+    SetNumber(IDC_EE_PATH_HEIGHT, settings.alongPathHeight);
+
+    CheckRadioButton(IDC_EE_EXIT_NONE, IDC_EE_EXIT_2D,
+                     settings.exit == ExitMode::Exit2D ? IDC_EE_EXIT_2D : IDC_EE_EXIT_NONE);
+    LoadLead(kRetract, settings.retract);
+
+    CheckDlgButton(IDC_EE_EACH_LEVEL, settings.eachCutLevel ? BST_CHECKED : BST_UNCHECKED);
+    UpdateFields();
+}
+
+void CEntryExitPage::SaveLead(const LeadControls& ids, const wchar_t* name, LeadMotion& lead, std::wstring& found)
+{
+    // Only the boxes for the chosen shape are read.
+    const std::wstring label(name);
+    if (IsDlgButtonChecked(ids.radial) == BST_CHECKED)
+    {
+        lead.shape = LeadShape::Radial;
+        ReadNumber(ids.radius, (L"The " + label + L" radius").c_str(), lead.radius, found);
+    }
+    else
+    {
+        lead.shape = LeadShape::Linear;
+        ReadNumber(ids.length, (L"The " + label + L" length").c_str(), lead.length, found);
+        ReadNumber(ids.angle, (L"The " + label + L" angle").c_str(), lead.angle, found);
+    }
+}
+
+bool CEntryExitPage::Save(SequenceStep& step, std::wstring& problems)
+{
+    EntryExitSettings settings = step.entryExit;
+    std::wstring found;
+
+    switch (GetCheckedRadioButton(IDC_EE_ENTRY_NONE, IDC_EE_ENTRY_3D))
+    {
+    case IDC_EE_ENTRY_2D:
+        settings.entry = EntryMode::Entry2D;
+        SaveLead(kEngage, L"engage", settings.engage, found);
+        break;
+    case IDC_EE_ENTRY_3D:
+        settings.entry = EntryMode::AlongPath3D;
+        ReadNumber(IDC_EE_PATH_ANGLE, L"The along path angle", settings.alongPathAngle, found);
+        ReadNumber(IDC_EE_PATH_HEIGHT, L"The along path height", settings.alongPathHeight, found);
+        break;
+    default:
+        settings.entry = EntryMode::None;
+        break;
+    }
+
+    settings.exit = (IsDlgButtonChecked(IDC_EE_EXIT_2D) == BST_CHECKED) ? ExitMode::Exit2D : ExitMode::None;
+    if (settings.exit == ExitMode::Exit2D)
+        SaveLead(kRetract, L"retract", settings.retract, found);
+
+    settings.eachCutLevel = IsDlgButtonChecked(IDC_EE_EACH_LEVEL) == BST_CHECKED;
+
+    if (found.empty())
+    {
+        for (const std::string& problem : ValidateEntryExit(settings))
+            AppendProblem(found, FromUtf8(problem));
+    }
+
+    if (!found.empty())
+    {
+        AppendProblem(problems, found);
+        return false;
+    }
+
+    step.entryExit = settings;
+    return true;
+}
+
+void CEntryExitPage::EnableLead(const LeadControls& ids, bool enabled)
+{
+    // Within an enabled group, only the chosen shape's boxes are.
+    const bool radial = IsDlgButtonChecked(ids.radial) == BST_CHECKED;
+    const BOOL linearOn = enabled && !radial;
+    const BOOL radialOn = enabled && radial;
+
+    GetDlgItem(ids.group)->EnableWindow(enabled);
+    GetDlgItem(ids.linear)->EnableWindow(enabled);
+    GetDlgItem(ids.radial)->EnableWindow(enabled);
+    GetDlgItem(ids.lengthLabel)->EnableWindow(linearOn);
+    GetDlgItem(ids.length)->EnableWindow(linearOn);
+    GetDlgItem(ids.angleLabel)->EnableWindow(linearOn);
+    GetDlgItem(ids.angle)->EnableWindow(linearOn);
+    GetDlgItem(ids.radiusLabel)->EnableWindow(radialOn);
+    GetDlgItem(ids.radius)->EnableWindow(radialOn);
+}
+
+void CEntryExitPage::UpdateFields()
+{
+    const int entry = GetCheckedRadioButton(IDC_EE_ENTRY_NONE, IDC_EE_ENTRY_3D);
+    EnableLead(kEngage, entry == IDC_EE_ENTRY_2D);
+
+    const BOOL path = (entry == IDC_EE_ENTRY_3D);
+    for (int id : { IDC_EE_PATH_GROUP, IDC_EE_PATH_ANGLE_LABEL, IDC_EE_PATH_ANGLE, IDC_EE_PATH_HEIGHT_LABEL,
+                    IDC_EE_PATH_HEIGHT })
+        GetDlgItem(id)->EnableWindow(path);
+
+    EnableLead(kRetract, IsDlgButtonChecked(IDC_EE_EXIT_2D) == BST_CHECKED);
+}
+
+void CEntryExitPage::OnChoiceChanged()
+{
+    UpdateFields();
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // CDrillingPage
 
 BEGIN_MESSAGE_MAP(CDrillingPage, COperationPage)
@@ -1350,6 +1508,9 @@ BOOL COperationDlg::OnInitDialog()
         AddPage(L"Cut Levels", std::move(cutLevels));
         if (pCutLevels->GetSafeHwnd() != nullptr)
             m_pCutLevels = pCutLevels;
+
+        // Entry/Exit is shared with them too.
+        AddPage(L"Entry/Exit", std::make_unique<CEntryExitPage>(this));
 
         AddPage(L"Facing", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
     }

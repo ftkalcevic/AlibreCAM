@@ -270,6 +270,95 @@ TEST_CASE("cut levels load back unchanged, and default when missing")
     fs::remove(path, ignored);
 }
 
+TEST_CASE("entry and exit settings load back unchanged, and default when missing")
+{
+    const fs::path path = TempCam();
+
+    Job job;
+    SequenceStep origin;
+    origin.id = NewStableId();
+    origin.name = "O1";
+    job.sequence.push_back(origin);
+
+    SequenceStep group;
+    group.type = StepType::Group;
+    group.id = NewStableId();
+    group.name = "F1";
+
+    SequenceStep facing;
+    facing.type = StepType::Facing;
+    facing.id = NewStableId();
+    facing.name = "Facing 1";
+    EntryExitSettings& settings = facing.entryExit;
+    settings.entry = EntryMode::AlongPath3D;
+    settings.engage.shape = LeadShape::Radial;
+    settings.engage.radius = 4;
+    settings.alongPathAngle = 3;
+    settings.alongPathHeight = 1.5;
+    settings.exit = ExitMode::Exit2D;
+    settings.retract.length = 7;
+    settings.retract.angle = 90;
+    settings.eachCutLevel = true;
+    group.children.push_back(facing);
+    job.sequence.push_back(group);
+
+    REQUIRE(SaveJob(job, path).ok);
+    const LoadResult loaded = LoadJob(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    const EntryExitSettings& back = loaded.job.sequence[1].children[0].entryExit;
+    CHECK(back.entry == EntryMode::AlongPath3D);
+    CHECK(back.engage.shape == LeadShape::Radial);
+    CHECK(back.engage.radius == 4);
+    CHECK(back.alongPathAngle == 3);
+    CHECK(back.alongPathHeight == 1.5);
+    CHECK(back.exit == ExitMode::Exit2D);
+    CHECK(back.retract.shape == LeadShape::Linear);
+    CHECK(back.retract.length == 7);
+    CHECK(back.retract.angle == 90);
+    CHECK(back.eachCutLevel);
+
+    // A facing saved before the Entry/Exit tab existed.
+    {
+        std::ofstream out(path, std::ios::binary);
+        out << R"({"format":"AlibreCAM","formatVersion":2,"assembly":{"name":"a","guid":"b"},"sequence":[)"
+            << R"({"type":"group","id":"g","name":"F","children":[{"type":"facing","id":"f","name":"Facing 1"}]}]})";
+    }
+    const LoadResult old = LoadJob(path);
+    REQUIRE(old.status == LoadStatus::Ok);
+    CHECK(old.job.sequence[0].children[0].entryExit.entry == EntryMode::None);
+
+    std::error_code ignored;
+    fs::remove(path, ignored);
+}
+
+TEST_CASE("only the entry and exit values in use are checked")
+{
+    EntryExitSettings settings;
+    settings.engage.length = 0;
+    settings.retract.radius = 0;
+    settings.alongPathAngle = 0;
+    CHECK(ValidateEntryExit(settings).empty());     // no entry, no exit
+
+    settings.entry = EntryMode::Entry2D;
+    CHECK(ValidateEntryExit(settings).size() == 1);     // linear length 0
+    settings.engage.shape = LeadShape::Radial;
+    CHECK(ValidateEntryExit(settings).empty());
+
+    settings.entry = EntryMode::AlongPath3D;
+    CHECK(ValidateEntryExit(settings).size() == 1);     // angle 0
+    settings.alongPathAngle = 90;
+    CHECK(ValidateEntryExit(settings).size() == 1);
+    settings.alongPathAngle = 5;
+    CHECK(ValidateEntryExit(settings).empty());
+
+    settings.exit = ExitMode::Exit2D;
+    settings.retract.shape = LeadShape::Radial;
+    CHECK(ValidateEntryExit(settings).size() == 1);     // radius 0
+    settings.retract.shape = LeadShape::Linear;
+    settings.retract.angle = 200;
+    CHECK(ValidateEntryExit(settings).size() == 1);
+}
+
 TEST_CASE("rough and finish must add up to the total, and each step fit its depth")
 {
     CutLevelSettings levels;
