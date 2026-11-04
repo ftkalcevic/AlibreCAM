@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "Boundary.h"
 #include "Clearance.h"
 #include "CutLevels.h"
 #include "Drill.h"
@@ -71,8 +72,10 @@ namespace camcore
         CutLevelSettings cutLevels;
         EntryExitSettings entryExit;
 
-        // Facing operations only
+        // Facing operations only, and the outline Generate found for the area,
+        // in the origin's frame. Empty until Generate runs.
         FacingSettings facing;
+        Polyline boundary;
 
         // Groups only. Operations run in this order. Groups don't nest, and a
         // Set Origin stays outside them, so a group can't hold either.

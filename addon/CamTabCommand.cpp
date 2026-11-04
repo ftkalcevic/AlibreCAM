@@ -1037,7 +1037,7 @@ void CCamTabCommand::Post(const StepRef& scope)
 bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& problem)
 {
     camcore::SequenceStep& operation = m_job.sequence[target.step].children[target.child];
-    if (operation.type != camcore::StepType::Drill)
+    if (operation.type != camcore::StepType::Drill && operation.type != camcore::StepType::Facing)
     {
         problem = "Toolpaths for this operation aren't built yet.";
         return false;
@@ -1050,6 +1050,48 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
     if (!frame.ok)
     {
         problem = "There's no complete Set Origin above its folder.";
+        return false;
+    }
+
+    // Facing checks its features against the origin, then turns them into the
+    // area's outline. The toolpath itself comes later.
+    if (operation.type == camcore::StepType::Facing)
+    {
+        operation.boundary.clear();
+        const camcore::FacingFeatureCheck check = camcore::CheckFacingFeatures(frame.frame, operation.features);
+        if (!check.ok)
+        {
+            problem = check.problem;
+            return false;
+        }
+
+        std::vector<camcore::Polyline> pieces;
+        for (const camcore::PickedGeometry& feature : operation.features)
+        {
+            std::vector<std::vector<camcore::Vec3>> outline;
+            std::wstring outlineProblem;
+            if (!ReadFeatureOutline(GetSession(), feature, outline, outlineProblem))
+            {
+                problem = ToUtf8(outlineProblem);
+                return false;
+            }
+            for (std::vector<camcore::Vec3>& piece : outline)
+            {
+                for (camcore::Vec3& point : piece)
+                    point = camcore::WorldToFrame(frame.frame, point);
+                pieces.push_back(std::move(piece));
+            }
+        }
+
+        operation.boundary = camcore::ClosePolygon(pieces, check.level);
+        if (operation.boundary.empty())
+        {
+            problem = "The features don't enclose an area.";
+            return false;
+        }
+
+        problem = "Found its boundary (" + std::to_string(operation.boundary.size()) +
+                  " points), but facing toolpaths aren't built yet.";
         return false;
     }
 
@@ -1236,6 +1278,7 @@ void CCamTabCommand::OnOperationDialogDone(COperationDlg* pDialog, bool apply)
     // Its settings may have changed, so the old toolpath no longer fits it.
     camcore::SequenceStep step = pDialog->GetStep();
     step.toolpath = camcore::Toolpath();
+    step.boundary.clear();
     if (m_operationTarget.child == kNewStep)
     {
         children.push_back(step);
@@ -1421,6 +1464,7 @@ void CCamTabCommand::RebuildScene()
     // Every generated toolpath, brought from its origin's frame into the assembly.
     m_scene.showToolpaths = !IsPicking();
     m_scene.toolpaths.clear();
+    m_scene.boundaries.clear();
     for (size_t i = 0; i < m_job.sequence.size(); ++i)
     {
         const size_t active = camcore::ActiveOriginIndex(m_job, i);
@@ -1432,6 +1476,17 @@ void CCamTabCommand::RebuildScene()
 
         for (size_t c = 0; c < m_job.sequence[i].children.size(); ++c)
         {
+            // A facing's boundary, closed back to its start.
+            const camcore::Polyline& boundary = m_job.sequence[i].children[c].boundary;
+            if (!boundary.empty())
+            {
+                std::vector<camcore::Vec3> outline;
+                for (const camcore::Vec3& point : boundary)
+                    outline.push_back(camcore::FramePointToWorld(frame.frame, point));
+                outline.push_back(outline.front());
+                m_scene.boundaries.push_back(std::move(outline));
+            }
+
             const std::vector<camcore::ToolpathMove>& moves = m_job.sequence[i].children[c].toolpath.moves;
             if (moves.empty())
                 continue;

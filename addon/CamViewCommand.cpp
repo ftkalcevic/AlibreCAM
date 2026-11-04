@@ -192,6 +192,20 @@ void CCamViewCommand::DrawScene(IADAddOnCanvasDisplay* pCanvas, const CamScene& 
 {
     const double unit = scene.millimetresPerUnit;
 
+    if (scene.showToolpaths && !scene.boundaries.empty())
+    {
+        const __int64 segment = AddSegment(pCanvas, L"Facing boundaries", kBoundaryColour, kBoundaryLineWeight,
+                                           scene.foreground);
+        for (const std::vector<Vec3>& boundary : scene.boundaries)
+        {
+            std::vector<float> points;
+            points.reserve(boundary.size() * 3);
+            for (const Vec3& point : boundary)
+                AddPoint(points, point, unit);
+            DrawPolyline(pCanvas, segment, points);
+        }
+    }
+
     if (scene.showToolpaths)
     {
         for (const CamScene::Toolpath& toolpath : scene.toolpaths)

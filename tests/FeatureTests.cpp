@@ -409,6 +409,96 @@ TEST_CASE("step distance and overtravel work from the tool, or as distances")
     CHECK(ValidateFacing(facing).size() == 1);
 }
 
+namespace
+{
+    PickedGeometry FlatFace(const Vec3& point, const Vec3& normal)
+    {
+        PickedGeometry pick;
+        pick.kind = PickKind::PlanarFace;
+        pick.point = point;
+        pick.direction = normal;
+        return pick;
+    }
+
+    PickedGeometry LineAt(const Vec3& start, const Vec3& end)
+    {
+        PickedGeometry pick;
+        pick.kind = PickKind::LineEdge;
+        pick.start = start;
+        pick.end = end;
+        pick.point = start;
+        pick.direction = end - start;
+        return pick;
+    }
+
+    PickedGeometry CircleAt(const Vec3& centre, const Vec3& axis)
+    {
+        PickedGeometry pick;
+        pick.kind = PickKind::CircleEdge;
+        pick.point = centre;
+        pick.direction = axis;
+        return pick;
+    }
+}
+
+TEST_CASE("facing takes one flat face parallel to the origin plane")
+{
+    Frame frame;
+    frame.origin = { 0, 0, 10 };
+
+    FacingFeatureCheck check = CheckFacingFeatures(frame, { FlatFace({ 5, 5, 12 }, { 0, 0, 1 }) });
+    REQUIRE(check.ok);
+    CHECK(check.level == doctest::Approx(2));
+
+    // Facing down is still parallel.
+    CHECK(CheckFacingFeatures(frame, { FlatFace({ 5, 5, 12 }, { 0, 0, -1 }) }).ok);
+
+    CHECK_FALSE(CheckFacingFeatures(frame, { FlatFace({ 0, 0, 0 }, { 0, 1, 1 }) }).ok);
+    CHECK_FALSE(CheckFacingFeatures(frame, { FlatFace({ 0, 0, 0 }, { 0, 0, 1 }), FlatFace({ 0, 0, 0 }, { 0, 0, 1 }) }).ok);
+    CHECK_FALSE(CheckFacingFeatures(frame, { FlatFace({ 0, 0, 0 }, { 0, 0, 1 }), LineAt({ 0, 0, 0 }, { 5, 0, 0 }) }).ok);
+    CHECK_FALSE(CheckFacingFeatures(frame, {}).ok);
+}
+
+TEST_CASE("facing takes edges that lie on one plane parallel to the origin plane")
+{
+    Frame frame;
+
+    // An open set of edges at Z 3: two lines and an arc.
+    FacingFeatureCheck check = CheckFacingFeatures(
+        frame, { LineAt({ 0, 0, 3 }, { 50, 0, 3 }), LineAt({ 50, 0, 3 }, { 50, 20, 3 }), CircleAt({ 25, 20, 3 }, { 0, 0, 1 }) });
+    REQUIRE(check.ok);
+    CHECK(check.level == doctest::Approx(3));
+
+    // A line that climbs, a circle on a tilted plane, and edges at two heights.
+    CHECK_FALSE(CheckFacingFeatures(frame, { LineAt({ 0, 0, 3 }, { 50, 0, 4 }) }).ok);
+    CHECK_FALSE(CheckFacingFeatures(frame, { CircleAt({ 0, 0, 3 }, { 1, 0, 0 }) }).ok);
+    const FacingFeatureCheck heights =
+        CheckFacingFeatures(frame, { LineAt({ 0, 0, 3 }, { 50, 0, 3 }), LineAt({ 0, 10, 5 }, { 50, 10, 5 }) });
+    CHECK_FALSE(heights.ok);
+    CHECK(heights.problem.find("Edge 2") != std::string::npos);
+
+    // Holes and points aren't facing features.
+    PickedGeometry hole;
+    hole.kind = PickKind::CylindricalFace;
+    CHECK_FALSE(CheckFacingFeatures(frame, { hole }).ok);
+}
+
+TEST_CASE("facing checks use the origin's own Z")
+{
+    // A side origin: its Z is assembly +X, so a face facing +X is parallel to its plane.
+    Frame side;
+    side.origin = { 100, 0, 0 };
+    side.xAxis = { 0, 1, 0 };
+    side.yAxis = { 0, 0, 1 };
+    side.zAxis = { 1, 0, 0 };
+
+    const FacingFeatureCheck check = CheckFacingFeatures(side, { FlatFace({ 104, 7, 7 }, { 1, 0, 0 }) });
+    REQUIRE(check.ok);
+    CHECK(check.level == doctest::Approx(4));
+    CHECK_FALSE(CheckFacingFeatures(side, { FlatFace({ 104, 7, 7 }, { 0, 0, 1 }) }).ok);
+    CHECK(CheckFacingFeatures(side, { LineAt({ 104, 0, 0 }, { 104, 0, 30 }) }).ok);
+}
+
 TEST_CASE("only the entry and exit values in use are checked")
 {
     EntryExitSettings settings;

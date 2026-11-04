@@ -668,25 +668,162 @@ bool ReadSelectedFeatures(IADSession* pAssembly, camcore::FeatureFilter filter, 
 
 namespace
 {
-    // The feature as something Alibre can select, or nothing if it can't be found.
+    // The feature's occurrence and face or edge, found again by their keys.
     // Design points have no key to find them by.
-    IADTargetProxyPtr FindFeature(IADSession* pAssembly, const PickedGeometry& feature)
+    bool BindFeature(IADSession* pAssembly, const PickedGeometry& feature, IADOccurrencePtr& occurrence,
+                     IDispatchPtr& target)
     {
         if (feature.kind == PickKind::DesignPoint)
-            return nullptr;
+            return false;
 
-        IADOccurrencePtr occurrence =
-            QI<IADOccurrencePtr>(BindKey(pAssembly, feature.occurrenceKey, ADObjectType_AD_OCCURRENCE));
+        occurrence = QI<IADOccurrencePtr>(BindKey(pAssembly, feature.occurrenceKey, ADObjectType_AD_OCCURRENCE));
         if (occurrence == nullptr)
-            return nullptr;
+            return false;
 
         // Face and edge keys belong to the part.
         IADSessionPtr part = QI<IADSessionPtr>(occurrence->GetDesignSession());
-        IDispatchPtr target = (part != nullptr) ? BindKey(part, feature.targetKey, ADObjectType_AD_TOPOLOGY) : nullptr;
-        if (target == nullptr)
-            return nullptr;
+        target = (part != nullptr) ? BindKey(part, feature.targetKey, ADObjectType_AD_TOPOLOGY) : nullptr;
+        return target != nullptr;
+    }
 
+    // The feature as something Alibre can select, or nothing if it can't be found.
+    IADTargetProxyPtr FindFeature(IADSession* pAssembly, const PickedGeometry& feature)
+    {
+        IADOccurrencePtr occurrence;
+        IDispatchPtr target;
+        if (!BindFeature(pAssembly, feature, occurrence, target))
+            return nullptr;
         return pAssembly->NewTargetProxy(occurrence, target);
+    }
+
+    // Curved edges are sampled with this many segments over a full turn, and
+    // proportionally fewer for shorter arcs, but never fewer than this.
+    const int kSegmentsPerTurn = 72;
+    const int kMinimumCurveSegments = 4;
+    const double kTwoPi = 6.28318530717958647692;
+
+    // An edge as points in part coordinates, from its start vertex to its end.
+    // Lines are their two ends. Curves are sampled along the curve.
+    bool SampleEdge(IADEdge* pEdge, std::vector<Vec3>& points)
+    {
+        points.clear();
+        IADVertexPtr startVertex = pEdge->GetStartVertex();
+        IADVertexPtr endVertex = pEdge->GetEndVertex();
+        IADCurvePtr curve = pEdge->GetGeometry();
+        if (curve == nullptr)
+            return false;
+
+        if (QI<IADLinePtr>(curve) != nullptr)
+        {
+            if (startVertex == nullptr || endVertex == nullptr)
+                return false;
+            points.push_back(ToVec3(startVertex->GetPoint()));
+            points.push_back(ToVec3(endVertex->GetPoint()));
+            return true;
+        }
+
+        double low = 0.0, high = 0.0;
+        curve->GetParameterExtents(&low, &high);
+
+        // A circle or arc goes round, so its parameter wraps after a full turn.
+        const bool round = QI<IADCirclePtr>(curve) != nullptr || QI<IADCircularArcPtr>(curve) != nullptr;
+        const double period = high - low;
+
+        double from = low, to = high;
+        const bool closed = startVertex == nullptr || endVertex == nullptr ||
+                            camcore::Length(ToVec3(startVertex->GetPoint()) - ToVec3(endVertex->GetPoint())) < 1e-9;
+        if (!closed)
+        {
+            from = curve->ParamAtPoint(startVertex->GetPoint());
+            to = curve->ParamAtPoint(endVertex->GetPoint());
+            if (round && to <= from)
+                to += period;
+        }
+
+        const double span = std::fabs(to - from);
+        const double turns = (round && period > 0.0) ? span / period : 1.0;
+        const int segments = (std::max)(kMinimumCurveSegments, static_cast<int>(std::ceil(turns * kSegmentsPerTurn)));
+        for (int i = 0; i <= segments; ++i)
+        {
+            double t = from + (to - from) * i / segments;
+            if (round && period > 0.0 && t > high)
+                t = low + std::fmod(t - low, period);
+            points.push_back(ToVec3(curve->PointAtParam(t)));
+        }
+        return true;
+    }
+}
+
+bool ReadFeatureOutline(IADSession* pAssembly, const PickedGeometry& feature, std::vector<std::vector<Vec3>>& pieces,
+                        std::wstring& problem)
+{
+    pieces.clear();
+    problem.clear();
+
+    try
+    {
+        IADOccurrencePtr occurrence;
+        IDispatchPtr target;
+        if (!BindFeature(pAssembly, feature, occurrence, target))
+        {
+            problem = L"A feature can't be found in the model. It may have been deleted.";
+            return false;
+        }
+
+        // A face's outline is its outer loop's edges. An edge is itself.
+        std::vector<IADEdgePtr> edges;
+        if (IADFacePtr face = QI<IADFacePtr>(target))
+        {
+            IADLoopsPtr loops = face->GetLoops();
+            const long loopCount = (loops != nullptr) ? loops->GetCount() : 0;
+            for (long i = 0; i < loopCount; ++i)
+            {
+                IADLoopPtr loop = loops->GetItem(i);
+                if (loop->GetIsOuter() == VARIANT_FALSE)
+                    continue;
+                IADEdgesPtr loopEdges = loop->GetEdges();
+                const long edgeCount = (loopEdges != nullptr) ? loopEdges->GetCount() : 0;
+                for (long e = 0; e < edgeCount; ++e)
+                    edges.push_back(loopEdges->GetItem(e));
+            }
+            if (edges.empty())
+            {
+                problem = L"The face has no outer edges.";
+                return false;
+            }
+        }
+        else if (IADEdgePtr edge = QI<IADEdgePtr>(target))
+        {
+            edges.push_back(edge);
+        }
+        else
+        {
+            problem = L"A feature isn't a face or an edge.";
+            return false;
+        }
+
+        const double assemblyMm = MillimetresPerModelUnit(QI<IADDesignSessionPtr>(pAssembly));
+        const PartToAssembly transform(occurrence, assemblyMm);
+        for (const IADEdgePtr& edge : edges)
+        {
+            std::vector<Vec3> points;
+            if (!SampleEdge(edge, points))
+            {
+                problem = L"An edge's shape couldn't be read.";
+                return false;
+            }
+            for (Vec3& point : points)
+                point = transform.Point(point);
+            pieces.push_back(std::move(points));
+        }
+        Log(L"[outline] %s: %zu edges", FromUtf8(feature.occurrenceName).c_str(), pieces.size());
+        return true;
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[outline] could not read a feature: hr=0x%08X", static_cast<unsigned>(error.Error()));
+        problem = L"A feature's outline couldn't be read.";
+        return false;
     }
 }
 

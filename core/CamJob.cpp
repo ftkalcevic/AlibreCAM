@@ -549,6 +549,34 @@ namespace camcore
             };
         }
 
+        json WritePolyline(const Polyline& points)
+        {
+            json list = json::array();
+            for (const Vec3& point : points)
+                list.push_back(WriteVec3(point));
+            return list;
+        }
+
+        // Facings never generated have no boundary.
+        bool ReadBoundary(const json& step, Polyline& boundary)
+        {
+            boundary.clear();
+            const auto item = step.find("boundary");
+            if (item == step.end())
+                return true;
+            if (!item->is_array())
+                return false;
+
+            for (const json& entry : *item)
+            {
+                if (!entry.is_array() || entry.size() != 3 || !entry[0].is_number() || !entry[1].is_number() ||
+                    !entry[2].is_number())
+                    return false;
+                boundary.push_back({ entry[0].get<double>(), entry[1].get<double>(), entry[2].get<double>() });
+            }
+            return true;
+        }
+
         // Facings saved before the Facing tab existed have the defaults.
         bool ReadFacing(const json& step, FacingSettings& facing)
         {
@@ -710,7 +738,7 @@ namespace camcore
                          { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
                          { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
                          { "cutLevels", WriteCutLevels(step.cutLevels) }, { "entryExit", WriteEntryExit(step.entryExit) },
-                         { "facing", WriteFacing(step.facing) } };
+                         { "facing", WriteFacing(step.facing) }, { "boundary", WritePolyline(step.boundary) } };
 
             if (step.type == StepType::Drill)
                 return { { "type", "drill" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
@@ -769,6 +797,7 @@ namespace camcore
                 return ReadTool(item, step.toolId) && ReadFeeds(item, step.feeds) && ReadToolpath(item, step.toolpath) &&
                        ReadFeatures(item, step.features) && ReadCutLevels(item, step.cutLevels) &&
                        ReadEntryExit(item, step.entryExit) && ReadFacing(item, step.facing) &&
+                       ReadBoundary(item, step.boundary) &&
                        ReadClearance(item, step.clearance);
             }
 

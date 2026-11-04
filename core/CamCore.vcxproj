@@ -62,6 +62,7 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Boundary.cpp" />
     <ClCompile Include="CamJob.cpp" />
     <ClCompile Include="Clearance.cpp" />
     <ClCompile Include="CutLevels.cpp" />
@@ -77,6 +78,7 @@
     <ClCompile Include="ToolLibrary.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Boundary.h" />
     <ClInclude Include="CamJob.h" />
     <ClInclude Include="Clearance.h" />
     <ClInclude Include="CutLevels.h" />

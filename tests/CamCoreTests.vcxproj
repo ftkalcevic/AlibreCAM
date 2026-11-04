@@ -65,6 +65,7 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="BoundaryTests.cpp" />
     <ClCompile Include="CamCoreTests.cpp" />
     <ClCompile Include="FeatureTests.cpp" />
     <ClCompile Include="OriginTests.cpp" />

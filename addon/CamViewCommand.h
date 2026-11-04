@@ -33,7 +33,8 @@ struct CamScene
         bool selected = false;
     };
     std::vector<Toolpath> toolpaths;
-    bool showToolpaths = true;
+    std::vector<std::vector<camcore::Vec3>> boundaries;     // facing areas, closed
+    bool showToolpaths = true;      // the boundaries too
 
     bool foreground = true;     // drawn over the model, rather than hidden by it
     double millimetresPerUnit = 10.0;

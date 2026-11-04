@@ -35,6 +35,12 @@ bool ReadSelectedFeatures(IADSession* pAssembly, camcore::FeatureFilter filter,
 // Returns how many were selected. Design points and deleted items can't be.
 int SelectFeatures(IADSession* pAssembly, const std::vector<camcore::PickedGeometry>& features);
 
+// A face's outer loop, or an edge, as pieces of polyline in assembly mm, found
+// again by the feature's keys. Each piece is one edge, from its start to its end.
+// Returns false and sets problem if it can't be found or read.
+bool ReadFeatureOutline(IADSession* pAssembly, const camcore::PickedGeometry& feature,
+                        std::vector<std::vector<camcore::Vec3>>& pieces, std::wstring& problem);
+
 // Highlights one feature in the view without changing the selection. Null clears it.
 void HighlightFeature(IADSession* pAssembly, const camcore::PickedGeometry* pFeature);
 
