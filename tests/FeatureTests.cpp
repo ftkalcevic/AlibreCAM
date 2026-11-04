@@ -555,9 +555,71 @@ TEST_CASE("rough and finish must add up to the total, and each step fit its dept
     levels.finishStep = 0;
     CHECK(ValidateCutLevels(levels).empty());
 
+    // Both zero is one pass, so it's allowed. A negative total isn't.
     levels.totalDepth = 0;
     levels.roughDepth = 0;
+    levels.roughStep = 0;
+    CHECK(ValidateCutLevels(levels).empty());
+    levels.totalDepth = -1;
     CHECK_FALSE(ValidateCutLevels(levels).empty());
+}
+
+TEST_CASE("cut levels step down through the rough depth, then the finish depth")
+{
+    // The defaults: 1 total, 0.8 rough at 0.4 a cut, 0.2 finish at 0.2 a cut.
+    CutLevelSettings settings;
+    std::vector<CutLevel> levels = CutLevelHeights(settings, 10);
+    REQUIRE(levels.size() == 3);
+    CHECK(levels[0].z == doctest::Approx(9.6));
+    CHECK_FALSE(levels[0].finish);
+    CHECK(levels[1].z == doctest::Approx(9.2));
+    CHECK(levels[2].z == doctest::Approx(9.0));
+    CHECK(levels[2].finish);
+
+    // Steps that don't divide the depth are evened out, none more than the step.
+    settings.roughStep = 0.3;
+    levels = CutLevelHeights(settings, 10);
+    REQUIRE(levels.size() == 4);
+    CHECK(levels[0].z == doctest::Approx(10 - 0.8 / 3));
+    CHECK(levels[2].z == doctest::Approx(9.2));
+
+    // At Bottom starts the total above the geometry and ends at it.
+    settings = CutLevelSettings();
+    settings.location = CutGeometryLocation::AtBottom;
+    levels = CutLevelHeights(settings, 10);
+    CHECK(CutTopZ(settings, 10) == doctest::Approx(11));
+    CHECK(levels.back().z == doctest::Approx(10));
+
+    // Pick Top starts at its own Z.
+    settings.location = CutGeometryLocation::PickTop;
+    settings.topZ = 4;
+    CHECK(CutLevelHeights(settings, 10).back().z == doctest::Approx(3));
+}
+
+TEST_CASE("either depth can be zero, and both zero is one pass at the top")
+{
+    CutLevelSettings settings;
+    settings.roughDepth = 0;
+    settings.finishDepth = 1;
+    settings.finishStep = 0.5;
+    std::vector<CutLevel> levels = CutLevelHeights(settings, 0);
+    REQUIRE(levels.size() == 2);
+    CHECK(levels[0].finish);
+    CHECK(levels[1].z == doctest::Approx(-1));
+
+    settings.roughDepth = 1;
+    settings.roughStep = 1;
+    settings.finishDepth = 0;
+    levels = CutLevelHeights(settings, 0);
+    REQUIRE(levels.size() == 1);
+    CHECK_FALSE(levels[0].finish);
+    CHECK(levels[0].z == doctest::Approx(-1));
+
+    settings.totalDepth = 0;
+    settings.roughDepth = 0;
+    levels = CutLevelHeights(settings, 5);
+    REQUIRE(levels.size() == 1);
+    CHECK(levels[0].z == doctest::Approx(5));
 }
 
 TEST_CASE("a signed height, and none for things along the drill direction")

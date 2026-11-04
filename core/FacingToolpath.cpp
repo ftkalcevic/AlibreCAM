@@ -257,14 +257,19 @@ namespace camcore
         if (!feedProblems.empty())
             return Failure(feedProblems.front());
 
-        // One level for now, at the boundary's own height.
+        const std::vector<std::string> levelProblems = ValidateCutLevels(pOperation->cutLevels);
+        if (!levelProblems.empty())
+            return Failure(levelProblems.front());
+
+        // The boundary is the cut geometry, at its own height.
         const double z = boundary.front().z;
+        const std::vector<CutLevel> levels = CutLevelHeights(pOperation->cutLevels, z);
         double clearance = 0.0;
         std::string clearanceProblem;
         if (!ClearanceHeight(pOperation->clearance, input.havePartMaxZ, input.partMaxZ, clearance, clearanceProblem))
             return Failure(clearanceProblem);
-        if (!(clearance > z))
-            return Failure("The clearance plane must be above the face being cut.");
+        if (!(clearance > CutTopZ(pOperation->cutLevels, z)))
+            return Failure("The clearance plane must be above the top of the cut.");
 
         const double step = ResolveSize(facing.stepDistance, input.tool->diameter);
         const double overtravel = ResolveSize(facing.overtravel, input.tool->diameter);
@@ -299,16 +304,22 @@ namespace camcore
         const bool startHighV = std::fabs(axes.V(corner) - vMax) < std::fabs(axes.V(corner) - vMin);
         const bool startHighU = std::fabs(axes.U(corner) - uMax) < std::fabs(axes.U(corner) - uMin);
 
+        // The whole area is cut at each level, from the top down, lifting to the
+        // clearance plane between levels. Rough and finish levels share the feeds
+        // until each has its own.
         ToolpathResult result;
-        PathBuilder path(result.toolpath, pOperation->feeds, clearance, z);
-        if (facing.cutType == FacingCutType::Spiral)
-            Spiral(path, axes, facing, uMin, uMax, vMin, vMax, startHighV, startHighU, step, overtravel, z);
-        else
-            LinearPasses(path, boundary, axes, facing, vMin, vMax, startHighV, startHighU, step, overtravel, z);
+        for (const CutLevel& level : levels)
+        {
+            PathBuilder path(result.toolpath, pOperation->feeds, clearance, level.z);
+            if (facing.cutType == FacingCutType::Spiral)
+                Spiral(path, axes, facing, uMin, uMax, vMin, vMax, startHighV, startHighU, step, overtravel, level.z);
+            else
+                LinearPasses(path, boundary, axes, facing, vMin, vMax, startHighV, startHighU, step, overtravel,
+                             level.z);
 
-        if (facing.cutType == FacingCutType::Linear && facing.direction == CutDirection::Mixed &&
-            !result.toolpath.moves.empty())
-            path.Leave();
+            if (!result.toolpath.moves.empty() && result.toolpath.moves.back().to.z != clearance)
+                path.Leave();
+        }
 
         result.ok = !result.toolpath.moves.empty();
         if (!result.ok)

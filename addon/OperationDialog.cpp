@@ -999,7 +999,7 @@ void CCutLevelsPage::FitSteps()
 void CCutLevelsPage::OnTotalChanged()
 {
     double total = 0.0;
-    if (m_updating || !ReadValue(IDC_CUT_TOTAL, total) || !(total > 0.0) || total == m_levels.totalDepth)
+    if (m_updating || !ReadValue(IDC_CUT_TOTAL, total) || !(total >= 0.0) || total == m_levels.totalDepth)
         return;
 
     // The finish depth stays if it fits, and the rough depth takes the rest.

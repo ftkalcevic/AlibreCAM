@@ -1,7 +1,7 @@
 // FacingToolpath.h : calculates a Facing operation's toolpath. No Alibre or MFC code belongs here.
 //
-// One level for now, at the boundary's Z. Cut levels and entry and exit motions
-// come later.
+// The area is cut at each of the Cut Levels tab's levels, from the boundary's Z
+// as the cut geometry. Entry and exit motions come later.
 
 #pragma once
 

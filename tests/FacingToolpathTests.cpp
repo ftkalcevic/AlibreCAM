@@ -22,6 +22,11 @@ namespace
         step.clearance.absoluteZ = 10;
         step.feeds.plunge = 100;
         step.feeds.cut = 1000;
+
+        // One pass, at the face itself.
+        step.cutLevels.totalDepth = 0;
+        step.cutLevels.roughDepth = 0;
+        step.cutLevels.finishDepth = 0;
         return step;
     }
 
@@ -239,6 +244,39 @@ TEST_CASE("same settings ignores what Generate makes")
     b = a;
     b.name = "Other";
     CHECK_FALSE(SameSettings(a, b));
+}
+
+TEST_CASE("facing cuts the whole area at each level, lifting between levels")
+{
+    SequenceStep step = FacingStep();
+    step.cutLevels = CutLevelSettings();    // 0.4, 0.8 rough, then 1.0 finish
+    const ToolpathResult result = Generate(step);
+    REQUIRE(result.ok);
+
+    // Each level has the 25 passes, at its own depth, in order down.
+    const std::vector<ToolpathMove> cuts = Cuts(result.toolpath);
+    REQUIRE(cuts.size() == 75);
+    CHECK(cuts[0].to.z == doctest::Approx(-0.4));
+    CHECK(cuts[25].to.z == doctest::Approx(-0.8));
+    CHECK(cuts[74].to.z == doctest::Approx(-1.0));
+
+    // Mixed lifts out once at the end of each level, and goes in again.
+    step.facing.direction = CutDirection::Mixed;
+    size_t lifts = 0;
+    for (const ToolpathMove& move : Generate(step).toolpath.moves)
+        lifts += (move.kind == MoveKind::Rapid) ? 1 : 0;
+    CHECK(lifts == 6);
+
+    // At Bottom starts above the face and finishes on it.
+    step.cutLevels.location = CutGeometryLocation::AtBottom;
+    const std::vector<ToolpathMove> bottom = Cuts(Generate(step).toolpath);
+    REQUIRE(!bottom.empty());
+    CHECK(bottom.front().to.z == doctest::Approx(0.6));
+    CHECK(bottom.back().to.z == doctest::Approx(0));
+
+    // The clearance plane must be above the top of the cut, not just the face.
+    step.clearance.absoluteZ = 0.5;
+    CHECK_FALSE(Generate(step).ok);
 }
 
 TEST_CASE("a facing toolpath needs a tool, a boundary and room above it")

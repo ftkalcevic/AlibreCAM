@@ -49,5 +49,22 @@ namespace camcore
     constexpr double kCutDepthTolerance = 0.0005;
 
     // Returns a sentence for each problem. Empty means the settings are valid.
+    // A total of 0 is allowed, and means one pass at the top of the cut.
     std::vector<std::string> ValidateCutLevels(const CutLevelSettings& settings);
+
+    // One level an operation cuts at, along its origin Z.
+    struct CutLevel
+    {
+        double z = 0.0;
+        bool finish = false;    // a finish level, which will have its own feeds and speeds
+    };
+
+    // Where the cut starts, given the cut geometry's Z. At Top starts at the
+    // geometry, At Bottom the total depth above it, and Pick Top at its Z.
+    double CutTopZ(const CutLevelSettings& settings, double geometryZ);
+
+    // The levels to cut at, highest first: the rough depth in equal steps no
+    // more than the rough depth per cut, then the finish depth the same way.
+    // A total of 0 gives one finish level at the top.
+    std::vector<CutLevel> CutLevelHeights(const CutLevelSettings& settings, double geometryZ);
 }
