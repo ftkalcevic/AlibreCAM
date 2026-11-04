@@ -123,6 +123,45 @@ TEST_CASE("mixed goes backwards and forwards without lifting")
     CHECK(lifts == 2);      // in at the start and out at the end
 }
 
+TEST_CASE("mixed steps over square to the passes when their ends don't line up")
+{
+    SequenceStep step = FacingStep();
+    step.facing.direction = CutDirection::Mixed;
+    step.boundary = { { 0, 0, 0 }, { 100, 0, 0 }, { 50, 50, 0 } };
+    const ToolpathResult result = Generate(step);
+    REQUIRE(result.ok);
+
+    // Every move at the cut depth runs along X or along Y, never diagonally.
+    const std::vector<ToolpathMove>& moves = result.toolpath.moves;
+    size_t steps = 0;
+    for (size_t i = 2; i < moves.size(); ++i)
+    {
+        const Vec3& a = moves[i - 1].to;
+        const Vec3& b = moves[i].to;
+        if (a.z != 0 || b.z != 0)
+            continue;
+        const bool alongX = std::fabs(a.y - b.y) < 1e-9;
+        const bool alongY = std::fabs(a.x - b.x) < 1e-9;
+        CHECK((alongX || alongY));
+        steps += (alongY && !alongX) ? 1 : 0;
+
+        // Nothing goes past the triangle plus the 5 mm overtravel.
+        CHECK(b.x >= -5 - 1e-9);
+        CHECK(b.x <= 105 + 1e-9);
+    }
+    CHECK(steps == 24);
+
+    // Going up the triangle each pass is shorter, so the step over is at the end
+    // of the longer pass below, and the new pass then starts out in the air.
+    // The first pass, y -5, runs right from -5 to 105, so the step to y -2.5 is at x 105.
+    // (The bottom pass reads its span a hair inside the triangle.)
+    CHECK(moves[2].to.x == doctest::Approx(105).epsilon(1e-5));
+    CHECK(moves[2].to.y == doctest::Approx(-5));
+    CHECK(moves[3].to.x == moves[2].to.x);
+    CHECK(moves[3].to.y == doctest::Approx(-2.5));
+    CHECK(moves[4].to.x < moves[3].to.x);
+}
+
 TEST_CASE("no overtravel stops the cutter centre on the edge")
 {
     SequenceStep step = FacingStep();
@@ -185,6 +224,21 @@ TEST_CASE("a conventional spiral turns anticlockwise, from any corner")
     CHECK(Near(moves[0].to, 105, 55, 10));
     CHECK(Near(moves[2].to, -5, 55, 0));
     CHECK(Near(moves[3].to, -5, -5, 0));
+}
+
+TEST_CASE("same settings ignores what Generate makes")
+{
+    SequenceStep a = FacingStep();
+    SequenceStep b = a;
+    b.boundary.clear();
+    b.toolpath.moves.resize(3);
+    CHECK(SameSettings(a, b));
+
+    b.facing.cutAngle = 45;
+    CHECK_FALSE(SameSettings(a, b));
+    b = a;
+    b.name = "Other";
+    CHECK_FALSE(SameSettings(a, b));
 }
 
 TEST_CASE("a facing toolpath needs a tool, a boundary and room above it")

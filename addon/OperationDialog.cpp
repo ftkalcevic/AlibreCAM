@@ -1572,6 +1572,7 @@ void CDrillingPage::ShowLocateNote(const std::wstring& text)
 BEGIN_MESSAGE_MAP(COperationDlg, CDialog)
     ON_NOTIFY(TCN_SELCHANGE, IDC_OP_TABS, &COperationDlg::OnTabChanged)
     ON_WM_CLOSE()
+    ON_BN_CLICKED(IDC_OP_GENERATE, &COperationDlg::OnGenerate)
 END_MESSAGE_MAP()
 
 COperationDlg::COperationDlg(CCamTabCommand* pTab, const SequenceStep& step)
@@ -1845,6 +1846,25 @@ void COperationDlg::PostNcDestroy()
 
 void COperationDlg::OnOK()
 {
+    if (ReadSettings())
+        Finish(true);
+}
+
+void COperationDlg::OnGenerate()
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    // The settings go into the job first, and the dialog stays open to change
+    // them and generate again.
+    if (m_pTab == nullptr || !ReadSettings())
+        return;
+    StopSelectingFeatures();
+    StopLocating();
+    m_pTab->OnOperationDialogGenerate(this);
+}
+
+bool COperationDlg::ReadSettings()
+{
     CString name;
     GetDlgItemText(IDC_OP_NAME, name);
     name.Trim();
@@ -1870,12 +1890,12 @@ void COperationDlg::OnOK()
             ShowPage(firstBad);
         }
         MessageBoxW(problems.c_str(), OperationTitle(m_step.type), MB_OK | MB_ICONWARNING);
-        return;
+        return false;
     }
 
     step.name = ToUtf8(static_cast<LPCWSTR>(name));
     m_step = step;
-    Finish(true);
+    return true;
 }
 
 void COperationDlg::OnCancel()

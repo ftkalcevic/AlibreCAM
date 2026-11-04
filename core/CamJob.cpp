@@ -1003,6 +1003,17 @@ namespace camcore
         return result;
     }
 
+    bool SameSettings(const SequenceStep& a, const SequenceStep& b)
+    {
+        SequenceStep left = a;
+        SequenceStep right = b;
+        left.toolpath = Toolpath();
+        right.toolpath = Toolpath();
+        left.boundary.clear();
+        right.boundary.clear();
+        return WriteStep(left) == WriteStep(right);
+    }
+
     SaveResult SaveJob(const Job& job, const fs::path& path)
     {
         SaveResult result;

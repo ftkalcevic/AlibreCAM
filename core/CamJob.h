@@ -158,6 +158,10 @@ namespace camcore
     // sequence, or in the group for an operation.
     bool DuplicateStep(Job& job, size_t step, size_t operation, size_t& newIndex);
 
+    // True if two steps have the same saved settings, ignoring the toolpath and
+    // boundary that Generate makes from them.
+    bool SameSettings(const SequenceStep& a, const SequenceStep& b);
+
     LoadResult LoadJob(const std::filesystem::path& path);
 
     // Writes a temporary file and then replaces the target, so a failed save

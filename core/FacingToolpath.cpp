@@ -124,6 +124,8 @@ namespace camcore
 
             // Passes beyond the boundary, in the overtravel, take the span at its edge.
             const double inside = (vMax - vMin) * 1e-6;
+            bool havePass = false;
+            double lastU = 0.0, lastV = 0.0;
             for (int i = 0; i <= intervals; ++i)
             {
                 const double v = startHighV ? high - i * spacing : low + i * spacing;
@@ -138,12 +140,28 @@ namespace camcore
 
                 if (facing.direction == CutDirection::Mixed)
                 {
-                    // Backwards and forwards, stepping over at the cut feed.
-                    if (i == 0)
+                    // Backwards and forwards, stepping over at the cut feed and square
+                    // to the passes, at whichever of the two passes' ends is further out.
+                    // Where the last pass ended further in, it carries on out along its
+                    // line first, even though that cuts air.
+                    if (!havePass)
+                    {
                         path.ArriveAt(start);
+                    }
                     else
-                        path.Cut(start);
+                    {
+                        // The last pass ended at the end this one starts from.
+                        const double cornerU = forward ? (std::min)(lastU, from) : (std::max)(lastU, from);
+                        if (cornerU != lastU)
+                            path.Cut(axes.At(cornerU, lastV, z));
+                        path.Cut(axes.At(cornerU, v, z));
+                        if (cornerU != from)
+                            path.Cut(start);
+                    }
                     path.Cut(end);
+                    havePass = true;
+                    lastU = to;
+                    lastV = v;
                     forward = !forward;
                 }
                 else

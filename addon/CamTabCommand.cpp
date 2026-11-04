@@ -1286,33 +1286,87 @@ void CCamTabCommand::OnOperationDialogDone(COperationDlg* pDialog, bool apply)
         ClearPickedSelection();
     }
 
-    if (!apply || !CanEditSequence() || !IsFolder(StepRef{ m_operationTarget.step }))
+    if (!apply || !ApplyOperationStep(pDialog->GetStep()))
         return;
 
-    std::vector<camcore::SequenceStep>& children = m_job.sequence[m_operationTarget.step].children;
-    // Its settings may have changed, so the old toolpath no longer fits it.
-    camcore::SequenceStep step = pDialog->GetStep();
-    step.toolpath = camcore::Toolpath();
-    step.boundary.clear();
-    if (m_operationTarget.child == kNewStep)
-    {
-        children.push_back(step);
-        m_selected = StepRef{ m_operationTarget.step, children.size() - 1 };
-    }
-    else if (m_operationTarget.child < children.size())
-    {
-        children[m_operationTarget.child] = step;
-        m_selected = m_operationTarget;
-    }
-    else
-    {
-        return;
-    }
-
-    Log(L"[operation] applied %s", FromUtf8(step.name).c_str());
+    Log(L"[operation] applied %s", FromUtf8(pDialog->GetStep().name).c_str());
     MarkJobChanged();
     ShowSequence();
     RebuildScene();
+}
+
+bool CCamTabCommand::ApplyOperationStep(camcore::SequenceStep step)
+{
+    if (!CanEditSequence() || !IsFolder(StepRef{ m_operationTarget.step }))
+        return false;
+
+    std::vector<camcore::SequenceStep>& children = m_job.sequence[m_operationTarget.step].children;
+    if (m_operationTarget.child == kNewStep)
+    {
+        // A new operation goes in the first time, and the dialog edits it in place after that.
+        step.toolpath = camcore::Toolpath();
+        step.boundary.clear();
+        children.push_back(step);
+        m_operationTarget.child = children.size() - 1;
+    }
+    else if (m_operationTarget.child < children.size())
+    {
+        // The toolpath still fits if the settings haven't changed, as after the
+        // dialog's own Generate. Otherwise it's discarded.
+        const camcore::SequenceStep& current = children[m_operationTarget.child];
+        if (camcore::SameSettings(current, step))
+        {
+            step.toolpath = current.toolpath;
+            step.boundary = current.boundary;
+        }
+        else
+        {
+            step.toolpath = camcore::Toolpath();
+            step.boundary.clear();
+        }
+        children[m_operationTarget.child] = step;
+    }
+    else
+    {
+        return false;
+    }
+
+    m_selected = m_operationTarget;
+    return true;
+}
+
+void CCamTabCommand::OnOperationDialogGenerate(COperationDlg* pDialog)
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    if (pDialog != m_pOperationDlg)
+        return;
+    if (!ApplyOperationStep(pDialog->GetStep()))
+    {
+        ::MessageBoxW(pDialog->GetSafeHwnd(), L"The operation can't be changed now.", L"AlibreCAM",
+                      MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    // The clearance plane can depend on the parts' size, which may have changed.
+    ReadModelSize();
+
+    std::string problem;
+    const bool ok = GenerateOperation(m_operationTarget, problem);
+    camcore::SequenceStep& operation = m_job.sequence[m_operationTarget.step].children[m_operationTarget.child];
+    if (!ok)
+        operation.toolpath = camcore::Toolpath();
+    const std::wstring name = FromUtf8(operation.name);
+    Log(L"[generate] %s from its dialog: %s", name.c_str(), ok ? L"ok" : FromUtf8(problem).c_str());
+
+    MarkJobChanged();
+    ShowSequence();
+    RebuildScene();
+    m_sequenceStatus = ok ? L"Generated " + name + L"." : L"Couldn't generate " + name + L".";
+    ShowStatus();
+    if (!ok)
+        ::MessageBoxW(pDialog->GetSafeHwnd(), (name + L": " + FromUtf8(problem)).c_str(), L"AlibreCAM",
+                      MB_OK | MB_ICONWARNING);
 }
 
 /////////////////////////////////////////////////////////////////////////////

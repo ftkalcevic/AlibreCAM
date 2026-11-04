@@ -105,6 +105,7 @@ public:
     // Shows the rows chosen in the Features list in the view.
     void ShowFeaturesInView(const std::vector<camcore::PickedGeometry>& features);
     void OnOperationDialogDone(COperationDlg* pDialog, bool apply);
+    void OnOperationDialogGenerate(COperationDlg* pDialog);
 
     void OnWindowClosing();
     void OnWindowGone();
@@ -146,6 +147,7 @@ private:
     bool PrepareSelection(const SelectionFilter& wanted);     // false if the view couldn't start
     bool IsPicking() const;
     bool GenerateOperation(const StepRef& target, std::string& problem);
+    bool ApplyOperationStep(camcore::SequenceStep step);
     std::vector<StepRef> OperationsIn(const StepRef& scope) const;
     void RestoreSelectionFilter();
     void HandleLocate();

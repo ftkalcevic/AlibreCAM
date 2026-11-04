@@ -356,12 +356,14 @@ protected:
 
     afx_msg void OnTabChanged(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnClose();
+    afx_msg void OnGenerate();
 
     DECLARE_MESSAGE_MAP()
 
 private:
     void AddPage(const wchar_t* title, std::unique_ptr<COperationPage> page);
     void ShowPage(int index);
+    bool ReadSettings();        // every tab into m_step. False after showing the problems.
     void Finish(bool apply);
 
     CCamTabCommand* m_pTab;

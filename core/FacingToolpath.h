@@ -30,12 +30,14 @@ namespace camcore
     // Linear: parallel passes along the cut angle, a step distance apart, over the
     // boundary plus the overtravel. Climb and Conventional cut every pass the same
     // way, lifting to the clearance plane between them. Mixed cuts forwards and
-    // backwards, stepping over at the cut feed. Climb keeps the uncut material on
+    // backwards, stepping over at the cut feed square to the passes, at the end of
+    // whichever pass reaches further out. Climb keeps the uncut material on
     // the cutter's right, for a clockwise spindle.
     // Spiral: a rectangular spiral round the boundary's rectangle plus the
     // overtravel, from the outside in, each loop a step distance inside the last.
     // Climb or Mixed turns clockwise, and Conventional anticlockwise.
-    // Both start at the Cut Start corner, seen from the frame's +Z, and arrive and
-    // leave at the clearance plane.
+    // Spiral and Mixed start at the Cut Start corner, seen from the frame's +Z.
+    // One-way Linear passes start on that corner's side, and the direction picks
+    // which end. All arrive and leave at the clearance plane.
     ToolpathResult GenerateFacingToolpath(const FacingToolpathInput& input);
 }
