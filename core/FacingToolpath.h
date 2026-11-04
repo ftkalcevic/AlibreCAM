@@ -1,7 +1,16 @@
 // FacingToolpath.h : calculates a Facing operation's toolpath. No Alibre or MFC code belongs here.
 //
 // The area is cut at each of the Cut Levels tab's levels, from the boundary's Z
-// as the cut geometry. Entry and exit motions come later.
+// as the cut geometry, with the Entry/Exit tab's motions into and out of each cut.
+// A cut is a level of Mixed or Spiral, or each one-way Linear pass. A positive
+// lead angle or radius puts the lead away from the geometry: an entry from outside
+// the first pass, an exit out past the last pass (outside the loop for a spiral).
+// A negative one puts it on the other side. A linear lead's angle is from the
+// cut's line (0 in line, 90 square to it), and a radial lead is a quarter circle
+// tangent to the cut, drawn as straight segments for now.
+// Along 3D Path ramps down in line with the cut from the path height above it.
+// Leads and ramps run at the cut feed. Without Apply at Each Cut Level, only the
+// first level's cuts have entries and only the last level's have exits.
 
 #pragma once
 

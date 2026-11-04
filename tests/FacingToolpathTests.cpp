@@ -279,6 +279,137 @@ TEST_CASE("facing cuts the whole area at each level, lifting between levels")
     CHECK_FALSE(Generate(step).ok);
 }
 
+TEST_CASE("a linear entry comes from outside the first pass, and an exit at 0 runs on in line")
+{
+    // Climb from the bottom left: the first pass at y -5 cuts towards -X, and the
+    // passes step up, so the cut side is below.
+    SequenceStep step = FacingStep();
+    step.entryExit.entry = EntryMode::Entry2D;
+    step.entryExit.engage.length = 10;
+    step.entryExit.engage.angle = 90;
+    step.entryExit.exit = ExitMode::Exit2D;
+    step.entryExit.retract.length = 4;
+    step.entryExit.retract.angle = 0;
+    const std::vector<ToolpathMove>& moves = Generate(step).toolpath.moves;
+
+    CHECK(Near(moves[0].to, 105, -15, 10));     // square to the cut, 10 below its start
+    CHECK(Near(moves[1].to, 105, -15, 0));
+    CHECK(Near(moves[2].to, 105, -5, 0));       // the lead in
+    CHECK(Near(moves[3].to, -5, -5, 0));        // the pass
+    CHECK(Near(moves[4].to, -9, -5, 0));        // in line with it, 4 on
+    CHECK(Near(moves[5].to, -9, -5, 10));
+}
+
+TEST_CASE("a radial entry is a quarter circle ending tangent to the cut")
+{
+    SequenceStep step = FacingStep();
+    step.entryExit.entry = EntryMode::Entry2D;
+    step.entryExit.engage.shape = LeadShape::Radial;
+    step.entryExit.engage.radius = 5;
+    const std::vector<ToolpathMove>& moves = Generate(step).toolpath.moves;
+
+    // The centre is 5 below the start at (105, -5). The arc starts 5 back along
+    // the cut (towards +X) from the centre, and every point is on the circle.
+    CHECK(Near(moves[0].to, 110, -10, 10));
+    for (size_t i = 1; i <= 19; ++i)
+    {
+        const double dx = moves[i].to.x - 105, dy = moves[i].to.y + 10;
+        CHECK(std::sqrt(dx * dx + dy * dy) == doctest::Approx(5));
+    }
+    CHECK(Near(moves[19].to, 105, -5, 0));
+    CHECK(Near(moves[20].to, -5, -5, 0));
+}
+
+TEST_CASE("an exit goes out past the last pass, or the other side when negative")
+{
+    // Mixed from the bottom left steps up, and its 25th pass, at y 55, ends at x 105.
+    SequenceStep step = FacingStep();
+    step.facing.direction = CutDirection::Mixed;
+    step.entryExit.exit = ExitMode::Exit2D;
+    step.entryExit.retract.length = 5;
+    step.entryExit.retract.angle = 45;
+    const double d = 5 / std::sqrt(2.0);
+
+    std::vector<ToolpathMove> moves = Generate(step).toolpath.moves;
+    REQUIRE(moves.size() > 2);
+    CHECK(Near(moves[moves.size() - 2].to, 105 + d, 55 + d, 0));
+
+    step.entryExit.retract.angle = -45;
+    moves = Generate(step).toolpath.moves;
+    CHECK(Near(moves[moves.size() - 2].to, 105 + d, 55 - d, 0));
+
+    // Radial curves up, or down with a negative radius, still running on ahead.
+    step.entryExit.retract.shape = LeadShape::Radial;
+    step.entryExit.retract.radius = 5;
+    moves = Generate(step).toolpath.moves;
+    CHECK(Near(moves[moves.size() - 2].to, 110, 60, 0));
+
+    step.entryExit.retract.radius = -5;
+    moves = Generate(step).toolpath.moves;
+    CHECK(Near(moves[moves.size() - 2].to, 110, 50, 0));
+    for (size_t i = moves.size() - 19; i < moves.size() - 1; ++i)
+    {
+        const double dx = moves[i].to.x - 105, dy = moves[i].to.y - 50;
+        CHECK(std::sqrt(dx * dx + dy * dy) == doctest::Approx(5));
+        CHECK(moves[i].to.x >= 105);
+    }
+}
+
+TEST_CASE("a negative radius entry still starts behind the cut, on the other side")
+{
+    // Climb from the bottom left: the first pass starts at (105, -5) cutting towards -X.
+    SequenceStep step = FacingStep();
+    step.entryExit.entry = EntryMode::Entry2D;
+    step.entryExit.engage.shape = LeadShape::Radial;
+    step.entryExit.engage.radius = -5;
+    const std::vector<ToolpathMove>& moves = Generate(step).toolpath.moves;
+    CHECK(Near(moves[0].to, 110, 0, 10));
+    CHECK(Near(moves[19].to, 105, -5, 0));
+}
+
+TEST_CASE("along a 3D path ramps down in line with the first cut")
+{
+    SequenceStep step = FacingStep();
+    step.facing.direction = CutDirection::Mixed;
+    step.entryExit.entry = EntryMode::AlongPath3D;
+    step.entryExit.alongPathHeight = 2;
+    step.entryExit.alongPathAngle = 45;
+    const std::vector<ToolpathMove>& moves = Generate(step).toolpath.moves;
+
+    // Mixed from the bottom left starts at (-5, -5) cutting towards +X.
+    CHECK(Near(moves[0].to, -7, -5, 10));
+    CHECK(Near(moves[1].to, -7, -5, 2));
+    CHECK(Near(moves[2].to, -5, -5, 0));
+
+    step.clearance.absoluteZ = 2;
+    CHECK_FALSE(Generate(step).ok);
+}
+
+TEST_CASE("entries and exits at each level, or only into the first and out of the last")
+{
+    SequenceStep step = FacingStep();
+    step.cutLevels = CutLevelSettings();        // three levels
+    step.facing.cutType = FacingCutType::Spiral;
+    step.entryExit.entry = EntryMode::Entry2D;
+    step.entryExit.exit = ExitMode::Exit2D;
+
+    // A spiral is one cut a level. Count the cut moves at each level's depth.
+    auto movesAt = [](const Toolpath& toolpath, double z) {
+        size_t count = 0;
+        for (const ToolpathMove& move : toolpath.moves)
+            count += (move.kind == MoveKind::Feed && move.feed == 1000 && std::fabs(move.to.z - z) < 1e-9) ? 1 : 0;
+        return count;
+    };
+    const Toolpath once = Generate(step).toolpath;
+    step.entryExit.eachCutLevel = true;
+    const Toolpath each = Generate(step).toolpath;
+
+    // The middle level has its entry and exit only when each level gets them.
+    CHECK(movesAt(each, -0.8) == movesAt(once, -0.8) + 2);
+    CHECK(movesAt(each, -0.4) == movesAt(once, -0.4) + 1);
+    CHECK(movesAt(each, -1.0) == movesAt(once, -1.0) + 1);
+}
+
 TEST_CASE("a facing toolpath needs a tool, a boundary and room above it")
 {
     SequenceStep step = FacingStep();

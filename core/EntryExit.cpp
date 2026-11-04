@@ -2,6 +2,8 @@
 
 #include "EntryExit.h"
 
+#include <cmath>
+
 namespace camcore
 {
     namespace
@@ -12,12 +14,12 @@ namespace camcore
             {
                 if (!(lead.length > 0.0))
                     problems.push_back("The " + name + " length must be more than 0.");
-                if (!(lead.angle >= 0.0) || !(lead.angle <= 180.0))
-                    problems.push_back("The " + name + " angle must be from 0 to 180 degrees.");
+                if (!(lead.angle >= -180.0) || !(lead.angle <= 180.0))
+                    problems.push_back("The " + name + " angle must be from -180 to 180 degrees.");
             }
-            else if (!(lead.radius > 0.0))
+            else if (lead.radius == 0.0 || !std::isfinite(lead.radius))
             {
-                problems.push_back("The " + name + " radius must be more than 0.");
+                problems.push_back("The " + name + " radius can't be 0.");
             }
         }
     }

@@ -14,6 +14,23 @@ namespace camcore
         // A spiral never needs more legs than this. It's only a guard.
         const int kMostSpiralLegs = 100000;
 
+        // Radial leads are drawn as straight segments this many degrees apart,
+        // until toolpaths have arcs.
+        const int kLeadArcSegments = 18;
+
+        Vec3 Plus(const Vec3& a, const Vec3& b, double scale) { return { a.x + b.x * scale, a.y + b.y * scale, a.z }; }
+
+        // The unit direction from a to b in XY, or false if they're the same point.
+        bool DirectionXY(const Vec3& a, const Vec3& b, Vec3& direction)
+        {
+            const double dx = b.x - a.x, dy = b.y - a.y;
+            const double length = std::sqrt(dx * dx + dy * dy);
+            if (!(length > 1e-9))
+                return false;
+            direction = { dx / length, dy / length, 0.0 };
+            return true;
+        }
+
         ToolpathResult Failure(const std::string& problem)
         {
             ToolpathResult result;
@@ -44,14 +61,110 @@ namespace camcore
             {
             }
 
-            // Across at the clearance plane to above the point, then down to cut.
-            void ArriveAt(const Vec3& point)
+            // The entry and exit motions, and whether this level uses each.
+            void SetEntryExit(const EntryExitSettings* pSettings, bool entry, bool exit)
+            {
+                m_pEntryExit = pSettings;
+                m_useEntry = entry && pSettings != nullptr && pSettings->entry != EntryMode::None;
+                m_useExit = exit && pSettings != nullptr && pSettings->exit != ExitMode::None;
+            }
+
+            // Into a cut at point, which runs along direction. away is square to it,
+            // pointing away from the geometry. A positive lead angle or radius puts the
+            // lead on that side, and a negative one on the other.
+            void Enter(const Vec3& point, const Vec3& direction, const Vec3& away)
+            {
+                if (!m_useEntry)
+                {
+                    ArriveAt(point);
+                    return;
+                }
+
+                const EntryExitSettings& settings = *m_pEntryExit;
+                if (settings.entry == EntryMode::AlongPath3D)
+                {
+                    // Down a ramp in line with the cut, from the height above it.
+                    const double angle = settings.alongPathAngle * kPi / 180.0;
+                    const Vec3 top = Plus(point, direction, -settings.alongPathHeight / std::tan(angle));
+                    TransferTo(top);
+                    Add(MoveKind::Feed, { top.x, top.y, m_cutZ + settings.alongPathHeight }, m_feeds.plunge);
+                    Cut(point);
+                    return;
+                }
+
+                const LeadMotion& lead = settings.engage;
+                if (lead.shape == LeadShape::Radial)
+                {
+                    // A quarter circle, its centre the radius off to one side, ending
+                    // tangent to the cut. It always starts behind the cut.
+                    const Vec3 side = (lead.radius < 0.0) ? Vec3{ -away.x, -away.y, 0.0 } : away;
+                    const double radius = std::fabs(lead.radius);
+                    const Vec3 centre = Plus(point, side, radius);
+                    for (int i = kLeadArcSegments; i >= 0; --i)
+                    {
+                        const double phi = (kPi / 2.0) * i / kLeadArcSegments;
+                        Vec3 at = Plus(centre, side, -radius * std::cos(phi));
+                        at = Plus(at, direction, -radius * std::sin(phi));
+                        if (i == kLeadArcSegments)
+                            ArriveAt(at);
+                        else
+                            Cut(at);
+                    }
+                    return;
+                }
+
+                // A straight line, the angle from the cut's line, positive to the away side.
+                const double angle = lead.angle * kPi / 180.0;
+                Vec3 start = Plus(point, direction, -lead.length * std::cos(angle));
+                start = Plus(start, away, lead.length * std::sin(angle));
+                ArriveAt(start);
+                Cut(point);
+            }
+
+            // Out of a cut that ended at point, running along direction, then up to
+            // the clearance plane.
+            void Exit(const Vec3& point, const Vec3& direction, const Vec3& away)
+            {
+                if (m_useExit)
+                {
+                    const LeadMotion& lead = m_pEntryExit->retract;
+                    if (lead.shape == LeadShape::Radial)
+                    {
+                        // A quarter circle on from the cut, curving to one side.
+                        const Vec3 side = (lead.radius < 0.0) ? Vec3{ -away.x, -away.y, 0.0 } : away;
+                        const double radius = std::fabs(lead.radius);
+                        const Vec3 centre = Plus(point, side, radius);
+                        for (int i = 1; i <= kLeadArcSegments; ++i)
+                        {
+                            const double phi = (kPi / 2.0) * i / kLeadArcSegments;
+                            Vec3 at = Plus(centre, side, -radius * std::cos(phi));
+                            Cut(Plus(at, direction, radius * std::sin(phi)));
+                        }
+                    }
+                    else
+                    {
+                        const double angle = lead.angle * kPi / 180.0;
+                        const Vec3 end = Plus(point, direction, lead.length * std::cos(angle));
+                        Cut(Plus(end, away, lead.length * std::sin(angle)));
+                    }
+                }
+                Leave();
+            }
+
+            // Across at the clearance plane to above the point.
+            void TransferTo(const Vec3& point)
             {
                 const Vec3 above{ point.x, point.y, m_clearance };
                 if (m_toolpath.moves.empty() || m_feeds.transferAtRapid)
                     Add(MoveKind::Rapid, above, 0.0);
                 else
                     Add(MoveKind::Feed, above, m_feeds.transfer);
+            }
+
+            // Across at the clearance plane to above the point, then down to cut.
+            void ArriveAt(const Vec3& point)
+            {
+                TransferTo(point);
                 Add(MoveKind::Feed, { point.x, point.y, m_cutZ }, m_feeds.plunge);
             }
 
@@ -77,6 +190,9 @@ namespace camcore
             const FeedSettings& m_feeds;
             double m_clearance;
             double m_cutZ;
+            const EntryExitSettings* m_pEntryExit = nullptr;
+            bool m_useEntry = false;
+            bool m_useExit = false;
         };
 
         // Where the boundary crosses the line v, as its lowest and highest u.
@@ -122,10 +238,17 @@ namespace camcore
             if (facing.direction == CutDirection::Mixed)
                 forward = !startHighU;
 
+            // Away from the geometry, an entry comes from the side the passes step away
+            // from, outside the first pass. An exit goes the way they step, out past
+            // the last pass.
+            const Vec3 entryAway{ -axes.across.x * stepSign, -axes.across.y * stepSign, 0.0 };
+            const Vec3 exitAway{ axes.across.x * stepSign, axes.across.y * stepSign, 0.0 };
+
             // Passes beyond the boundary, in the overtravel, take the span at its edge.
             const double inside = (vMax - vMin) * 1e-6;
             bool havePass = false;
             double lastU = 0.0, lastV = 0.0;
+            Vec3 lastEnd, lastDirection;
             for (int i = 0; i <= intervals; ++i)
             {
                 const double v = startHighV ? high - i * spacing : low + i * spacing;
@@ -137,6 +260,7 @@ namespace camcore
                 const double to = forward ? spanHigh + overtravel : spanLow - overtravel;
                 const Vec3 start = axes.At(from, v, z);
                 const Vec3 end = axes.At(to, v, z);
+                const Vec3 direction = forward ? axes.along : Vec3{ -axes.along.x, -axes.along.y, 0.0 };
 
                 if (facing.direction == CutDirection::Mixed)
                 {
@@ -146,7 +270,7 @@ namespace camcore
                     // line first, even though that cuts air.
                     if (!havePass)
                     {
-                        path.ArriveAt(start);
+                        path.Enter(start, direction, entryAway);
                     }
                     else
                     {
@@ -162,16 +286,23 @@ namespace camcore
                     havePass = true;
                     lastU = to;
                     lastV = v;
+                    lastEnd = end;
+                    lastDirection = direction;
                     forward = !forward;
                 }
                 else
                 {
-                    // One way only, so each pass starts again from the clearance plane.
-                    path.ArriveAt(start);
+                    // One way only, so each pass is its own cut, with its own entry
+                    // and exit, starting again from the clearance plane.
+                    path.Enter(start, direction, entryAway);
                     path.Cut(end);
-                    path.Leave();
+                    path.Exit(end, direction, exitAway);
                 }
             }
+
+            // Mixed is one cut a level, leaving from the end of its last pass.
+            if (facing.direction == CutDirection::Mixed && havePass)
+                path.Exit(lastEnd, lastDirection, exitAway);
         }
 
         // A rectangular spiral in a w by h rectangle, starting at (0, 0) and
@@ -218,16 +349,36 @@ namespace camcore
             const std::vector<Vec3> points =
                 SpiralPoints(right - left, top - bottom, step, mirrored ? !wantAnticlockwise : wantAnticlockwise);
 
-            for (size_t i = 0; i < points.size(); ++i)
+            std::vector<Vec3> path3;
+            for (const Vec3& point : points)
             {
-                const double u = startHighU ? right - points[i].x : left + points[i].x;
-                const double v = startHighV ? top - points[i].y : bottom + points[i].y;
-                if (i == 0)
-                    path.ArriveAt(axes.At(u, v, z));
-                else
-                    path.Cut(axes.At(u, v, z));
+                const double u = startHighU ? right - point.x : left + point.x;
+                const double v = startHighV ? top - point.y : bottom + point.y;
+                path3.push_back(axes.At(u, v, z));
             }
-            path.Leave();
+
+            // The first and last legs that go somewhere give the entry's and exit's
+            // directions. Outside the loop is to the right going anticlockwise, and to
+            // the left going clockwise.
+            Vec3 first{ 1.0, 0.0, 0.0 }, last{ 1.0, 0.0, 0.0 };
+            for (size_t i = 1; i < path3.size(); ++i)
+            {
+                if (DirectionXY(path3[i - 1], path3[i], first))
+                    break;
+            }
+            for (size_t i = path3.size() - 1; i > 0; --i)
+            {
+                if (DirectionXY(path3[i - 1], path3[i], last))
+                    break;
+            }
+            const double outside = wantAnticlockwise ? 1.0 : -1.0;
+            const Vec3 firstAway{ first.y * outside, -first.x * outside, 0.0 };
+            const Vec3 lastAway{ last.y * outside, -last.x * outside, 0.0 };
+
+            path.Enter(path3.front(), first, firstAway);
+            for (size_t i = 1; i < path3.size(); ++i)
+                path.Cut(path3[i]);
+            path.Exit(path3.back(), last, lastAway);
         }
     }
 
@@ -260,6 +411,10 @@ namespace camcore
         const std::vector<std::string> levelProblems = ValidateCutLevels(pOperation->cutLevels);
         if (!levelProblems.empty())
             return Failure(levelProblems.front());
+        const EntryExitSettings& entryExit = pOperation->entryExit;
+        const std::vector<std::string> entryProblems = ValidateEntryExit(entryExit);
+        if (!entryProblems.empty())
+            return Failure(entryProblems.front());
 
         // The boundary is the cut geometry, at its own height.
         const double z = boundary.front().z;
@@ -270,6 +425,8 @@ namespace camcore
             return Failure(clearanceProblem);
         if (!(clearance > CutTopZ(pOperation->cutLevels, z)))
             return Failure("The clearance plane must be above the top of the cut.");
+        if (entryExit.entry == EntryMode::AlongPath3D && !(clearance > levels.front().z + entryExit.alongPathHeight))
+            return Failure("The along path height reaches the clearance plane.");
 
         const double step = ResolveSize(facing.stepDistance, input.tool->diameter);
         const double overtravel = ResolveSize(facing.overtravel, input.tool->diameter);
@@ -307,10 +464,14 @@ namespace camcore
         // The whole area is cut at each level, from the top down, lifting to the
         // clearance plane between levels. Rough and finish levels share the feeds
         // until each has its own.
+        // Entry and exit are at every level, or only into the first and out of the last.
         ToolpathResult result;
-        for (const CutLevel& level : levels)
+        for (size_t l = 0; l < levels.size(); ++l)
         {
+            const CutLevel& level = levels[l];
             PathBuilder path(result.toolpath, pOperation->feeds, clearance, level.z);
+            path.SetEntryExit(&entryExit, entryExit.eachCutLevel || l == 0,
+                              entryExit.eachCutLevel || l + 1 == levels.size());
             if (facing.cutType == FacingCutType::Spiral)
                 Spiral(path, axes, facing, uMin, uMax, vMin, vMax, startHighV, startHighU, step, overtravel, level.z);
             else

@@ -30,13 +30,14 @@ namespace camcore
     };
 
     // A 2D engage or retract motion. Every value is kept, so switching the shape
-    // back restores the old ones.
+    // back restores the old ones. A positive angle or radius puts the lead on the
+    // side away from the geometry, and a negative one on the other side.
     struct LeadMotion
     {
         LeadShape shape = LeadShape::Linear;
         double length = 5.0;
-        double angle = 45.0;
-        double radius = 5.0;
+        double angle = 45.0;                // -180 to 180, from the cut's line
+        double radius = 5.0;               // not 0. Negative curves the other way.
     };
 
     // The Entry/Exit tab.

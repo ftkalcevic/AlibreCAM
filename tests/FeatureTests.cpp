@@ -531,9 +531,15 @@ TEST_CASE("only the entry and exit values in use are checked")
     settings.exit = ExitMode::Exit2D;
     settings.retract.shape = LeadShape::Radial;
     CHECK(ValidateEntryExit(settings).size() == 1);     // radius 0
+    settings.retract.radius = -5;       // the other way
+    CHECK(ValidateEntryExit(settings).empty());
     settings.retract.shape = LeadShape::Linear;
     settings.retract.angle = 200;
     CHECK(ValidateEntryExit(settings).size() == 1);
+    settings.retract.angle = -200;
+    CHECK(ValidateEntryExit(settings).size() == 1);
+    settings.retract.angle = -90;
+    CHECK(ValidateEntryExit(settings).empty());
 }
 
 TEST_CASE("rough and finish must add up to the total, and each step fit its depth")
