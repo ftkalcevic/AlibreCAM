@@ -64,6 +64,7 @@
   <ItemGroup>
     <ClCompile Include="CamJob.cpp" />
     <ClCompile Include="Clearance.cpp" />
+    <ClCompile Include="CutLevels.cpp" />
     <ClCompile Include="Drill.cpp" />
     <ClCompile Include="DrillToolpath.cpp" />
     <ClCompile Include="Features.cpp" />
@@ -76,6 +77,7 @@
   <ItemGroup>
     <ClInclude Include="CamJob.h" />
     <ClInclude Include="Clearance.h" />
+    <ClInclude Include="CutLevels.h" />
     <ClInclude Include="Drill.h" />
     <ClInclude Include="DrillToolpath.h" />
     <ClInclude Include="Features.h" />

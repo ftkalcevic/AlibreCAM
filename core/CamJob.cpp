@@ -362,6 +362,72 @@ namespace camcore
             return true;
         }
 
+        const char* CutLocationName(CutGeometryLocation location)
+        {
+            switch (location)
+            {
+            case CutGeometryLocation::AtBottom: return "bottom";
+            case CutGeometryLocation::PickTop:  return "pickTop";
+            default:                            return "top";
+            }
+        }
+
+        json WriteCutLevels(const CutLevelSettings& levels)
+        {
+            return
+            {
+                { "geometryLocation", CutLocationName(levels.location) },
+                { "topZ", levels.topZ },
+                { "totalDepth", levels.totalDepth },
+                { "roughDepth", levels.roughDepth },
+                { "finishDepth", levels.finishDepth },
+                { "roughStep", levels.roughStep },
+                { "finishStep", levels.finishStep },
+                { "clearIslandTops", levels.clearIslandTops },
+                { "useModelForDepth", levels.useModelForDepth },
+                { "order", levels.order == CutLevelOrder::LevelFirst ? "levelFirst" : "depthFirst" }
+            };
+        }
+
+        // Operations saved before the Cut Levels tab existed have the defaults.
+        bool ReadCutLevels(const json& step, CutLevelSettings& levels)
+        {
+            levels = CutLevelSettings();
+            const auto item = step.find("cutLevels");
+            if (item == step.end())
+                return true;
+            if (!item->is_object())
+                return false;
+
+            std::string location, order;
+            if (!ReadString(*item, "geometryLocation", location) || !ReadNumber(*item, "topZ", levels.topZ) ||
+                !ReadNumber(*item, "totalDepth", levels.totalDepth) ||
+                !ReadNumber(*item, "roughDepth", levels.roughDepth) ||
+                !ReadNumber(*item, "finishDepth", levels.finishDepth) ||
+                !ReadNumber(*item, "roughStep", levels.roughStep) ||
+                !ReadNumber(*item, "finishStep", levels.finishStep) ||
+                !ReadBool(*item, "clearIslandTops", levels.clearIslandTops) ||
+                !ReadBool(*item, "useModelForDepth", levels.useModelForDepth) || !ReadString(*item, "order", order))
+                return false;
+
+            if (location == CutLocationName(CutGeometryLocation::AtTop))
+                levels.location = CutGeometryLocation::AtTop;
+            else if (location == CutLocationName(CutGeometryLocation::AtBottom))
+                levels.location = CutGeometryLocation::AtBottom;
+            else if (location == CutLocationName(CutGeometryLocation::PickTop))
+                levels.location = CutGeometryLocation::PickTop;
+            else
+                return false;
+
+            if (order == "depthFirst")
+                levels.order = CutLevelOrder::DepthFirst;
+            else if (order == "levelFirst")
+                levels.order = CutLevelOrder::LevelFirst;
+            else
+                return false;
+            return true;
+        }
+
         // Operations saved before the Tool tab existed have no tool.
         bool ReadTool(const json& step, std::string& toolId)
         {
@@ -491,7 +557,8 @@ namespace camcore
             if (step.type == StepType::Facing)
                 return { { "type", "facing" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
                          { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
-                         { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) } };
+                         { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
+                         { "cutLevels", WriteCutLevels(step.cutLevels) } };
 
             if (step.type == StepType::Drill)
                 return { { "type", "drill" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
@@ -548,7 +615,7 @@ namespace camcore
             {
                 step.type = StepType::Facing;
                 return ReadTool(item, step.toolId) && ReadFeeds(item, step.feeds) && ReadToolpath(item, step.toolpath) &&
-                       ReadFeatures(item, step.features) &&
+                       ReadFeatures(item, step.features) && ReadCutLevels(item, step.cutLevels) &&
                        ReadClearance(item, step.clearance);
             }
 

@@ -17,6 +17,14 @@
 class CCamTabCommand;
 class COperationDlg;
 
+// What a pick in the view is measuring for.
+enum class LocateTarget
+{
+    DrillDepth,     // the Drilling tab's depth
+    CutTop,         // the Cut Levels tab's Pick Top Z
+    CutDepth        // the Cut Levels tab's total depth
+};
+
 // One tab of the dialog. A tab with settings derives from this.
 class COperationPage : public CDialog
 {
@@ -173,6 +181,48 @@ private:
     void UpdateFields();
 };
 
+// The Cut Levels tab, for operations that cut in levels (not Drill).
+class CCutLevelsPage : public COperationPage
+{
+public:
+    explicit CCutLevelsPage(COperationDlg* pOwner);
+
+    void Load(const camcore::SequenceStep& step) override;
+    bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
+
+    void ShowLocating(LocateTarget target, bool locating);
+    void SetTopZ(double z);
+    void SetDepthToHeight(double z);    // the total depth becomes the distance from the cut geometry
+
+    enum { IDD = IDD_OP_CUT_LEVELS };
+
+protected:
+    BOOL OnInitDialog() override;
+    afx_msg void OnLocationChanged();
+    afx_msg void OnPickTop();
+    afx_msg void OnPickDepth();
+    afx_msg void OnTotalChanged();
+    afx_msg void OnRoughChanged();
+    afx_msg void OnFinishChanged();
+    afx_msg void OnStepChanged();
+    afx_msg void OnHScroll(UINT code, UINT position, CScrollBar* pScrollBar);
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    bool ReadValue(int id, double& value);      // quietly, as the user types
+    static int StepPosition(double step, double depth);
+    void ShowDepths();
+    void FitSteps();
+    double ReferenceZ();
+
+    camcore::CutLevelSettings m_levels;     // the depths as edited so far
+    CSliderCtrl m_ratio;
+    CSliderCtrl m_roughSlider;
+    CSliderCtrl m_finishSlider;
+    bool m_updating;                        // the page is setting its own boxes
+};
+
 // The Drill operation's own tab.
 class CDrillingPage : public COperationPage
 {
@@ -210,10 +260,11 @@ public:
     const camcore::SequenceStep& GetStep() const { return m_step; }
 
     // Locate on the Drilling tab picks something in the view to measure the depth to.
+    // Locate picks something in the view to measure from, for one of several boxes.
     bool IsLocating() const { return m_locating; }
-    void StartLocating();
+    void StartLocating(LocateTarget target);
     void StopLocating();
-    void SetLocatedDepth(double depth);
+    void SetLocatedHeight(bool found, double height);   // a signed Z in the operation's frame
     void ShowLocateProblem(const std::wstring& problem);
 
     // Select Features on the Features tab turns Alibre's selection into the list.
@@ -256,7 +307,9 @@ private:
     std::vector<std::unique_ptr<COperationPage>> m_pages;
     CFeaturesPage* m_pFeatures;     // owned by m_pages
     CDrillingPage* m_pDrilling;     // owned by m_pages. Null for other operations.
+    CCutLevelsPage* m_pCutLevels;   // owned by m_pages. Null for operations without one.
     bool m_locating;
+    LocateTarget m_locateTarget;
     bool m_selectingFeatures;
     bool m_haveFrame;
     camcore::Frame m_frame;

@@ -208,6 +208,112 @@ TEST_CASE("speeds and feeds must be more than 0, and the transfer feed only when
     CHECK(ValidateFeeds(feeds).size() == 3);
 }
 
+TEST_CASE("cut levels load back unchanged, and default when missing")
+{
+    const fs::path path = TempCam();
+
+    Job job;
+    SequenceStep origin;
+    origin.id = NewStableId();
+    origin.name = "O1";
+    job.sequence.push_back(origin);
+
+    SequenceStep group;
+    group.type = StepType::Group;
+    group.id = NewStableId();
+    group.name = "F1";
+
+    SequenceStep facing;
+    facing.type = StepType::Facing;
+    facing.id = NewStableId();
+    facing.name = "Facing 1";
+    CutLevelSettings& levels = facing.cutLevels;
+    levels.location = CutGeometryLocation::PickTop;
+    levels.topZ = -3.5;
+    levels.totalDepth = 2;
+    levels.roughDepth = 1.5;
+    levels.finishDepth = 0.5;
+    levels.roughStep = 0.75;
+    levels.finishStep = 0.25;
+    levels.clearIslandTops = true;
+    levels.useModelForDepth = true;
+    levels.order = CutLevelOrder::LevelFirst;
+    group.children.push_back(facing);
+    job.sequence.push_back(group);
+
+    REQUIRE(SaveJob(job, path).ok);
+    const LoadResult loaded = LoadJob(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    const CutLevelSettings& back = loaded.job.sequence[1].children[0].cutLevels;
+    CHECK(back.location == CutGeometryLocation::PickTop);
+    CHECK(back.topZ == -3.5);
+    CHECK(back.totalDepth == 2);
+    CHECK(back.roughDepth == 1.5);
+    CHECK(back.finishDepth == 0.5);
+    CHECK(back.roughStep == 0.75);
+    CHECK(back.finishStep == 0.25);
+    CHECK(back.clearIslandTops);
+    CHECK(back.useModelForDepth);
+    CHECK(back.order == CutLevelOrder::LevelFirst);
+
+    // A facing saved before the Cut Levels tab existed.
+    {
+        std::ofstream out(path, std::ios::binary);
+        out << R"({"format":"AlibreCAM","formatVersion":2,"assembly":{"name":"a","guid":"b"},"sequence":[)"
+            << R"({"type":"group","id":"g","name":"F","children":[{"type":"facing","id":"f","name":"Facing 1"}]}]})";
+    }
+    const LoadResult old = LoadJob(path);
+    REQUIRE(old.status == LoadStatus::Ok);
+    CHECK(old.job.sequence[0].children[0].cutLevels.totalDepth == CutLevelSettings().totalDepth);
+
+    std::error_code ignored;
+    fs::remove(path, ignored);
+}
+
+TEST_CASE("rough and finish must add up to the total, and each step fit its depth")
+{
+    CutLevelSettings levels;
+    CHECK(ValidateCutLevels(levels).empty());
+
+    levels.finishDepth = 0.3;       // 0.8 + 0.3 isn't 1
+    CHECK(ValidateCutLevels(levels).size() == 1);
+
+    levels = CutLevelSettings();
+    levels.roughStep = 0.9;         // more than the 0.8 rough depth
+    CHECK(ValidateCutLevels(levels).size() == 1);
+
+    // No finish depth means no finish step is needed.
+    levels = CutLevelSettings();
+    levels.roughDepth = 1;
+    levels.finishDepth = 0;
+    levels.finishStep = 0;
+    CHECK(ValidateCutLevels(levels).empty());
+
+    levels.totalDepth = 0;
+    levels.roughDepth = 0;
+    CHECK_FALSE(ValidateCutLevels(levels).empty());
+}
+
+TEST_CASE("a signed height, and none for things along the drill direction")
+{
+    Frame frame;
+    frame.origin = { 0, 0, 20 };
+
+    LocatedGeometry point;
+    point.point = { 5, 5, 8 };
+    double height = 99;
+    REQUIRE(HeightAlongZ(frame, point, height));
+    CHECK(height == doctest::Approx(-12));
+    CHECK(DistanceAlongZ(frame, point) == doctest::Approx(12));
+
+    LocatedGeometry wall;
+    wall.kind = LocatedGeometry::Kind::Plane;
+    wall.direction = { 1, 0, 0 };
+    height = 99;
+    CHECK_FALSE(HeightAlongZ(frame, wall, height));
+    CHECK(height == 99);
+}
+
 TEST_CASE("Drill accepts things that reduce to a point")
 {
     CHECK(FeatureAllowed(FeatureFilter::Points, PickKind::CircleEdge));

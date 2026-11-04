@@ -249,7 +249,7 @@ namespace camcore
         return lines;
     }
 
-    double DistanceAlongZ(const Frame& frame, const LocatedGeometry& geometry)
+    bool HeightAlongZ(const Frame& frame, const LocatedGeometry& geometry, double& height)
     {
         const Vec3& z = frame.zAxis;
         const Vec3 fromOrigin = geometry.point - frame.origin;
@@ -263,10 +263,10 @@ namespace camcore
             // Where the drill axis through the origin meets the plane. A plane
             // parallel to the drill direction never meets it.
             if (!Normalise(geometry.direction, direction))
-                return 0.0;
+                return false;
             const double across = Dot(z, direction);
             if (std::fabs(across) < kParallelTolerance)
-                return 0.0;
+                return false;
             distance = Dot(fromOrigin, direction) / across;
             break;
         }
@@ -276,11 +276,11 @@ namespace camcore
             // The line's point nearest the drill axis through the origin. A line
             // parallel to the drill direction has no nearest point.
             if (!Normalise(geometry.direction, direction))
-                return 0.0;
+                return false;
             const double along = Dot(direction, z);
             const double square = 1.0 - along * along;
             if (square < kParallelTolerance * kParallelTolerance)
-                return 0.0;
+                return false;
             const double s = (along * Dot(fromOrigin, z) - Dot(fromOrigin, direction)) / square;
             distance = Dot(fromOrigin + direction * s, z);
             break;
@@ -291,7 +291,15 @@ namespace camcore
             break;
         }
 
-        distance = std::fabs(distance);
-        return (distance > kLargestLocatedDistance) ? 0.0 : distance;
+        if (std::fabs(distance) > kLargestLocatedDistance)
+            return false;
+        height = distance;
+        return true;
+    }
+
+    double DistanceAlongZ(const Frame& frame, const LocatedGeometry& geometry)
+    {
+        double height = 0.0;
+        return HeightAlongZ(frame, geometry, height) ? std::fabs(height) : 0.0;
     }
 }

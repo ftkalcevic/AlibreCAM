@@ -167,4 +167,8 @@ namespace camcore
     // axis. Anything parallel to the drill direction has no answer, and anything
     // further than 10 m is taken as none, so both give 0.
     double DistanceAlongZ(const Frame& frame, const LocatedGeometry& geometry);
+
+    // The same measurement as a signed Z in the frame. Returns false, leaving
+    // height alone, when there's no answer.
+    bool HeightAlongZ(const Frame& frame, const LocatedGeometry& geometry, double& height);
 }

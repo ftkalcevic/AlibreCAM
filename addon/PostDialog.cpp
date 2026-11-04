@@ -27,9 +27,9 @@ BOOL CPostDlg::OnInitDialog()
 
     SetDlgItemText(IDC_POST_SCOPE, m_scope.c_str());
 
-    // Real posts are added with machines. Until then there's only pseudo code.
+    // Real posts are added with machines. Until then the built-in post writes APT CL data.
     m_post.SubclassDlgItem(IDC_POST_PROCESSOR, this);
-    m_post.AddString(L"Pseudo code (built in)");
+    m_post.AddString(L"APT CL data (built in)");
     m_post.SetCurSel(0);
 
     SetDlgItemText(IDC_POST_FILE, m_outputPath.wstring().c_str());
@@ -41,8 +41,8 @@ void CPostDlg::OnBrowse()
     CString current;
     GetDlgItemText(IDC_POST_FILE, current);
 
-    CFileDialog dialog(FALSE, L"txt", current, OFN_OVERWRITEPROMPT | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST,
-                       L"Pseudo code (*.txt)|*.txt|All files (*.*)|*.*||", this);
+    CFileDialog dialog(FALSE, L"cls", current, OFN_OVERWRITEPROMPT | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST,
+                       L"APT CL data (*.cls)|*.cls|All files (*.*)|*.*||", this);
     if (dialog.DoModal() != IDOK)
         return;
 

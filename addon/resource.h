@@ -97,14 +97,33 @@
 #define IDC_POST_PROCESSOR              13151
 #define IDC_POST_FILE                   13152
 #define IDC_POST_BROWSE                 13153
+#define IDD_OP_CUT_LEVELS               13021
+#define IDC_CUT_AT_TOP                  13160
+#define IDC_CUT_AT_BOTTOM               13161
+#define IDC_CUT_PICK_TOP                13162
+#define IDC_CUT_TOP_Z                   13163
+#define IDC_CUT_PICK_TOP_BUTTON         13164
+#define IDC_CUT_TOTAL                   13165
+#define IDC_CUT_PICK_DEPTH              13166
+#define IDC_CUT_ROUGH                   13167
+#define IDC_CUT_FINISH                  13168
+#define IDC_CUT_RATIO                   13169
+#define IDC_CUT_ROUGH_STEP              13170
+#define IDC_CUT_ROUGH_STEP_SLIDER       13171
+#define IDC_CUT_FINISH_STEP             13172
+#define IDC_CUT_FINISH_STEP_SLIDER      13173
+#define IDC_CUT_CLEAR_ISLANDS           13174
+#define IDC_CUT_USE_MODEL               13175
+#define IDC_CUT_DEPTH_FIRST             13176
+#define IDC_CUT_LEVEL_FIRST             13177
 
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13021
+#define _APS_NEXT_RESOURCE_VALUE        13022
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13154
+#define _APS_NEXT_CONTROL_VALUE         13178
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

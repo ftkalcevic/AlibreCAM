@@ -968,6 +968,14 @@ void CCamTabCommand::Post(const StepRef& scope)
         return;
     }
 
+    // The job's one work zero is its first Set Origin, which every point is given from.
+    const camcore::FrameResult workZero = camcore::BuildFrame(m_job.sequence.front().origin);
+    if (!workZero.ok)
+    {
+        ShowError(L"The first Set Origin is incomplete, so there's no work zero to post from.");
+        return;
+    }
+
     // The file goes beside the .cam file by default, named after the assembly and folder.
     const bool wholeJob = (scope.step == StepRef::kNone);
     std::wstring scopeText = wholeJob ? L"All operations" : FromUtf8(m_job.sequence[scope.step].name);
@@ -977,7 +985,7 @@ void CCamTabCommand::Post(const StepRef& scope)
     fs::path folder = !m_lastPostPath.empty() ? m_lastPostPath.parent_path()
                       : !m_camPath.empty()    ? m_camPath.parent_path()
                                               : fs::path();
-    const fs::path suggested = folder.empty() ? fs::path(fileName + L".txt") : folder / (fileName + L".txt");
+    const fs::path suggested = folder.empty() ? fs::path(fileName + L".cls") : folder / (fileName + L".cls");
 
     CPostDlg dialog(L"Posting: " + scopeText, suggested, m_pWnd);
     if (dialog.DoModal() != IDOK)
@@ -1012,7 +1020,7 @@ void CCamTabCommand::Post(const StepRef& scope)
         entries.push_back(entry);
     }
 
-    const std::string text = camcore::WritePseudoPost(m_job.assembly.name, entries);
+    const std::string text = camcore::WriteAptClData(m_job.assembly.name, workZero.frame, entries);
     std::string message;
     if (!camcore::WriteFileAtomically(output, text, message))
     {
@@ -1725,9 +1733,11 @@ void CCamTabCommand::HandleLocate()
                                                : camcore::FrameResult();
         if (frame.ok)
         {
-            const double depth = camcore::DistanceAlongZ(frame.frame, located);
-            Log(L"[locate] depth %.4f mm from %s", depth, FromUtf8(m_job.sequence[active].name).c_str());
-            m_pOperationDlg->SetLocatedDepth(depth);
+            double height = 0.0;
+            const bool found = camcore::HeightAlongZ(frame.frame, located, height);
+            Log(L"[locate] %s %.4f mm from %s", found ? L"height" : L"no height", height,
+                FromUtf8(m_job.sequence[active].name).c_str());
+            m_pOperationDlg->SetLocatedHeight(found, height);
             RestoreSelectionFilter();
         }
         else

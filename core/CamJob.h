@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "Clearance.h"
+#include "CutLevels.h"
 #include "Drill.h"
 #include "Feeds.h"
 #include "Origin.h"
@@ -63,6 +64,9 @@ namespace camcore
 
         // Drill operations only
         DrillSettings drill;
+
+        // Operations that cut in levels, such as Facing
+        CutLevelSettings cutLevels;
 
         // Groups only. Operations run in this order. Groups don't nest, and a
         // Set Origin stays outside them, so a group can't hold either.

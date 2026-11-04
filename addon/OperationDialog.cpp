@@ -835,6 +835,323 @@ void CClearancePage::OnModeChanged()
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// CCutLevelsPage
+
+namespace
+{
+    // The step sliders run from 1% to 100% of their depth.
+    const int kStepSliderMin = 1;
+    const int kSliderMax = 100;
+}
+
+BEGIN_MESSAGE_MAP(CCutLevelsPage, COperationPage)
+    ON_BN_CLICKED(IDC_CUT_AT_TOP, &CCutLevelsPage::OnLocationChanged)
+    ON_BN_CLICKED(IDC_CUT_AT_BOTTOM, &CCutLevelsPage::OnLocationChanged)
+    ON_BN_CLICKED(IDC_CUT_PICK_TOP, &CCutLevelsPage::OnLocationChanged)
+    ON_BN_CLICKED(IDC_CUT_PICK_TOP_BUTTON, &CCutLevelsPage::OnPickTop)
+    ON_BN_CLICKED(IDC_CUT_PICK_DEPTH, &CCutLevelsPage::OnPickDepth)
+    ON_EN_KILLFOCUS(IDC_CUT_TOTAL, &CCutLevelsPage::OnTotalChanged)
+    ON_EN_KILLFOCUS(IDC_CUT_ROUGH, &CCutLevelsPage::OnRoughChanged)
+    ON_EN_KILLFOCUS(IDC_CUT_FINISH, &CCutLevelsPage::OnFinishChanged)
+    ON_EN_KILLFOCUS(IDC_CUT_ROUGH_STEP, &CCutLevelsPage::OnStepChanged)
+    ON_EN_KILLFOCUS(IDC_CUT_FINISH_STEP, &CCutLevelsPage::OnStepChanged)
+    ON_WM_HSCROLL()
+END_MESSAGE_MAP()
+
+CCutLevelsPage::CCutLevelsPage(COperationDlg* pOwner)
+    : COperationPage(IDD_OP_CUT_LEVELS, pOwner)
+    , m_updating(false)
+{
+}
+
+BOOL CCutLevelsPage::OnInitDialog()
+{
+    COperationPage::OnInitDialog();
+
+    m_ratio.SubclassDlgItem(IDC_CUT_RATIO, this);
+    m_ratio.SetRange(0, kSliderMax);
+    m_roughSlider.SubclassDlgItem(IDC_CUT_ROUGH_STEP_SLIDER, this);
+    m_roughSlider.SetRange(kStepSliderMin, kSliderMax);
+    m_finishSlider.SubclassDlgItem(IDC_CUT_FINISH_STEP_SLIDER, this);
+    m_finishSlider.SetRange(kStepSliderMin, kSliderMax);
+    return TRUE;
+}
+
+void CCutLevelsPage::Load(const SequenceStep& step)
+{
+    m_levels = step.cutLevels;
+
+    const int location = (m_levels.location == CutGeometryLocation::AtBottom) ? IDC_CUT_AT_BOTTOM
+                         : (m_levels.location == CutGeometryLocation::PickTop) ? IDC_CUT_PICK_TOP
+                                                                                 : IDC_CUT_AT_TOP;
+    CheckRadioButton(IDC_CUT_AT_TOP, IDC_CUT_PICK_TOP, location);
+    SetNumber(IDC_CUT_TOP_Z, m_levels.topZ);
+
+    CheckDlgButton(IDC_CUT_CLEAR_ISLANDS, m_levels.clearIslandTops ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(IDC_CUT_USE_MODEL, m_levels.useModelForDepth ? BST_CHECKED : BST_UNCHECKED);
+    CheckRadioButton(IDC_CUT_DEPTH_FIRST, IDC_CUT_LEVEL_FIRST,
+                     m_levels.order == CutLevelOrder::LevelFirst ? IDC_CUT_LEVEL_FIRST : IDC_CUT_DEPTH_FIRST);
+
+    ShowDepths();
+    OnLocationChanged();
+    ShowLocating(LocateTarget::CutTop, false);
+}
+
+bool CCutLevelsPage::Save(SequenceStep& step, std::wstring& problems)
+{
+    // Take in anything typed but not yet left.
+    OnTotalChanged();
+    OnRoughChanged();
+    OnStepChanged();
+
+    CutLevelSettings levels = m_levels;
+    std::wstring found;
+
+    switch (GetCheckedRadioButton(IDC_CUT_AT_TOP, IDC_CUT_PICK_TOP))
+    {
+    case IDC_CUT_AT_BOTTOM: levels.location = CutGeometryLocation::AtBottom; break;
+    case IDC_CUT_PICK_TOP:  levels.location = CutGeometryLocation::PickTop; break;
+    default:                levels.location = CutGeometryLocation::AtTop; break;
+    }
+    if (levels.location == CutGeometryLocation::PickTop)
+        ReadNumber(IDC_CUT_TOP_Z, L"The top Z", levels.topZ, found);
+
+    levels.clearIslandTops = IsDlgButtonChecked(IDC_CUT_CLEAR_ISLANDS) == BST_CHECKED;
+    levels.useModelForDepth = IsDlgButtonChecked(IDC_CUT_USE_MODEL) == BST_CHECKED;
+    levels.order = (GetCheckedRadioButton(IDC_CUT_DEPTH_FIRST, IDC_CUT_LEVEL_FIRST) == IDC_CUT_LEVEL_FIRST)
+                       ? CutLevelOrder::LevelFirst
+                       : CutLevelOrder::DepthFirst;
+
+    if (found.empty())
+    {
+        for (const std::string& problem : ValidateCutLevels(levels))
+            AppendProblem(found, FromUtf8(problem));
+    }
+
+    if (!found.empty())
+    {
+        AppendProblem(problems, found);
+        return false;
+    }
+
+    step.cutLevels = levels;
+    return true;
+}
+
+bool CCutLevelsPage::ReadValue(int id, double& value)
+{
+    CString text;
+    GetDlgItemText(id, text);
+    text.Trim();
+
+    wchar_t* pEnd = nullptr;
+    const double parsed = wcstod(text, &pEnd);
+    if (text.IsEmpty() || pEnd == nullptr || *pEnd != L'\0')
+        return false;
+    value = parsed;
+    return true;
+}
+
+int CCutLevelsPage::StepPosition(double step, double depth)
+{
+    if (!(depth > 0.0))
+        return kSliderMax;
+    const int position = static_cast<int>(std::lround(step / depth * kSliderMax));
+    return (std::max)(kStepSliderMin, (std::min)(kSliderMax, position));
+}
+
+void CCutLevelsPage::ShowDepths()
+{
+    // Puts every depth box and slider in step with m_levels.
+    m_updating = true;
+    SetNumber(IDC_CUT_TOTAL, m_levels.totalDepth);
+    SetNumber(IDC_CUT_ROUGH, m_levels.roughDepth);
+    SetNumber(IDC_CUT_FINISH, m_levels.finishDepth);
+    SetNumber(IDC_CUT_ROUGH_STEP, m_levels.roughStep);
+    SetNumber(IDC_CUT_FINISH_STEP, m_levels.finishStep);
+
+    const int ratio = (m_levels.totalDepth > 0.0)
+                          ? static_cast<int>(std::lround(m_levels.roughDepth / m_levels.totalDepth * kSliderMax))
+                          : kSliderMax;
+    m_ratio.SetPos((std::max)(0, (std::min)(kSliderMax, ratio)));
+    m_roughSlider.SetPos(StepPosition(m_levels.roughStep, m_levels.roughDepth));
+    m_finishSlider.SetPos(StepPosition(m_levels.finishStep, m_levels.finishDepth));
+
+    // A depth of 0 has no passes to size.
+    const BOOL rough = m_levels.roughDepth > 0.0;
+    const BOOL finish = m_levels.finishDepth > 0.0;
+    GetDlgItem(IDC_CUT_ROUGH_STEP)->EnableWindow(rough);
+    m_roughSlider.EnableWindow(rough);
+    GetDlgItem(IDC_CUT_FINISH_STEP)->EnableWindow(finish);
+    m_finishSlider.EnableWindow(finish);
+    m_updating = false;
+}
+
+void CCutLevelsPage::FitSteps()
+{
+    // A pass can't take more than its depth.
+    if (m_levels.roughStep > m_levels.roughDepth || !(m_levels.roughStep > 0.0))
+        m_levels.roughStep = m_levels.roughDepth;
+    if (m_levels.finishStep > m_levels.finishDepth || !(m_levels.finishStep > 0.0))
+        m_levels.finishStep = m_levels.finishDepth;
+}
+
+void CCutLevelsPage::OnTotalChanged()
+{
+    double total = 0.0;
+    if (m_updating || !ReadValue(IDC_CUT_TOTAL, total) || !(total > 0.0) || total == m_levels.totalDepth)
+        return;
+
+    // The finish depth stays if it fits, and the rough depth takes the rest.
+    m_levels.totalDepth = total;
+    m_levels.finishDepth = (std::min)(m_levels.finishDepth, total);
+    m_levels.roughDepth = total - m_levels.finishDepth;
+    FitSteps();
+    ShowDepths();
+}
+
+void CCutLevelsPage::OnRoughChanged()
+{
+    double rough = 0.0;
+    if (m_updating || !ReadValue(IDC_CUT_ROUGH, rough) || rough == m_levels.roughDepth)
+        return;
+
+    m_levels.roughDepth = (std::max)(0.0, (std::min)(rough, m_levels.totalDepth));
+    m_levels.finishDepth = m_levels.totalDepth - m_levels.roughDepth;
+    FitSteps();
+    ShowDepths();
+}
+
+void CCutLevelsPage::OnFinishChanged()
+{
+    double finish = 0.0;
+    if (m_updating || !ReadValue(IDC_CUT_FINISH, finish) || finish == m_levels.finishDepth)
+        return;
+
+    m_levels.finishDepth = (std::max)(0.0, (std::min)(finish, m_levels.totalDepth));
+    m_levels.roughDepth = m_levels.totalDepth - m_levels.finishDepth;
+    FitSteps();
+    ShowDepths();
+}
+
+void CCutLevelsPage::OnStepChanged()
+{
+    if (m_updating)
+        return;
+
+    double step = 0.0;
+    if (ReadValue(IDC_CUT_ROUGH_STEP, step) && step > 0.0)
+        m_levels.roughStep = (std::min)(step, m_levels.roughDepth);
+    if (ReadValue(IDC_CUT_FINISH_STEP, step) && step > 0.0)
+        m_levels.finishStep = (std::min)(step, m_levels.finishDepth);
+    ShowDepths();
+}
+
+void CCutLevelsPage::OnHScroll(UINT code, UINT position, CScrollBar* pScrollBar)
+{
+    COperationPage::OnHScroll(code, position, pScrollBar);
+    if (m_updating || pScrollBar == nullptr)
+        return;
+
+    const HWND hSlider = pScrollBar->GetSafeHwnd();
+    if (hSlider == m_ratio.GetSafeHwnd())
+    {
+        // The ratio slider shares the total between rough and finish.
+        m_levels.roughDepth = m_levels.totalDepth * m_ratio.GetPos() / kSliderMax;
+        m_levels.finishDepth = m_levels.totalDepth - m_levels.roughDepth;
+        FitSteps();
+    }
+    else if (hSlider == m_roughSlider.GetSafeHwnd())
+    {
+        m_levels.roughStep = m_levels.roughDepth * m_roughSlider.GetPos() / kSliderMax;
+    }
+    else if (hSlider == m_finishSlider.GetSafeHwnd())
+    {
+        m_levels.finishStep = m_levels.finishDepth * m_finishSlider.GetPos() / kSliderMax;
+    }
+    else
+    {
+        return;
+    }
+    ShowDepths();
+}
+
+void CCutLevelsPage::OnLocationChanged()
+{
+    const BOOL pickTop = GetCheckedRadioButton(IDC_CUT_AT_TOP, IDC_CUT_PICK_TOP) == IDC_CUT_PICK_TOP;
+    GetDlgItem(IDC_CUT_TOP_Z)->EnableWindow(pickTop);
+    GetDlgItem(IDC_CUT_PICK_TOP_BUTTON)->EnableWindow(pickTop);
+}
+
+void CCutLevelsPage::OnPickTop()
+{
+    if (m_pOwner->IsLocating())
+        m_pOwner->StopLocating();
+    else
+        m_pOwner->StartLocating(LocateTarget::CutTop);
+}
+
+void CCutLevelsPage::OnPickDepth()
+{
+    if (m_pOwner->IsLocating())
+        m_pOwner->StopLocating();
+    else
+        m_pOwner->StartLocating(LocateTarget::CutDepth);
+}
+
+void CCutLevelsPage::ShowLocating(LocateTarget target, bool locating)
+{
+    SetDlgItemText(IDC_CUT_PICK_TOP_BUTTON, (locating && target == LocateTarget::CutTop) ? L"Stop" : L"Pick");
+    SetDlgItemText(IDC_CUT_PICK_DEPTH, (locating && target == LocateTarget::CutDepth) ? L"Stop" : L"Pick");
+}
+
+double CCutLevelsPage::ReferenceZ()
+{
+    // Pick Top gives the level. Otherwise it's the highest of the operation's features.
+    double z = 0.0;
+    if (GetCheckedRadioButton(IDC_CUT_AT_TOP, IDC_CUT_PICK_TOP) == IDC_CUT_PICK_TOP)
+        return ReadValue(IDC_CUT_TOP_Z, z) ? z : m_levels.topZ;
+
+    camcore::Frame frame;
+    if (!m_pOwner->GetFrame(frame))
+        return 0.0;
+
+    bool first = true;
+    for (const PickedGeometry& feature : m_pOwner->GetFeatures())
+    {
+        const double height = WorldToFrame(frame, FeaturePoint(frame, feature)).z;
+        z = first ? height : (std::max)(z, height);
+        first = false;
+    }
+    return z;
+}
+
+void CCutLevelsPage::SetTopZ(double z)
+{
+    m_levels.topZ = z;
+    SetNumber(IDC_CUT_TOP_Z, z);
+    CheckRadioButton(IDC_CUT_AT_TOP, IDC_CUT_PICK_TOP, IDC_CUT_PICK_TOP);
+    OnLocationChanged();
+}
+
+void CCutLevelsPage::SetDepthToHeight(double z)
+{
+    const double total = std::fabs(ReferenceZ() - z);
+    if (!(total > 0.0))
+    {
+        MessageBoxW(L"That item is at the cut geometry's level, so it gives no depth.", L"Cut Levels",
+                    MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+
+    m_levels.totalDepth = total;
+    m_levels.finishDepth = (std::min)(m_levels.finishDepth, total);
+    m_levels.roughDepth = total - m_levels.finishDepth;
+    FitSteps();
+    ShowDepths();
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // CDrillingPage
 
 BEGIN_MESSAGE_MAP(CDrillingPage, COperationPage)
@@ -951,7 +1268,7 @@ void CDrillingPage::OnLocate()
     if (m_pOwner->IsLocating())
         m_pOwner->StopLocating();
     else
-        m_pOwner->StartLocating();
+        m_pOwner->StartLocating(LocateTarget::DrillDepth);
 }
 
 void CDrillingPage::ShowLocating(bool locating)
@@ -985,7 +1302,9 @@ COperationDlg::COperationDlg(CCamTabCommand* pTab, const SequenceStep& step)
     , m_step(step)
     , m_pFeatures(nullptr)
     , m_pDrilling(nullptr)
+    , m_pCutLevels(nullptr)
     , m_locating(false)
+    , m_locateTarget(LocateTarget::DrillDepth)
     , m_selectingFeatures(false)
     , m_haveFrame(false)
 {
@@ -1025,6 +1344,13 @@ BOOL COperationDlg::OnInitDialog()
     // Then its own.
     if (m_step.type == StepType::Facing)
     {
+        // Cut Levels is shared by the operations that cut in levels.
+        auto cutLevels = std::make_unique<CCutLevelsPage>(this);
+        CCutLevelsPage* pCutLevels = cutLevels.get();
+        AddPage(L"Cut Levels", std::move(cutLevels));
+        if (pCutLevels->GetSafeHwnd() != nullptr)
+            m_pCutLevels = pCutLevels;
+
         AddPage(L"Facing", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
     }
     else if (m_step.type == StepType::Drill)
@@ -1081,15 +1407,20 @@ void COperationDlg::OnTabChanged(NMHDR* /*pNotify*/, LRESULT* pResult)
     ShowPage(m_tabs.GetCurSel());
 }
 
-void COperationDlg::StartLocating()
+void COperationDlg::StartLocating(LocateTarget target)
 {
-    if (m_pDrilling == nullptr || m_pTab == nullptr)
+    const bool forDrilling = (target == LocateTarget::DrillDepth);
+    if ((forDrilling ? m_pDrilling == nullptr : m_pCutLevels == nullptr) || m_pTab == nullptr)
         return;
 
     StopSelectingFeatures();
 
     m_locating = true;
-    m_pDrilling->ShowLocating(true);
+    m_locateTarget = target;
+    if (forDrilling)
+        m_pDrilling->ShowLocating(true);
+    else
+        m_pCutLevels->ShowLocating(target, true);
     m_pTab->BeginLocate();
 }
 
@@ -1101,26 +1432,57 @@ void COperationDlg::StopLocating()
     m_locating = false;
     if (m_pDrilling != nullptr)
         m_pDrilling->ShowLocating(false);
+    if (m_pCutLevels != nullptr)
+        m_pCutLevels->ShowLocating(m_locateTarget, false);
     if (m_pTab != nullptr)
         m_pTab->EndLocate();
 }
 
-void COperationDlg::SetLocatedDepth(double depth)
+void COperationDlg::SetLocatedHeight(bool found, double height)
 {
+    const LocateTarget target = m_locateTarget;
     StopLocating();
-    if (m_pDrilling != nullptr)
+
+    if (target == LocateTarget::DrillDepth)
     {
-        m_pDrilling->SetDepth(depth);
-        m_pDrilling->ShowLocateNote(depth > 0.0 ? L"The depth was measured from the picked item."
-                                                : L"That item measures as 0. It's on the origin's XY plane, runs "
-                                                  L"along the drill direction, or is too far away.");
+        // The drill depth is a distance, so an item with no answer measures as 0.
+        const double depth = found ? std::fabs(height) : 0.0;
+        if (m_pDrilling != nullptr)
+        {
+            m_pDrilling->SetDepth(depth);
+            m_pDrilling->ShowLocateNote(depth > 0.0 ? L"The depth was measured from the picked item."
+                                                    : L"That item measures as 0. It's on the origin's XY plane, "
+                                                      L"runs along the drill direction, or is too far away.");
+        }
+        return;
     }
+
+    if (!found)
+    {
+        ShowLocateProblem(L"That item runs along the tool axis, or is too far away, so it has no single Z.");
+        return;
+    }
+
+    if (m_pCutLevels == nullptr)
+        return;
+    if (target == LocateTarget::CutTop)
+        m_pCutLevels->SetTopZ(height);
+    else
+        m_pCutLevels->SetDepthToHeight(height);
 }
 
 void COperationDlg::ShowLocateProblem(const std::wstring& problem)
 {
-    if (m_pDrilling != nullptr)
-        m_pDrilling->ShowLocateNote(problem);
+    // The Drilling tab has room for a note. Cut Levels doesn't, so it gets a message.
+    if (m_locateTarget == LocateTarget::DrillDepth)
+    {
+        if (m_pDrilling != nullptr)
+            m_pDrilling->ShowLocateNote(problem);
+    }
+    else
+    {
+        MessageBoxW(problem.c_str(), OperationTitle(m_step.type), MB_OK | MB_ICONINFORMATION);
+    }
 }
 
 FeatureFilter COperationDlg::GetFeatureFilter() const

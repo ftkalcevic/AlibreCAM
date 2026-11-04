@@ -1,15 +1,17 @@
-// PseudoPost.cpp : writes toolpaths as readable pseudo code, before real posts exist.
+// PseudoPost.cpp : the built-in post, which writes toolpaths as APT CL data.
 
 #include "PseudoPost.h"
 
 #include <cmath>
 #include <cstdio>
 
+#include "Features.h"
+
 namespace camcore
 {
     namespace
     {
-        // Up to 4 decimals, without trailing zeros, and never "-0".
+        // APT style: a fixed 4 decimals, and never "-0.0000".
         std::string Number(double value)
         {
             if (std::fabs(value) < 0.00005)
@@ -17,49 +19,30 @@ namespace camcore
 
             char text[64];
             std::snprintf(text, sizeof(text), "%.4f", value);
-            std::string result = text;
-            const size_t point = result.find('.');
-            if (point != std::string::npos)
-            {
-                result.erase(result.find_last_not_of('0') + 1);
-                if (result.back() == '.')
-                    result.pop_back();
-            }
-            return result;
+            return text;
         }
 
-        std::string Point(const Vec3& v)
+        // A direction in the work zero's axes.
+        Vec3 DirectionInFrame(const Frame& frame, const Vec3& world)
         {
-            return "(" + Number(v.x) + ", " + Number(v.y) + ", " + Number(v.z) + ")";
-        }
-
-        std::string Quoted(const std::string& text)
-        {
-            return "\"" + text + "\"";
-        }
-
-        const char* OperationType(StepType type)
-        {
-            switch (type)
-            {
-            case StepType::Drill:  return "drill";
-            case StepType::Facing: return "facing";
-            default:               return "operation";
-            }
+            return { Dot(world, frame.xAxis), Dot(world, frame.yAxis), Dot(world, frame.zAxis) };
         }
     }
 
-    std::string WritePseudoPost(const std::string& jobName, const std::vector<PostOperation>& operations)
+    std::string WriteAptClData(const std::string& jobName, const Frame& workZero,
+                               const std::vector<PostOperation>& operations)
     {
         std::string out;
         const auto line = [&](const std::string& text) { out += text + "\n"; };
 
-        line("; AlibreCAM pseudo code. Coordinates are in each origin's frame, in mm.");
-        line("PROGRAM START " + Quoted(jobName));
+        line("PARTNO " + jobName);
+        line("$$ AlibreCAM APT CL data. Points are in mm from the work zero, the first Set Origin.");
+        line("UNITS/MM");
 
         const SequenceStep* currentOrigin = nullptr;
         std::string currentTool;
         bool firstTool = true;
+        double currentFeed = -1.0;
 
         for (const PostOperation& entry : operations)
         {
@@ -70,11 +53,10 @@ namespace camcore
             if (entry.origin != currentOrigin)
             {
                 currentOrigin = entry.origin;
-                const Frame& frame = entry.frame;
-                line("ORIGIN " + Quoted(entry.origin != nullptr ? entry.origin->name : "") + " AT " +
-                     Point(frame.origin) + " X " + Point(frame.xAxis) + " Y " + Point(frame.yAxis) + " Z " +
-                     Point(frame.zAxis));
+                line("$$ ORIGIN " + (entry.origin != nullptr ? entry.origin->name : std::string("?")));
             }
+
+            line("$$ OPERATION " + operation.name);
 
             const std::string toolKey = (entry.tool != nullptr) ? entry.tool->id : "";
             if (firstTool || toolKey != currentTool)
@@ -83,34 +65,48 @@ namespace camcore
                 currentTool = toolKey;
                 if (entry.tool != nullptr)
                 {
-                    line("TOOL T" + std::to_string(entry.tool->number) + " " + Quoted(entry.tool->name) +
-                         " DIAMETER " + Number(entry.tool->diameter));
+                    line("$$ TOOL " + entry.tool->name);
+                    line("CUTTER/" + Number(entry.tool->diameter));
+                    line("LOADTL/" + std::to_string(entry.tool->number));
                 }
                 else
                 {
-                    line("TOOL ? ; this operation's tool isn't in the library");
+                    line("$$ TOOL ? This operation's tool isn't in the library.");
                 }
             }
 
-            line("OPERATION " + Quoted(operation.name) + " TYPE " + OperationType(operation.type));
-            line("SPINDLE " + Number(operation.feeds.spindleRpm) + " RPM");
+            line("SPINDL/RPM," + Number(operation.feeds.spindleRpm) + ",CLW");
+
+            // The tool axis is the operation's origin Z, seen from the work zero.
+            const Vec3 axis = DirectionInFrame(workZero, entry.frame.zAxis);
+            const std::string axisText = Number(axis.x) + "," + Number(axis.y) + "," + Number(axis.z);
 
             for (const ToolpathMove& move : operation.toolpath.moves)
             {
-                const std::string at = "X" + Number(move.to.x) + " Y" + Number(move.to.y) + " Z" + Number(move.to.z);
-                switch (move.kind)
+                if (move.kind == MoveKind::Dwell)
                 {
-                case MoveKind::Rapid: line("  RAPID " + at); break;
-                case MoveKind::Feed:  line("  FEED " + at + " F" + Number(move.feed)); break;
-                case MoveKind::Dwell: line("  DWELL " + Number(move.seconds) + " S"); break;
+                    line("DELAY/" + Number(move.seconds));
+                    continue;
                 }
-            }
 
-            line("SPINDLE OFF");
-            line("OPERATION END");
+                if (move.kind == MoveKind::Rapid)
+                {
+                    line("RAPID");
+                }
+                else if (move.feed != currentFeed)
+                {
+                    currentFeed = move.feed;
+                    line("FEDRAT/MMPM," + Number(move.feed));
+                }
+
+                const Vec3 point = WorldToFrame(workZero, FramePointToWorld(entry.frame, move.to));
+                line("GOTO/" + Number(point.x) + "," + Number(point.y) + "," + Number(point.z) + "," + axisText);
+            }
         }
 
-        line("PROGRAM END");
+        line("SPINDL/OFF");
+        line("END");
+        line("FINI");
         return out;
     }
 }
