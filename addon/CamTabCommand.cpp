@@ -6,6 +6,7 @@
 #include "CamTabCommand.h"
 #include "DisplaySettings.h"
 #include "DrillToolpath.h"
+#include "FacingToolpath.h"
 #include "FileIO.h"
 #include "PostDialog.h"
 #include "PseudoPost.h"
@@ -1053,8 +1054,29 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         return false;
     }
 
-    // Facing checks its features against the origin, then turns them into the
-    // area's outline. The toolpath itself comes later.
+    const camcore::Tool* pTool = camcore::FindToolById(m_library, operation.toolId);
+    camcore::Tool tool;
+    if (pTool != nullptr)
+        tool = camcore::ToolInMillimetres(*pTool);
+
+    // The parts' highest point in the origin's frame is the highest corner of their box.
+    bool havePartMaxZ = false;
+    double partMaxZ = 0.0;
+    if (m_haveBounds)
+    {
+        havePartMaxZ = true;
+        for (int i = 0; i < 8; ++i)
+        {
+            const camcore::Vec3 corner{ (i & 1) ? m_boundsUpper.x : m_boundsLower.x,
+                                        (i & 2) ? m_boundsUpper.y : m_boundsLower.y,
+                                        (i & 4) ? m_boundsUpper.z : m_boundsLower.z };
+            const double height = camcore::WorldToFrame(frame.frame, corner).z;
+            partMaxZ = (i == 0) ? height : (std::max)(partMaxZ, height);
+        }
+    }
+
+    // Facing checks its features against the origin, turns them into the
+    // area's outline, then faces inside it.
     if (operation.type == camcore::StepType::Facing)
     {
         operation.boundary.clear();
@@ -1090,34 +1112,27 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
             return false;
         }
 
-        problem = "Found its boundary (" + std::to_string(operation.boundary.size()) +
-                  " points), but facing toolpaths aren't built yet.";
-        return false;
+        camcore::FacingToolpathInput facingInput;
+        facingInput.operation = &operation;
+        facingInput.tool = (pTool != nullptr) ? &tool : nullptr;
+        facingInput.havePartMaxZ = havePartMaxZ;
+        facingInput.partMaxZ = partMaxZ;
+        const camcore::ToolpathResult facingResult = camcore::GenerateFacingToolpath(facingInput);
+        if (!facingResult.ok)
+        {
+            problem = facingResult.problem;
+            return false;
+        }
+        operation.toolpath = facingResult.toolpath;
+        return true;
     }
-
-    const camcore::Tool* pTool = camcore::FindToolById(m_library, operation.toolId);
-    camcore::Tool tool;
-    if (pTool != nullptr)
-        tool = camcore::ToolInMillimetres(*pTool);
 
     camcore::DrillToolpathInput input;
     input.operation = &operation;
     input.frame = frame.frame;
     input.tool = (pTool != nullptr) ? &tool : nullptr;
-
-    // The parts' highest point in the origin's frame is the highest corner of their box.
-    if (m_haveBounds)
-    {
-        input.havePartMaxZ = true;
-        for (int i = 0; i < 8; ++i)
-        {
-            const camcore::Vec3 corner{ (i & 1) ? m_boundsUpper.x : m_boundsLower.x,
-                                        (i & 2) ? m_boundsUpper.y : m_boundsLower.y,
-                                        (i & 4) ? m_boundsUpper.z : m_boundsLower.z };
-            const double height = camcore::WorldToFrame(frame.frame, corner).z;
-            input.partMaxZ = (i == 0) ? height : (std::max)(input.partMaxZ, height);
-        }
-    }
+    input.havePartMaxZ = havePartMaxZ;
+    input.partMaxZ = partMaxZ;
 
     const camcore::ToolpathResult result = camcore::GenerateDrillToolpath(input);
     if (!result.ok)

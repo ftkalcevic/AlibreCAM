@@ -67,6 +67,7 @@
   <ItemGroup>
     <ClCompile Include="BoundaryTests.cpp" />
     <ClCompile Include="CamCoreTests.cpp" />
+    <ClCompile Include="FacingToolpathTests.cpp" />
     <ClCompile Include="FeatureTests.cpp" />
     <ClCompile Include="OriginTests.cpp" />
     <ClCompile Include="PostTests.cpp" />

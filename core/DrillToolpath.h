@@ -22,27 +22,12 @@ namespace camcore
         double partMaxZ = 0.0;
     };
 
-    struct ToolpathResult
-    {
-        bool ok = false;
-        Toolpath toolpath;
-        std::string problem;    // why it couldn't be made. Empty when ok.
-    };
-
-    // Until Automatic is decided, it means this far above the parts.
-    constexpr double kAutomaticClearanceAboveParts = 5.0;
-
     // After a peck the tool comes back down at rapid to this far above where it
     // stopped, then feeds again.
     constexpr double kPeckReentryGap = 0.5;
 
     // The length of a drill's point: how much further the tip goes than the full diameter.
     double DrillPointLength(const Tool& tool);
-
-    // The clearance plane's Z in the operation's frame. Returns false and sets
-    // problem if it can't be worked out yet.
-    bool ClearanceHeight(const ClearanceSettings& clearance, bool havePartMaxZ, double partMaxZ, double& height,
-                         std::string& problem);
 
     // Each hole, in the operation's order: across at the clearance plane (rapid, or
     // the transfer feed), down at rapid to the approach distance above the hole's

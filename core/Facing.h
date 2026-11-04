@@ -41,7 +41,7 @@ namespace camcore
         ToolRelativeSize stepDistance{ true, 25.0, 2.0 };   // across, between passes
         ToolRelativeSize overtravel{ true, 50.0, 3.0 };     // past the area's edge
         FacingCutType cutType = FacingCutType::Linear;
-        double cutAngle = 0.0;                              // degrees from the origin's X, about its Z
+        double cutAngle = 0.0;                              // degrees: 90 runs along the origin's X, 0 along its Y
         StartCorner start = StartCorner::TopLeft;           // seen from the origin's +Z
     };
 

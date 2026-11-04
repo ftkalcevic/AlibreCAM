@@ -14,4 +14,31 @@ namespace camcore
             problems.push_back("The distance above the stock can't be negative.");
         return problems;
     }
+
+    bool ClearanceHeight(const ClearanceSettings& clearance, bool havePartMaxZ, double partMaxZ, double& height,
+                         std::string& problem)
+    {
+        switch (clearance.mode)
+        {
+        case ClearanceMode::AbsoluteZ:
+            height = clearance.absoluteZ;
+            return true;
+
+        case ClearanceMode::StockMaxZ:
+            problem = "The clearance plane is set from the stock, and there's no stock yet.";
+            return false;
+
+        case ClearanceMode::PartMaxZ:
+        case ClearanceMode::Automatic:
+        default:
+            if (!havePartMaxZ)
+            {
+                problem = "The parts' height couldn't be read for the clearance plane.";
+                return false;
+            }
+            height = partMaxZ + (clearance.mode == ClearanceMode::PartMaxZ ? clearance.partDistance
+                                                                            : kAutomaticClearanceAboveParts);
+            return true;
+        }
+    }
 }

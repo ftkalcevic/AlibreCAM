@@ -55,33 +55,6 @@ namespace camcore
         return (tool.diameter / 2.0) / std::tan(tool.pointAngle / 2.0 * kPi / 180.0);
     }
 
-    bool ClearanceHeight(const ClearanceSettings& clearance, bool havePartMaxZ, double partMaxZ, double& height,
-                         std::string& problem)
-    {
-        switch (clearance.mode)
-        {
-        case ClearanceMode::AbsoluteZ:
-            height = clearance.absoluteZ;
-            return true;
-
-        case ClearanceMode::StockMaxZ:
-            problem = "The clearance plane is set from the stock, and there's no stock yet.";
-            return false;
-
-        case ClearanceMode::PartMaxZ:
-        case ClearanceMode::Automatic:
-        default:
-            if (!havePartMaxZ)
-            {
-                problem = "The parts' height couldn't be read for the clearance plane.";
-                return false;
-            }
-            height = partMaxZ + (clearance.mode == ClearanceMode::PartMaxZ ? clearance.partDistance
-                                                                            : kAutomaticClearanceAboveParts);
-            return true;
-        }
-    }
-
     ToolpathResult GenerateDrillToolpath(const DrillToolpathInput& input)
     {
         const SequenceStep* pOperation = input.operation;

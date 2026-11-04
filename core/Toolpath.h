@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "Origin.h"
@@ -30,5 +31,13 @@ namespace camcore
     struct Toolpath
     {
         std::vector<ToolpathMove> moves;
+    };
+
+    // What a toolpath calculation gives back.
+    struct ToolpathResult
+    {
+        bool ok = false;
+        Toolpath toolpath;
+        std::string problem;    // why it couldn't be made. Empty when ok.
     };
 }
