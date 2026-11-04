@@ -25,6 +25,12 @@ namespace camcore
         Vec3 to;                // where the move ends. A dwell's is where the tool is.
         double feed = 0.0;      // feeds only
         double seconds = 0.0;   // dwells only
+
+        // A feed can go round an arc in the frame's XY, about centre, instead of
+        // straight. Z changes evenly along it, so it can be a helix.
+        bool arc = false;
+        Vec3 centre;
+        bool clockwise = false; // seen from the frame's +Z
     };
 
     // The first move's end is where the operation starts.
@@ -32,6 +38,10 @@ namespace camcore
     {
         std::vector<ToolpathMove> moves;
     };
+
+    // The points a move passes through after from, up to and including its end:
+    // just the end for a straight move, or its arc sampled for drawing.
+    std::vector<Vec3> MovePoints(const Vec3& from, const ToolpathMove& move);
 
     // What a toolpath calculation gives back.
     struct ToolpathResult

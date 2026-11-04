@@ -1327,6 +1327,11 @@ BEGIN_MESSAGE_MAP(CFacingPage, COperationPage)
     ON_BN_CLICKED(IDC_FACING_STEP_DISTANCE_RADIO, &CFacingPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_FACING_OVER_PERCENT_RADIO, &CFacingPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_FACING_OVER_DISTANCE_RADIO, &CFacingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_FACING_CLIMB, &CFacingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_FACING_CONVENTIONAL, &CFacingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_FACING_MIXED, &CFacingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_FACING_LINEAR, &CFacingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_FACING_SPIRAL, &CFacingPage::OnChoiceChanged)
 END_MESSAGE_MAP()
 
 CFacingPage::CFacingPage(COperationDlg* pOwner)
@@ -1359,6 +1364,7 @@ void CFacingPage::Load(const SequenceStep& step)
                       : (facing.start == StartCorner::BottomRight) ? IDC_FACING_BOTTOM_RIGHT
                                                                    : IDC_FACING_TOP_LEFT;
     CheckRadioButton(IDC_FACING_TOP_LEFT, IDC_FACING_BOTTOM_RIGHT, start);
+    CheckDlgButton(IDC_FACING_ARC_STEPOVER, facing.arcStepOver ? BST_CHECKED : BST_UNCHECKED);
     UpdateFields();
 }
 
@@ -1390,6 +1396,7 @@ bool CFacingPage::Save(SequenceStep& step, std::wstring& problems)
     facing.cutType = (IsDlgButtonChecked(IDC_FACING_SPIRAL) == BST_CHECKED) ? FacingCutType::Spiral
                                                                             : FacingCutType::Linear;
     ReadNumber(IDC_FACING_CUT_ANGLE, L"The cut angle", facing.cutAngle, found);
+    facing.arcStepOver = IsDlgButtonChecked(IDC_FACING_ARC_STEPOVER) == BST_CHECKED;     // kept when greyed
     switch (GetCheckedRadioButton(IDC_FACING_TOP_LEFT, IDC_FACING_BOTTOM_RIGHT))
     {
     case IDC_FACING_TOP_RIGHT:    facing.start = StartCorner::TopRight; break;
@@ -1422,6 +1429,11 @@ void CFacingPage::UpdateFields()
         GetDlgItem(pIds->percent)->EnableWindow(percent);
         GetDlgItem(pIds->distance)->EnableWindow(!percent);
     }
+
+    // Arc step-overs only mean something going backwards and forwards.
+    const bool zigzag = IsDlgButtonChecked(IDC_FACING_MIXED) == BST_CHECKED &&
+                        IsDlgButtonChecked(IDC_FACING_SPIRAL) != BST_CHECKED;
+    GetDlgItem(IDC_FACING_ARC_STEPOVER)->EnableWindow(zigzag);
 }
 
 void CFacingPage::OnChoiceChanged()

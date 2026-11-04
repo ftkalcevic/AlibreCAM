@@ -317,11 +317,19 @@ namespace camcore
         }
 
         // Each move is [kind, x, y, z, feed, seconds], kind 0 rapid, 1 feed, 2 dwell.
+        // An arc feed is kind 3, followed by its centre's x, y, z and 1 if clockwise.
         json WriteToolpath(const Toolpath& toolpath)
         {
             json moves = json::array();
             for (const ToolpathMove& move : toolpath.moves)
             {
+                if (move.kind == MoveKind::Feed && move.arc)
+                {
+                    moves.push_back(json::array({ 3, move.to.x, move.to.y, move.to.z, move.feed, move.seconds,
+                                                  move.centre.x, move.centre.y, move.centre.z,
+                                                  move.clockwise ? 1 : 0 }));
+                    continue;
+                }
                 const int kind = (move.kind == MoveKind::Feed) ? 1 : (move.kind == MoveKind::Dwell) ? 2 : 0;
                 moves.push_back(json::array({ kind, move.to.x, move.to.y, move.to.z, move.feed, move.seconds }));
             }
@@ -340,7 +348,7 @@ namespace camcore
 
             for (const json& entry : *item)
             {
-                if (!entry.is_array() || entry.size() != 6)
+                if (!entry.is_array() || entry.empty())
                     return false;
                 for (const json& number : entry)
                 {
@@ -349,14 +357,20 @@ namespace camcore
                 }
 
                 const int kind = entry[0].get<int>();
-                if (kind < 0 || kind > 2)
+                if (kind < 0 || kind > 3 || entry.size() != (kind == 3 ? 10u : 6u))
                     return false;
 
                 ToolpathMove move;
-                move.kind = (kind == 1) ? MoveKind::Feed : (kind == 2) ? MoveKind::Dwell : MoveKind::Rapid;
+                move.kind = (kind == 1 || kind == 3) ? MoveKind::Feed : (kind == 2) ? MoveKind::Dwell : MoveKind::Rapid;
                 move.to = { entry[1].get<double>(), entry[2].get<double>(), entry[3].get<double>() };
                 move.feed = entry[4].get<double>();
                 move.seconds = entry[5].get<double>();
+                if (kind == 3)
+                {
+                    move.arc = true;
+                    move.centre = { entry[6].get<double>(), entry[7].get<double>(), entry[8].get<double>() };
+                    move.clockwise = entry[9].get<double>() != 0.0;
+                }
                 toolpath.moves.push_back(move);
             }
             return true;
@@ -559,7 +573,8 @@ namespace camcore
                 { "overtravel", WriteSize(facing.overtravel) },
                 { "cutType", facing.cutType == FacingCutType::Spiral ? "spiral" : "linear" },
                 { "cutAngle", facing.cutAngle },
-                { "start", CornerName(facing.start) }
+                { "start", CornerName(facing.start) },
+                { "arcStepOver", facing.arcStepOver }
             };
         }
 
@@ -575,6 +590,14 @@ namespace camcore
                     facing.cutType = FacingCutType::Spiral;
                 else
                     return false;
+            }
+
+            const auto arcs = item.find("arcStepOver");
+            if (arcs != item.end())
+            {
+                if (!arcs->is_boolean())
+                    return false;
+                facing.arcStepOver = arcs->get<bool>();
             }
 
             const auto angle = item.find("cutAngle");
@@ -609,16 +632,25 @@ namespace camcore
             return true;
         }
 
-        json WritePolyline(const Polyline& points)
+        // Each vertex is [x, y, z], or [x, y, z, cx, cy, cz, ax, ay, az] when an arc
+        // about that centre and axis goes on from it.
+        json WritePath(const Path& path)
         {
             json list = json::array();
-            for (const Vec3& point : points)
-                list.push_back(WriteVec3(point));
+            for (const PathVertex& vertex : path)
+            {
+                if (vertex.arc)
+                    list.push_back(json::array({ vertex.point.x, vertex.point.y, vertex.point.z, vertex.centre.x,
+                                                 vertex.centre.y, vertex.centre.z, vertex.axis.x, vertex.axis.y,
+                                                 vertex.axis.z }));
+                else
+                    list.push_back(WriteVec3(vertex.point));
+            }
             return list;
         }
 
-        // Facings never generated have no boundary.
-        bool ReadBoundary(const json& step, Polyline& boundary)
+        // Facings never generated have no boundary. Older files have only points.
+        bool ReadBoundary(const json& step, Path& boundary)
         {
             boundary.clear();
             const auto item = step.find("boundary");
@@ -629,10 +661,23 @@ namespace camcore
 
             for (const json& entry : *item)
             {
-                if (!entry.is_array() || entry.size() != 3 || !entry[0].is_number() || !entry[1].is_number() ||
-                    !entry[2].is_number())
+                if (!entry.is_array() || (entry.size() != 3 && entry.size() != 9))
                     return false;
-                boundary.push_back({ entry[0].get<double>(), entry[1].get<double>(), entry[2].get<double>() });
+                for (const json& number : entry)
+                {
+                    if (!number.is_number())
+                        return false;
+                }
+
+                PathVertex vertex;
+                vertex.point = { entry[0].get<double>(), entry[1].get<double>(), entry[2].get<double>() };
+                if (entry.size() == 9)
+                {
+                    vertex.arc = true;
+                    vertex.centre = { entry[3].get<double>(), entry[4].get<double>(), entry[5].get<double>() };
+                    vertex.axis = { entry[6].get<double>(), entry[7].get<double>(), entry[8].get<double>() };
+                }
+                boundary.push_back(vertex);
             }
             return true;
         }
@@ -798,7 +843,7 @@ namespace camcore
                          { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
                          { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
                          { "cutLevels", WriteCutLevels(step.cutLevels) }, { "entryExit", WriteEntryExit(step.entryExit) },
-                         { "facing", WriteFacing(step.facing) }, { "boundary", WritePolyline(step.boundary) } };
+                         { "facing", WriteFacing(step.facing) }, { "boundary", WritePath(step.boundary) } };
 
             if (step.type == StepType::Drill)
                 return { { "type", "drill" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
@@ -946,7 +991,8 @@ namespace camcore
                                fileVersion);
         }
 
-        // Older formats will be migrated here when the format version changes.
+        // Version 3 added arcs to boundaries and toolpaths, which version 2 files
+        // simply don't have, so they read as they are.
 
         const auto assembly = root.find("assembly");
         if (assembly == root.end() || !assembly->is_object())

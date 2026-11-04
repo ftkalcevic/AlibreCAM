@@ -1087,25 +1087,35 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
             return false;
         }
 
-        std::vector<camcore::Polyline> pieces;
+        std::vector<camcore::Path> pieces;
         for (const camcore::PickedGeometry& feature : operation.features)
         {
-            std::vector<std::vector<camcore::Vec3>> outline;
+            std::vector<camcore::Path> outline;
             std::wstring outlineProblem;
             if (!ReadFeatureOutline(GetSession(), feature, outline, outlineProblem))
             {
                 problem = ToUtf8(outlineProblem);
                 return false;
             }
-            for (std::vector<camcore::Vec3>& piece : outline)
+
+            // Into the origin's frame, arcs' axes too.
+            for (camcore::Path& piece : outline)
             {
-                for (camcore::Vec3& point : piece)
-                    point = camcore::WorldToFrame(frame.frame, point);
+                for (camcore::PathVertex& vertex : piece)
+                {
+                    if (vertex.arc)
+                    {
+                        vertex.axis = camcore::WorldToFrame(frame.frame, vertex.centre + vertex.axis) -
+                                      camcore::WorldToFrame(frame.frame, vertex.centre);
+                        vertex.centre = camcore::WorldToFrame(frame.frame, vertex.centre);
+                    }
+                    vertex.point = camcore::WorldToFrame(frame.frame, vertex.point);
+                }
                 pieces.push_back(std::move(piece));
             }
         }
 
-        operation.boundary = camcore::ClosePolygon(pieces, check.level);
+        operation.boundary = camcore::ClosePath(pieces, check.level);
         if (operation.boundary.empty())
         {
             problem = "The features don't enclose an area.";
@@ -1546,13 +1556,13 @@ void CCamTabCommand::RebuildScene()
         for (size_t c = 0; c < m_job.sequence[i].children.size(); ++c)
         {
             // A facing's boundary, closed back to its start.
-            const camcore::Polyline& boundary = m_job.sequence[i].children[c].boundary;
+            // Arcs are drawn as short straight segments.
+            const camcore::Path& boundary = m_job.sequence[i].children[c].boundary;
             if (!boundary.empty())
             {
                 std::vector<camcore::Vec3> outline;
-                for (const camcore::Vec3& point : boundary)
+                for (const camcore::Vec3& point : camcore::PathPoints(boundary, true))
                     outline.push_back(camcore::FramePointToWorld(frame.frame, point));
-                outline.push_back(outline.front());
                 m_scene.boundaries.push_back(std::move(outline));
             }
 
@@ -1564,23 +1574,32 @@ void CCamTabCommand::RebuildScene()
             // Bold when its operation is selected, or its folder is, which selects them all.
             drawn.selected = (m_selected.step == i && (!m_selected.IsOperation() || m_selected.child == c));
 
-            // A run carries on while moves are the same kind. The first move only says where it starts.
-            camcore::Vec3 at = camcore::FramePointToWorld(frame.frame, moves.front().to);
-            camcore::MoveKind runKind = camcore::MoveKind::Dwell;
+            // A run carries on while moves are the same kind: rapids, straight feeds,
+            // or arcs, which have their own colour. The first move only says where it
+            // starts. Arcs are drawn as short straight segments.
+            enum class RunKind { None, Rapid, Feed, Arc };
+            camcore::Vec3 local = moves.front().to;
+            camcore::Vec3 at = camcore::FramePointToWorld(frame.frame, local);
+            RunKind runKind = RunKind::None;
             for (size_t m = 1; m < moves.size(); ++m)
             {
                 const camcore::ToolpathMove& move = moves[m];
                 if (move.kind == camcore::MoveKind::Dwell)
                     continue;
 
-                const camcore::Vec3 to = camcore::FramePointToWorld(frame.frame, move.to);
-                std::vector<std::vector<camcore::Vec3>>& runs =
-                    (move.kind == camcore::MoveKind::Rapid) ? drawn.rapids : drawn.feeds;
-                if (move.kind != runKind || runs.empty())
+                const RunKind kind = (move.kind == camcore::MoveKind::Rapid) ? RunKind::Rapid
+                                     : move.arc                              ? RunKind::Arc
+                                                                             : RunKind::Feed;
+                std::vector<std::vector<camcore::Vec3>>& runs = (kind == RunKind::Rapid) ? drawn.rapids
+                                                                : (kind == RunKind::Arc) ? drawn.arcs
+                                                                                         : drawn.feeds;
+                if (kind != runKind || runs.empty())
                     runs.push_back({ at });
-                runs.back().push_back(to);
-                runKind = move.kind;
-                at = to;
+                for (const camcore::Vec3& point : camcore::MovePoints(local, move))
+                    runs.back().push_back(camcore::FramePointToWorld(frame.frame, point));
+                runKind = kind;
+                local = move.to;
+                at = runs.back().back();
             }
             m_scene.toolpaths.push_back(std::move(drawn));
         }

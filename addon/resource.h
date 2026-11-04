@@ -166,6 +166,7 @@
 #define IDC_FACING_BOTTOM_RIGHT         13226
 #define IDC_FACING_CUT_ANGLE            13227
 #define IDC_OP_GENERATE                 13228
+#define IDC_FACING_ARC_STEPOVER         13229
 
 // Next default values for new objects
 //
@@ -173,7 +174,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        13024
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13229
+#define _APS_NEXT_CONTROL_VALUE         13230
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

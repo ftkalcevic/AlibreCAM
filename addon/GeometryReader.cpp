@@ -754,7 +754,89 @@ namespace
     }
 }
 
-bool ReadFeatureOutline(IADSession* pAssembly, const PickedGeometry& feature, std::vector<std::vector<Vec3>>& pieces,
+namespace
+{
+    // A circle or arc edge as arcs in assembly mm, from its start vertex to its
+    // end, or round once from where its parameter starts if it's closed, in two
+    // halves. Each arc's axis is turned so the arc runs anticlockwise about it,
+    // judged from a point halfway along, so neither Alibre's parameter direction
+    // nor a mirrored placement matters. False if it isn't a circle or arc.
+    bool ReadRoundEdge(IADEdge* pEdge, const PartToAssembly& transform, camcore::Path& piece)
+    {
+        IADCurvePtr curve = pEdge->GetGeometry();
+        Vec3 centre, axis;
+        if (IADCirclePtr circle = QI<IADCirclePtr>(curve))
+        {
+            centre = ToVec3(circle->GetCenter());
+            axis = ToVec3(circle->GetAxis());
+        }
+        else if (IADCircularArcPtr arc = QI<IADCircularArcPtr>(curve))
+        {
+            centre = ToVec3(arc->GetCenter());
+            axis = ToVec3(arc->GetAxis());
+        }
+        else
+        {
+            return false;
+        }
+
+        double low = 0.0, high = 0.0;
+        curve->GetParameterExtents(&low, &high);
+        const double period = high - low;
+        auto at = [&](double t) {
+            if (period > 0.0 && t > high)
+                t = low + std::fmod(t - low, period);
+            return transform.Point(ToVec3(curve->PointAtParam(t)));
+        };
+
+        IADVertexPtr startVertex = pEdge->GetStartVertex();
+        IADVertexPtr endVertex = pEdge->GetEndVertex();
+        const bool closed = startVertex == nullptr || endVertex == nullptr ||
+                            camcore::Length(ToVec3(startVertex->GetPoint()) - ToVec3(endVertex->GetPoint())) < 1e-9;
+
+        std::vector<double> params;
+        if (closed)
+        {
+            params = { low, low + period / 2.0, high };
+        }
+        else
+        {
+            const double from = curve->ParamAtPoint(startVertex->GetPoint());
+            double to = curve->ParamAtPoint(endVertex->GetPoint());
+            if (to <= from)
+                to += period;
+            params = { from, to };
+        }
+
+        const Vec3 worldCentre = transform.Point(centre);
+        const Vec3 worldAxis = transform.Direction(axis);
+        piece.clear();
+        for (size_t i = 0; i < params.size(); ++i)
+        {
+            camcore::PathVertex vertex;
+            vertex.point = at(params[i]);
+            if (i + 1 < params.size())
+            {
+                const Vec3 middle = at((params[i] + params[i + 1]) / 2.0);
+                const double turn = camcore::Dot(camcore::Cross(vertex.point - worldCentre, middle - worldCentre), worldAxis);
+                vertex.arc = true;
+                vertex.centre = worldCentre;
+                vertex.axis = (turn < 0.0) ? worldAxis * -1.0 : worldAxis;
+            }
+            piece.push_back(vertex);
+        }
+
+        // The ends are exactly the vertices, where there are any.
+        if (!closed)
+        {
+            piece.front().point = transform.Point(ToVec3(startVertex->GetPoint()));
+            piece.back().point = transform.Point(ToVec3(endVertex->GetPoint()));
+        }
+        return true;
+    }
+}
+
+bool ReadFeatureOutline(IADSession* pAssembly, const PickedGeometry& feature, std::vector<camcore::Path>& pieces,
                         std::wstring& problem)
 {
     pieces.clear();
@@ -804,8 +886,18 @@ bool ReadFeatureOutline(IADSession* pAssembly, const PickedGeometry& feature, st
 
         const double assemblyMm = MillimetresPerModelUnit(QI<IADDesignSessionPtr>(pAssembly));
         const PartToAssembly transform(occurrence, assemblyMm);
+        size_t arcs = 0;
         for (const IADEdgePtr& edge : edges)
         {
+            // Circles and arcs stay arcs. Lines are their ends, and other curves are sampled.
+            camcore::Path piece;
+            if (ReadRoundEdge(edge, transform, piece))
+            {
+                ++arcs;
+                pieces.push_back(std::move(piece));
+                continue;
+            }
+
             std::vector<Vec3> points;
             if (!SampleEdge(edge, points))
             {
@@ -814,9 +906,10 @@ bool ReadFeatureOutline(IADSession* pAssembly, const PickedGeometry& feature, st
             }
             for (Vec3& point : points)
                 point = transform.Point(point);
-            pieces.push_back(std::move(points));
+            pieces.push_back(camcore::PathFromPoints(points));
         }
-        Log(L"[outline] %s: %zu edges", FromUtf8(feature.occurrenceName).c_str(), pieces.size());
+        Log(L"[outline] %s: %zu edges, %zu of them circles or arcs", FromUtf8(feature.occurrenceName).c_str(),
+            pieces.size(), arcs);
         return true;
     }
     catch (const _com_error& error)

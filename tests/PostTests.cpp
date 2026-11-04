@@ -93,6 +93,36 @@ TEST_CASE("APT CL data has the program, tool, spindle and moves")
     CHECK(text.compare(text.size() - ending.size(), ending.size(), ending) == 0);
 }
 
+TEST_CASE("an arc is a CIRCLE of its centre, turning axis and radius, then its GOTO")
+{
+    const SequenceStep origin = Origin("Top");
+    SequenceStep facing = Drill("Facing 1");
+    facing.toolpath.moves.resize(2);    // the rapid in, and the feed down to (10, 0, -10)
+
+    ToolpathMove arc;
+    arc.kind = MoveKind::Feed;
+    arc.feed = 100;
+    arc.arc = true;
+    arc.to = { 0, 10, -10 };
+    arc.centre = { 0, 0, -10 };
+    facing.toolpath.moves.push_back(arc);
+
+    ToolpathMove back = arc;
+    back.to = { 10, 0, -10 };
+    back.clockwise = true;
+    facing.toolpath.moves.push_back(back);
+
+    PostOperation entry;
+    entry.origin = &origin;
+    entry.operation = &facing;
+    const std::string text = WriteAptClData("Job", Frame(), { entry });
+    CHECK(text.find("CIRCLE/0.0000,0.0000,-10.0000,0.0000,0.0000,1.0000,10.0000\n"
+                    "GOTO/0.0000,10.0000,-10.0000,0.0000,0.0000,1.0000\n") != std::string::npos);
+    CHECK(text.find("CIRCLE/0.0000,0.0000,-10.0000,0.0000,0.0000,-1.0000,10.0000\n"
+                    "GOTO/10.0000,0.0000,-10.0000,") != std::string::npos);
+    CHECK(Count(text, "CIRCLE/") == 2);
+}
+
 TEST_CASE("FEDRAT is written only when the feed changes, and RAPID before every rapid")
 {
     const SequenceStep origin = Origin("Top");

@@ -81,6 +81,8 @@ namespace camcore
             const Vec3 axis = DirectionInFrame(workZero, entry.frame.zAxis);
             const std::string axisText = Number(axis.x) + "," + Number(axis.y) + "," + Number(axis.z);
 
+            Vec3 from;      // where the tool is, in the operation's frame
+            bool haveFrom = false;
             for (const ToolpathMove& move : operation.toolpath.moves)
             {
                 if (move.kind == MoveKind::Dwell)
@@ -99,8 +101,21 @@ namespace camcore
                     line("FEDRAT/MMPM," + Number(move.feed));
                 }
 
+                // An arc is a CIRCLE/ of its centre, axis and radius, then the GOTO/
+                // to its end. The axis is the tool axis anticlockwise, reversed clockwise.
+                if (move.kind == MoveKind::Feed && move.arc && haveFrom)
+                {
+                    const Vec3 centre = WorldToFrame(workZero, FramePointToWorld(entry.frame, move.centre));
+                    const Vec3 turn = move.clockwise ? axis * -1.0 : axis;
+                    const double radius = std::hypot(from.x - move.centre.x, from.y - move.centre.y);
+                    line("CIRCLE/" + Number(centre.x) + "," + Number(centre.y) + "," + Number(centre.z) + "," +
+                         Number(turn.x) + "," + Number(turn.y) + "," + Number(turn.z) + "," + Number(radius));
+                }
+
                 const Vec3 point = WorldToFrame(workZero, FramePointToWorld(entry.frame, move.to));
                 line("GOTO/" + Number(point.x) + "," + Number(point.y) + "," + Number(point.z) + "," + axisText);
+                from = move.to;
+                haveFrom = true;
             }
         }
 

@@ -14,11 +14,10 @@ namespace camcore
         // A spiral never needs more legs than this. It's only a guard.
         const int kMostSpiralLegs = 100000;
 
-        // Radial leads are drawn as straight segments this many degrees apart,
-        // until toolpaths have arcs.
-        const int kLeadArcSegments = 18;
-
         Vec3 Plus(const Vec3& a, const Vec3& b, double scale) { return { a.x + b.x * scale, a.y + b.y * scale, a.z }; }
+
+        // Seen from +Z, true if turning from a to b is anticlockwise.
+        bool TurnsLeft(const Vec3& a, const Vec3& b) { return a.x * b.y - a.y * b.x > 0.0; }
 
         // The unit direction from a to b in XY, or false if they're the same point.
         bool DirectionXY(const Vec3& a, const Vec3& b, Vec3& direction)
@@ -100,16 +99,8 @@ namespace camcore
                     const Vec3 side = (lead.radius < 0.0) ? Vec3{ -away.x, -away.y, 0.0 } : away;
                     const double radius = std::fabs(lead.radius);
                     const Vec3 centre = Plus(point, side, radius);
-                    for (int i = kLeadArcSegments; i >= 0; --i)
-                    {
-                        const double phi = (kPi / 2.0) * i / kLeadArcSegments;
-                        Vec3 at = Plus(centre, side, -radius * std::cos(phi));
-                        at = Plus(at, direction, -radius * std::sin(phi));
-                        if (i == kLeadArcSegments)
-                            ArriveAt(at);
-                        else
-                            Cut(at);
-                    }
+                    ArriveAt(Plus(centre, direction, -radius));
+                    ArcTo(point, centre, !TurnsLeft(direction, side));
                     return;
                 }
 
@@ -134,12 +125,7 @@ namespace camcore
                         const Vec3 side = (lead.radius < 0.0) ? Vec3{ -away.x, -away.y, 0.0 } : away;
                         const double radius = std::fabs(lead.radius);
                         const Vec3 centre = Plus(point, side, radius);
-                        for (int i = 1; i <= kLeadArcSegments; ++i)
-                        {
-                            const double phi = (kPi / 2.0) * i / kLeadArcSegments;
-                            Vec3 at = Plus(centre, side, -radius * std::cos(phi));
-                            Cut(Plus(at, direction, radius * std::sin(phi)));
-                        }
+                        ArcTo(Plus(centre, direction, radius), centre, !TurnsLeft(direction, side));
                     }
                     else
                     {
@@ -170,6 +156,16 @@ namespace camcore
 
             void Cut(const Vec3& point) { Add(MoveKind::Feed, { point.x, point.y, m_cutZ }, m_feeds.cut); }
 
+            // Round an arc about centre to point, at the cut feed.
+            void ArcTo(const Vec3& point, const Vec3& centre, bool clockwise)
+            {
+                Add(MoveKind::Feed, { point.x, point.y, m_cutZ }, m_feeds.cut);
+                ToolpathMove& move = m_toolpath.moves.back();
+                move.arc = true;
+                move.centre = { centre.x, centre.y, m_cutZ };
+                move.clockwise = clockwise;
+            }
+
             void Leave()
             {
                 const Vec3& at = m_toolpath.moves.back().to;
@@ -196,29 +192,17 @@ namespace camcore
         };
 
         // Where the boundary crosses the line v, as its lowest and highest u.
-        bool SpanAt(const Polyline& boundary, const PassAxes& axes, double v, double& low, double& high)
+        bool SpanAt(const Path& boundary, const PassAxes& axes, double v, double& low, double& high)
         {
-            bool found = false;
-            for (size_t i = 0; i < boundary.size(); ++i)
-            {
-                const Vec3& p = boundary[i];
-                const Vec3& q = boundary[(i + 1) % boundary.size()];
-                const double pv = axes.V(p), qv = axes.V(q);
-
-                // Each edge counts from its lower end up to, but not at, its upper end.
-                if (!((pv <= v && v < qv) || (qv <= v && v < pv)))
-                    continue;
-
-                const double pu = axes.U(p), qu = axes.U(q);
-                const double u = pu + (v - pv) * (qu - pu) / (qv - pv);
-                low = found ? (std::min)(low, u) : u;
-                high = found ? (std::max)(high, u) : u;
-                found = true;
-            }
-            return found;
+            const std::vector<double> crossings = PathCrossings(boundary, axes.along, axes.across, v);
+            if (crossings.empty())
+                return false;
+            low = *std::min_element(crossings.begin(), crossings.end());
+            high = *std::max_element(crossings.begin(), crossings.end());
+            return true;
         }
 
-        void LinearPasses(PathBuilder& path, const Polyline& boundary, const PassAxes& axes, const FacingSettings& facing,
+        void LinearPasses(PathBuilder& path, const Path& boundary, const PassAxes& axes, const FacingSettings& facing,
                           double vMin, double vMax, bool startHighV, bool startHighU, double step, double overtravel,
                           double z)
         {
@@ -278,7 +262,17 @@ namespace camcore
                         const double cornerU = forward ? (std::min)(lastU, from) : (std::max)(lastU, from);
                         if (cornerU != lastU)
                             path.Cut(axes.At(cornerU, lastV, z));
-                        path.Cut(axes.At(cornerU, v, z));
+                        if (facing.arcStepOver)
+                        {
+                            // A half circle across the step, bulging out past the ends.
+                            const Vec3 from = axes.At(cornerU, lastV, z);
+                            const Vec3 centre = axes.At(cornerU, (lastV + v) / 2.0, z);
+                            path.ArcTo(axes.At(cornerU, v, z), centre, !TurnsLeft(from - centre, lastDirection));
+                        }
+                        else
+                        {
+                            path.Cut(axes.At(cornerU, v, z));
+                        }
                         if (cornerU != from)
                             path.Cut(start);
                     }
@@ -396,8 +390,8 @@ namespace camcore
         if (input.tool == nullptr || !(input.tool->diameter > 0.0))
             return Failure("Choose a tool on the Tool tab.");
 
-        const Polyline& boundary = pOperation->boundary;
-        if (boundary.size() < 3)
+        const Path& boundary = pOperation->boundary;
+        if (boundary.size() < 2)
             return Failure("There's no boundary to face.");
 
         const FacingSettings& facing = pOperation->facing;
@@ -417,7 +411,7 @@ namespace camcore
             return Failure(entryProblems.front());
 
         // The boundary is the cut geometry, at its own height.
-        const double z = boundary.front().z;
+        const double z = boundary.front().point.z;
         const std::vector<CutLevel> levels = CutLevelHeights(pOperation->cutLevels, z);
         double clearance = 0.0;
         std::string clearanceProblem;
@@ -437,21 +431,13 @@ namespace camcore
         axes.along = PassDirection(facing.cutAngle);
         axes.across = { -axes.along.y, axes.along.x, 0.0 };
 
-        // The boundary's extent along and across the passes, and in the frame.
+        // The boundary's extent along and across the passes, and in the frame,
+        // counting how far its arcs reach.
         double uMin = 0.0, uMax = 0.0, vMin = 0.0, vMax = 0.0, xMin = 0.0, xMax = 0.0, yMin = 0.0, yMax = 0.0;
-        for (size_t i = 0; i < boundary.size(); ++i)
-        {
-            const Vec3& p = boundary[i];
-            const double u = axes.U(p), v = axes.V(p);
-            uMin = (i == 0) ? u : (std::min)(uMin, u);
-            uMax = (i == 0) ? u : (std::max)(uMax, u);
-            vMin = (i == 0) ? v : (std::min)(vMin, v);
-            vMax = (i == 0) ? v : (std::max)(vMax, v);
-            xMin = (i == 0) ? p.x : (std::min)(xMin, p.x);
-            xMax = (i == 0) ? p.x : (std::max)(xMax, p.x);
-            yMin = (i == 0) ? p.y : (std::min)(yMin, p.y);
-            yMax = (i == 0) ? p.y : (std::max)(yMax, p.y);
-        }
+        PathExtent(boundary, axes.along, uMin, uMax);
+        PathExtent(boundary, axes.across, vMin, vMax);
+        PathExtent(boundary, { 1.0, 0.0, 0.0 }, xMin, xMax);
+        PathExtent(boundary, { 0.0, 1.0, 0.0 }, yMin, yMax);
 
         // The Cut Start corner, seen from +Z with X right and Y up, decides which
         // side and which end the cut starts from.

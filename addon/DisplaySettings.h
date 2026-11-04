@@ -34,6 +34,7 @@ const float kOriginLineWeight = 3.0f;
 // Toolpaths. The canvas has no dashed lines, so rapids differ by colour only.
 const DisplayColour kRapidColour = { 220, 40, 40, 255 };
 const DisplayColour kFeedColour = { 30, 110, 230, 255 };
+const DisplayColour kArcColour = { 210, 0, 210, 255 };      // arc feeds, so arcs stand out
 const float kToolpathLineWeight = 1.5f;
 const float kSelectedToolpathLineWeight = 3.0f;
 

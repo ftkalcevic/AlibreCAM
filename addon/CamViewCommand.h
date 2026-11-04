@@ -30,6 +30,7 @@ struct CamScene
     {
         std::vector<std::vector<camcore::Vec3>> rapids;
         std::vector<std::vector<camcore::Vec3>> feeds;
+        std::vector<std::vector<camcore::Vec3>> arcs;      // arc feeds, sampled
         bool selected = false;
     };
     std::vector<Toolpath> toolpaths;

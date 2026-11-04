@@ -43,6 +43,7 @@ namespace camcore
         FacingCutType cutType = FacingCutType::Linear;
         double cutAngle = 0.0;                              // degrees: 90 runs along the origin's X, 0 along its Y
         StartCorner start = StartCorner::TopLeft;           // seen from the origin's +Z
+        bool arcStepOver = false;                           // Mixed Linear steps over on half circles
     };
 
     // The size in mm for a tool of this diameter.

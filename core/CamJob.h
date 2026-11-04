@@ -22,7 +22,7 @@ namespace camcore
 {
     // The newest .cam format this build can read and the one it writes.
     // Version 2 added Set Origin steps and groups to the sequence.
-    constexpr int kCamFormatVersion = 2;
+    constexpr int kCamFormatVersion = 3;
 
     // Which assembly a job belongs to. The GUID comes from the assembly file,
     // and is empty if it couldn't be read.
@@ -75,7 +75,7 @@ namespace camcore
         // Facing operations only, and the outline Generate found for the area,
         // in the origin's frame. Empty until Generate runs.
         FacingSettings facing;
-        Polyline boundary;
+        Path boundary;
 
         // Groups only. Operations run in this order. Groups don't nest, and a
         // Set Origin stays outside them, so a group can't hold either.

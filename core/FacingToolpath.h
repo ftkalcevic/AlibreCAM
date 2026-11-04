@@ -7,7 +7,8 @@
 // the first pass, an exit out past the last pass (outside the loop for a spiral).
 // A negative one puts it on the other side. A linear lead's angle is from the
 // cut's line (0 in line, 90 square to it), and a radial lead is a quarter circle
-// tangent to the cut, drawn as straight segments for now.
+// arc tangent to the cut. Arcs in the boundary are followed exactly. With arc
+// step-overs, Mixed steps between passes on a half circle bulging out past their ends.
 // Along 3D Path ramps down in line with the cut from the path height above it.
 // Leads and ramps run at the cut feed. Without Apply at Each Cut Level, only the
 // first level's cuts have entries and only the last level's have exits.

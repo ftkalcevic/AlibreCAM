@@ -15,7 +15,7 @@ namespace
     {
         SequenceStep step;
         step.type = StepType::Facing;
-        step.boundary = { { 0, 0, 0 }, { 100, 0, 0 }, { 100, 50, 0 }, { 0, 50, 0 } };
+        step.boundary = PathFromPoints({ { 0, 0, 0 }, { 100, 0, 0 }, { 100, 50, 0 }, { 0, 50, 0 } });
         step.facing.cutAngle = 90;      // along X
         step.facing.start = StartCorner::BottomLeft;
         step.clearance.mode = ClearanceMode::AbsoluteZ;
@@ -132,7 +132,7 @@ TEST_CASE("mixed steps over square to the passes when their ends don't line up")
 {
     SequenceStep step = FacingStep();
     step.facing.direction = CutDirection::Mixed;
-    step.boundary = { { 0, 0, 0 }, { 100, 0, 0 }, { 50, 50, 0 } };
+    step.boundary = PathFromPoints({ { 0, 0, 0 }, { 100, 0, 0 }, { 50, 50, 0 } });
     const ToolpathResult result = Generate(step);
     REQUIRE(result.ok);
 
@@ -309,15 +309,16 @@ TEST_CASE("a radial entry is a quarter circle ending tangent to the cut")
     const std::vector<ToolpathMove>& moves = Generate(step).toolpath.moves;
 
     // The centre is 5 below the start at (105, -5). The arc starts 5 back along
-    // the cut (towards +X) from the centre, and every point is on the circle.
+    // the cut (towards +X) from the centre, and turns anticlockwise up onto the cut.
     CHECK(Near(moves[0].to, 110, -10, 10));
-    for (size_t i = 1; i <= 19; ++i)
-    {
-        const double dx = moves[i].to.x - 105, dy = moves[i].to.y + 10;
-        CHECK(std::sqrt(dx * dx + dy * dy) == doctest::Approx(5));
-    }
-    CHECK(Near(moves[19].to, 105, -5, 0));
-    CHECK(Near(moves[20].to, -5, -5, 0));
+    CHECK(Near(moves[1].to, 110, -10, 0));
+    REQUIRE(moves[2].arc);
+    CHECK(Near(moves[2].to, 105, -5, 0));
+    CHECK(Near(moves[2].centre, 105, -10, 0));
+    CHECK_FALSE(moves[2].clockwise);
+    CHECK(moves[2].feed == 1000);
+    CHECK(Near(moves[3].to, -5, -5, 0));
+    CHECK_FALSE(moves[3].arc);
 }
 
 TEST_CASE("an exit goes out past the last pass, or the other side when negative")
@@ -342,17 +343,19 @@ TEST_CASE("an exit goes out past the last pass, or the other side when negative"
     step.entryExit.retract.shape = LeadShape::Radial;
     step.entryExit.retract.radius = 5;
     moves = Generate(step).toolpath.moves;
-    CHECK(Near(moves[moves.size() - 2].to, 110, 60, 0));
+    const ToolpathMove& up = moves[moves.size() - 2];
+    REQUIRE(up.arc);
+    CHECK(Near(up.to, 110, 60, 0));
+    CHECK(Near(up.centre, 105, 60, 0));
+    CHECK_FALSE(up.clockwise);
 
     step.entryExit.retract.radius = -5;
     moves = Generate(step).toolpath.moves;
-    CHECK(Near(moves[moves.size() - 2].to, 110, 50, 0));
-    for (size_t i = moves.size() - 19; i < moves.size() - 1; ++i)
-    {
-        const double dx = moves[i].to.x - 105, dy = moves[i].to.y - 50;
-        CHECK(std::sqrt(dx * dx + dy * dy) == doctest::Approx(5));
-        CHECK(moves[i].to.x >= 105);
-    }
+    const ToolpathMove& down = moves[moves.size() - 2];
+    REQUIRE(down.arc);
+    CHECK(Near(down.to, 110, 50, 0));
+    CHECK(Near(down.centre, 105, 50, 0));
+    CHECK(down.clockwise);
 }
 
 TEST_CASE("a negative radius entry still starts behind the cut, on the other side")
@@ -364,7 +367,64 @@ TEST_CASE("a negative radius entry still starts behind the cut, on the other sid
     step.entryExit.engage.radius = -5;
     const std::vector<ToolpathMove>& moves = Generate(step).toolpath.moves;
     CHECK(Near(moves[0].to, 110, 0, 10));
-    CHECK(Near(moves[19].to, 105, -5, 0));
+    REQUIRE(moves[2].arc);
+    CHECK(Near(moves[2].to, 105, -5, 0));
+    CHECK(Near(moves[2].centre, 105, 0, 0));
+    CHECK(moves[2].clockwise);
+}
+
+TEST_CASE("passes end exactly on an arc in the boundary")
+{
+    // A disc of radius 20 at the origin, as two half arcs.
+    SequenceStep step = FacingStep();
+    PathVertex right;
+    right.point = { 20, 0, 0 };
+    right.arc = true;
+    PathVertex left;
+    left.point = { -20, 0, 0 };
+    left.arc = true;
+    step.boundary = { right, left };
+
+    const ToolpathResult result = Generate(step);
+    REQUIRE(result.ok);
+    size_t checked = 0;
+    for (const ToolpathMove& cut : Cuts(result.toolpath))
+    {
+        if (std::fabs(cut.to.y) >= 19.9)
+            continue;
+        CHECK(std::fabs(cut.to.x) == doctest::Approx(std::sqrt(400 - cut.to.y * cut.to.y) + 5));
+        ++checked;
+    }
+    CHECK(checked > 10);
+}
+
+TEST_CASE("mixed can step over on half circles bulging out past the ends")
+{
+    // From the bottom left: the first pass at y -5 runs to x 105, and the passes are 2.5 apart.
+    SequenceStep step = FacingStep();
+    step.facing.direction = CutDirection::Mixed;
+    step.facing.arcStepOver = true;
+    const std::vector<ToolpathMove>& moves = Generate(step).toolpath.moves;
+
+    REQUIRE(moves[3].arc);
+    CHECK(Near(moves[2].to, 105, -5, 0));
+    CHECK(Near(moves[3].to, 105, -2.5, 0));
+    CHECK(Near(moves[3].centre, 105, -3.75, 0));
+    CHECK_FALSE(moves[3].clockwise);            // out to +X and round, anticlockwise
+    CHECK(Near(moves[4].to, -5, -2.5, 0));
+    REQUIRE(moves[5].arc);
+    CHECK(Near(moves[5].centre, -5, -1.25, 0));
+    CHECK(moves[5].clockwise);                  // out to -X and round, clockwise
+
+    size_t arcs = 0;
+    for (const ToolpathMove& move : moves)
+        arcs += move.arc ? 1 : 0;
+    CHECK(arcs == 24);
+
+    // Off, the steps are straight.
+    step.facing.arcStepOver = false;
+    for (const ToolpathMove& move : Generate(step).toolpath.moves)
+        CHECK_FALSE(move.arc);
 }
 
 TEST_CASE("along a 3D path ramps down in line with the first cut")

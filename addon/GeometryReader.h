@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include "Boundary.h"
 #include "Features.h"
 #include "Origin.h"
 
@@ -39,7 +40,7 @@ int SelectFeatures(IADSession* pAssembly, const std::vector<camcore::PickedGeome
 // again by the feature's keys. Each piece is one edge, from its start to its end.
 // Returns false and sets problem if it can't be found or read.
 bool ReadFeatureOutline(IADSession* pAssembly, const camcore::PickedGeometry& feature,
-                        std::vector<std::vector<camcore::Vec3>>& pieces, std::wstring& problem);
+                        std::vector<camcore::Path>& pieces, std::wstring& problem);
 
 // Highlights one feature in the view without changing the selection. Null clears it.
 void HighlightFeature(IADSession* pAssembly, const camcore::PickedGeometry* pFeature);

@@ -219,7 +219,8 @@ void CCamViewCommand::DrawScene(IADAddOnCanvasDisplay* pCanvas, const CamScene& 
             } kinds[] =
             {
                 { L"Toolpath rapids", kRapidColour, toolpath.rapids },
-                { L"Toolpath feeds", kFeedColour, toolpath.feeds }
+                { L"Toolpath feeds", kFeedColour, toolpath.feeds },
+                { L"Toolpath arcs", kArcColour, toolpath.arcs }
             };
 
             for (const auto& kind : kinds)

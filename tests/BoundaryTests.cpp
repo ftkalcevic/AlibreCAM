@@ -7,8 +7,11 @@
 #include "Boundary.h"
 #include "CamJob.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <fstream>
+#include <iterator>
 
 using namespace camcore;
 
@@ -102,7 +105,22 @@ TEST_CASE("a facing's boundary loads back unchanged")
     facing.type = StepType::Facing;
     facing.id = NewStableId();
     facing.name = "Facing 1";
-    facing.boundary = ClosePolygon({ { { 0, 0, 0 }, { 10, 0, 0 } }, { { 10, 0, 0 }, { 10, 6, 0 } } }, 4);
+    facing.boundary = PathFromPoints(ClosePolygon({ { { 0, 0, 0 }, { 10, 0, 0 } }, { { 10, 0, 0 }, { 10, 6, 0 } } }, 4));
+
+    // The closing side, from (10, 6) back to (0, 0), becomes an arc.
+    facing.boundary[2].arc = true;
+    facing.boundary[2].centre = { 5, 3, 4 };
+    facing.boundary[2].axis = { 0, 0, 1 };
+
+    // An arc move goes with it.
+    ToolpathMove arc;
+    arc.kind = MoveKind::Feed;
+    arc.to = { 1, 2, 3 };
+    arc.feed = 500;
+    arc.arc = true;
+    arc.centre = { 0, 2, 3 };
+    arc.clockwise = true;
+    facing.toolpath.moves.push_back(arc);
     group.children.push_back(facing);
     job.sequence.push_back(group);
 
@@ -112,10 +130,153 @@ TEST_CASE("a facing's boundary loads back unchanged")
     std::filesystem::remove(path, ignored);
 
     REQUIRE(loaded.status == LoadStatus::Ok);
-    const Polyline& back = loaded.job.sequence[1].children[0].boundary;
+    const Path& back = loaded.job.sequence[1].children[0].boundary;
     REQUIRE(back.size() == 3);
-    CHECK(At(back[2], 10, 6));
-    CHECK(back[0].z == 4);
+    CHECK(At(back[2].point, 10, 6));
+    CHECK(back[0].point.z == 4);
+    CHECK_FALSE(back[0].arc);
+    CHECK(back[2].arc);
+    CHECK(At(back[2].centre, 5, 3));
+    CHECK(back[2].axis.z == 1);
+
+    const std::vector<ToolpathMove>& moves = loaded.job.sequence[1].children[0].toolpath.moves;
+    REQUIRE(moves.size() == 1);
+    CHECK(moves[0].kind == MoveKind::Feed);
+    CHECK(moves[0].arc);
+    CHECK(moves[0].clockwise);
+    CHECK(At(moves[0].centre, 0, 2));
+    CHECK(moves[0].feed == 500);
+}
+
+TEST_CASE("a version 2 file, with only points and straight moves, still loads")
+{
+    static std::atomic<int> counter{ 0 };
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const std::filesystem::path path = std::filesystem::temp_directory_path() /
+                                       ("camcore_v2_" + std::to_string(stamp) + "_" + std::to_string(counter++) + ".cam");
+
+    Job job;
+    job.assembly.name = "Test";
+    job.assembly.guid = "{00000000-0000-0000-0000-000000000001}";
+    SequenceStep origin;
+    origin.type = StepType::SetOrigin;
+    origin.id = NewStableId();
+    origin.name = "Origin 1";
+    job.sequence.push_back(origin);
+    SequenceStep group;
+    group.type = StepType::Group;
+    group.id = NewStableId();
+    group.name = "Folder 1";
+    SequenceStep facing;
+    facing.type = StepType::Facing;
+    facing.id = NewStableId();
+    facing.name = "Facing 1";
+    facing.boundary = PathFromPoints({ { 0, 0, 1 }, { 10, 0, 1 }, { 10, 6, 1 } });
+    ToolpathMove move;
+    move.kind = MoveKind::Feed;
+    move.to = { 1, 2, 3 };
+    facing.toolpath.moves.push_back(move);
+    group.children.push_back(facing);
+    job.sequence.push_back(group);
+    REQUIRE(SaveJob(job, path).ok);
+
+    // Version 3 writes these just as version 2 did, so only the number differs.
+    std::string text;
+    {
+        std::ifstream in(path, std::ios::binary);
+        text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+    const size_t at = text.find("\"formatVersion\": 3");
+    REQUIRE(at != std::string::npos);
+    text.replace(at, 18, "\"formatVersion\": 2");
+    {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out << text;
+    }
+
+    const LoadResult loaded = LoadJob(path);
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    CHECK(loaded.fileVersion == 2);
+    const SequenceStep& back = loaded.job.sequence[1].children[0];
+    REQUIRE(back.boundary.size() == 3);
+    CHECK_FALSE(back.boundary[1].arc);
+    REQUIRE(back.toolpath.moves.size() == 1);
+    CHECK_FALSE(back.toolpath.moves[0].arc);
+}
+
+TEST_CASE("a rounded outline of lines and arcs closes with its arcs kept")
+{
+    // A 20 by 10 slot: two straight sides and two half circles of radius 5,
+    // given in any order, one arc backwards.
+    auto arcPiece = [](Vec3 from, Vec3 to, Vec3 centre, double axisZ) {
+        PathVertex start;
+        start.point = from;
+        start.arc = true;
+        start.centre = centre;
+        start.axis = { 0, 0, axisZ };
+        PathVertex end;
+        end.point = to;
+        return Path{ start, end };
+    };
+    const std::vector<Path> pieces = {
+        PathFromPoints({ { 0, 0, 0 }, { 20, 0, 0 } }),
+        arcPiece({ 0, 10, 0 }, { 0, 0, 0 }, { 0, 5, 0 }, 1),        // the left end, anticlockwise
+        PathFromPoints({ { 20, 10, 0 }, { 0, 10, 0 } }),
+        arcPiece({ 20, 10, 0 }, { 20, 0, 0 }, { 20, 5, 0 }, -1)     // the right end, given backwards
+    };
+
+    const Path path = ClosePath(pieces, 1);
+    REQUIRE(path.size() == 4);
+    CHECK(SignedArea(path) == doctest::Approx(200 + 3.14159265358979 * 25));
+
+    size_t arcs = 0;
+    for (const PathVertex& vertex : path)
+    {
+        CHECK(vertex.point.z == 1);
+        if (vertex.arc)
+        {
+            ++arcs;
+            CHECK(ArcIsAnticlockwise(vertex));      // the whole path turns anticlockwise
+        }
+    }
+    CHECK(arcs == 2);
+
+    // The right end reaches out to x 25, and across at y 5 the slot runs -5 to 25.
+    double low = 0, high = 0;
+    PathExtent(path, { 1, 0, 0 }, low, high);
+    CHECK(low == doctest::Approx(-5));
+    CHECK(high == doctest::Approx(25));
+    std::vector<double> crossings = PathCrossings(path, { 1, 0, 0 }, { 0, 1, 0 }, 5);
+    REQUIRE(crossings.size() >= 2);
+    CHECK(*std::min_element(crossings.begin(), crossings.end()) == doctest::Approx(-5));
+    CHECK(*std::max_element(crossings.begin(), crossings.end()) == doctest::Approx(25));
+
+    // At y 9 the ends are 3 in from the arcs' widest.
+    crossings = PathCrossings(path, { 1, 0, 0 }, { 0, 1, 0 }, 9);
+    CHECK(*std::max_element(crossings.begin(), crossings.end()) == doctest::Approx(23));
+}
+
+TEST_CASE("a full circle from two half arcs is exact, and turned anticlockwise")
+{
+    PathVertex a;
+    a.point = { 5, 0, 0 };
+    a.arc = true;
+    a.axis = { 0, 0, -1 };     // clockwise
+    PathVertex b;
+    b.point = { -5, 0, 0 };
+    b.arc = true;
+    b.axis = { 0, 0, -1 };
+    const Path path = ClosePath({ Path{ a, b, a } }, 0);
+    REQUIRE(path.size() == 2);
+    CHECK(SignedArea(path) == doctest::Approx(3.14159265358979 * 25));
+    CHECK(ArcIsAnticlockwise(path[0]));
+    CHECK(ArcIsAnticlockwise(path[1]));
+
+    // Drawn, it stays on the circle.
+    for (const Vec3& point : PathPoints(path, true))
+        CHECK(std::hypot(point.x, point.y) == doctest::Approx(5));
 }
 
 TEST_CASE("an L of two edges closes into a triangle")
