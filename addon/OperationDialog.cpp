@@ -1310,6 +1310,106 @@ void CEntryExitPage::OnChoiceChanged()
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// CFacingPage
+
+const CFacingPage::SizeControls CFacingPage::kStep =
+{
+    IDC_FACING_STEP_PERCENT_RADIO, IDC_FACING_STEP_PERCENT, IDC_FACING_STEP_DISTANCE_RADIO, IDC_FACING_STEP_DISTANCE
+};
+
+const CFacingPage::SizeControls CFacingPage::kOvertravel =
+{
+    IDC_FACING_OVER_PERCENT_RADIO, IDC_FACING_OVER_PERCENT, IDC_FACING_OVER_DISTANCE_RADIO, IDC_FACING_OVER_DISTANCE
+};
+
+BEGIN_MESSAGE_MAP(CFacingPage, COperationPage)
+    ON_BN_CLICKED(IDC_FACING_STEP_PERCENT_RADIO, &CFacingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_FACING_STEP_DISTANCE_RADIO, &CFacingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_FACING_OVER_PERCENT_RADIO, &CFacingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_FACING_OVER_DISTANCE_RADIO, &CFacingPage::OnChoiceChanged)
+END_MESSAGE_MAP()
+
+CFacingPage::CFacingPage(COperationDlg* pOwner)
+    : COperationPage(IDD_OP_FACING, pOwner)
+{
+}
+
+void CFacingPage::LoadSize(const SizeControls& ids, const ToolRelativeSize& size)
+{
+    CheckRadioButton(ids.percentRadio, ids.distanceRadio, size.usePercent ? ids.percentRadio : ids.distanceRadio);
+    SetNumber(ids.percent, size.percent);
+    SetNumber(ids.distance, size.distance);
+}
+
+void CFacingPage::Load(const SequenceStep& step)
+{
+    const FacingSettings& facing = step.facing;
+    const int direction = (facing.direction == CutDirection::Conventional) ? IDC_FACING_CONVENTIONAL
+                          : (facing.direction == CutDirection::Mixed)      ? IDC_FACING_MIXED
+                                                                           : IDC_FACING_CLIMB;
+    CheckRadioButton(IDC_FACING_CLIMB, IDC_FACING_MIXED, direction);
+    LoadSize(kStep, facing.stepDistance);
+    LoadSize(kOvertravel, facing.overtravel);
+    UpdateFields();
+}
+
+void CFacingPage::SaveSize(const SizeControls& ids, const wchar_t* name, ToolRelativeSize& size, std::wstring& found)
+{
+    // Only the chosen box is read.
+    const std::wstring label(name);
+    size.usePercent = IsDlgButtonChecked(ids.distanceRadio) != BST_CHECKED;
+    if (size.usePercent)
+        ReadNumber(ids.percent, (L"The " + label + L" percentage").c_str(), size.percent, found);
+    else
+        ReadNumber(ids.distance, (L"The " + label + L" distance").c_str(), size.distance, found);
+}
+
+bool CFacingPage::Save(SequenceStep& step, std::wstring& problems)
+{
+    FacingSettings facing = step.facing;
+    std::wstring found;
+
+    switch (GetCheckedRadioButton(IDC_FACING_CLIMB, IDC_FACING_MIXED))
+    {
+    case IDC_FACING_CONVENTIONAL: facing.direction = CutDirection::Conventional; break;
+    case IDC_FACING_MIXED:        facing.direction = CutDirection::Mixed; break;
+    default:                      facing.direction = CutDirection::Climb; break;
+    }
+    SaveSize(kStep, L"step", facing.stepDistance, found);
+    SaveSize(kOvertravel, L"overtravel", facing.overtravel, found);
+
+    if (found.empty())
+    {
+        for (const std::string& problem : ValidateFacing(facing))
+            AppendProblem(found, FromUtf8(problem));
+    }
+
+    if (!found.empty())
+    {
+        AppendProblem(problems, found);
+        return false;
+    }
+
+    step.facing = facing;
+    return true;
+}
+
+void CFacingPage::UpdateFields()
+{
+    for (const SizeControls* pIds : { &kStep, &kOvertravel })
+    {
+        const bool percent = IsDlgButtonChecked(pIds->distanceRadio) != BST_CHECKED;
+        GetDlgItem(pIds->percent)->EnableWindow(percent);
+        GetDlgItem(pIds->distance)->EnableWindow(!percent);
+    }
+}
+
+void CFacingPage::OnChoiceChanged()
+{
+    UpdateFields();
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // CDrillingPage
 
 BEGIN_MESSAGE_MAP(CDrillingPage, COperationPage)
@@ -1512,7 +1612,7 @@ BOOL COperationDlg::OnInitDialog()
         // Entry/Exit is shared with them too.
         AddPage(L"Entry/Exit", std::make_unique<CEntryExitPage>(this));
 
-        AddPage(L"Facing", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
+        AddPage(L"Facing", std::make_unique<CFacingPage>(this));
     }
     else if (m_step.type == StepType::Drill)
     {

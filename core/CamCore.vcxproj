@@ -68,6 +68,7 @@
     <ClCompile Include="Drill.cpp" />
     <ClCompile Include="DrillToolpath.cpp" />
     <ClCompile Include="EntryExit.cpp" />
+    <ClCompile Include="Facing.cpp" />
     <ClCompile Include="Features.cpp" />
     <ClCompile Include="Feeds.cpp" />
     <ClCompile Include="FileIO.cpp" />
@@ -82,6 +83,7 @@
     <ClInclude Include="Drill.h" />
     <ClInclude Include="DrillToolpath.h" />
     <ClInclude Include="EntryExit.h" />
+    <ClInclude Include="Facing.h" />
     <ClInclude Include="Features.h" />
     <ClInclude Include="Feeds.h" />
     <ClInclude Include="FileIO.h" />

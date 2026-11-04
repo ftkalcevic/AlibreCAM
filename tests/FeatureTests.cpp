@@ -331,6 +331,84 @@ TEST_CASE("entry and exit settings load back unchanged, and default when missing
     fs::remove(path, ignored);
 }
 
+TEST_CASE("facing settings load back unchanged, and default when missing")
+{
+    const fs::path path = TempCam();
+
+    Job job;
+    SequenceStep origin;
+    origin.id = NewStableId();
+    origin.name = "O1";
+    job.sequence.push_back(origin);
+
+    SequenceStep group;
+    group.type = StepType::Group;
+    group.id = NewStableId();
+    group.name = "F1";
+
+    SequenceStep facing;
+    facing.type = StepType::Facing;
+    facing.id = NewStableId();
+    facing.name = "Facing 1";
+    facing.facing.direction = CutDirection::Mixed;
+    facing.facing.stepDistance = { false, 30, 4.5 };
+    facing.facing.overtravel = { true, 75, 6 };
+    group.children.push_back(facing);
+    job.sequence.push_back(group);
+
+    REQUIRE(SaveJob(job, path).ok);
+    const LoadResult loaded = LoadJob(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    const FacingSettings& back = loaded.job.sequence[1].children[0].facing;
+    CHECK(back.direction == CutDirection::Mixed);
+    CHECK_FALSE(back.stepDistance.usePercent);
+    CHECK(back.stepDistance.percent == 30);
+    CHECK(back.stepDistance.distance == 4.5);
+    CHECK(back.overtravel.usePercent);
+    CHECK(back.overtravel.percent == 75);
+    CHECK(back.overtravel.distance == 6);
+
+    // A facing saved before the Facing tab existed gets 25% and 50%.
+    {
+        std::ofstream out(path, std::ios::binary);
+        out << R"({"format":"AlibreCAM","formatVersion":2,"assembly":{"name":"a","guid":"b"},"sequence":[)"
+            << R"({"type":"group","id":"g","name":"F","children":[{"type":"facing","id":"f","name":"Facing 1"}]}]})";
+    }
+    const LoadResult old = LoadJob(path);
+    REQUIRE(old.status == LoadStatus::Ok);
+    const FacingSettings& defaults = old.job.sequence[0].children[0].facing;
+    CHECK(defaults.direction == CutDirection::Climb);
+    CHECK(defaults.stepDistance.usePercent);
+    CHECK(defaults.stepDistance.percent == 25);
+    CHECK(defaults.overtravel.percent == 50);
+
+    std::error_code ignored;
+    fs::remove(path, ignored);
+}
+
+TEST_CASE("step distance and overtravel work from the tool, or as distances")
+{
+    FacingSettings facing;
+    CHECK(ResolveSize(facing.stepDistance, 10) == doctest::Approx(2.5));
+    CHECK(ResolveSize(facing.overtravel, 10) == doctest::Approx(5));
+    facing.stepDistance.usePercent = false;
+    CHECK(ResolveSize(facing.stepDistance, 10) == 2);
+    CHECK(ValidateFacing(facing).empty());
+
+    facing.stepDistance = { true, 0, 2 };
+    CHECK(ValidateFacing(facing).size() == 1);
+    facing.stepDistance = { true, 120, 2 };
+    CHECK(ValidateFacing(facing).size() == 1);
+    facing.stepDistance = { false, 0, 0 };
+    CHECK(ValidateFacing(facing).size() == 1);
+
+    facing = FacingSettings();
+    facing.overtravel = { true, 0, -1 };     // 0% is fine, the distance isn't used
+    CHECK(ValidateFacing(facing).empty());
+    facing.overtravel.usePercent = false;
+    CHECK(ValidateFacing(facing).size() == 1);
+}
+
 TEST_CASE("only the entry and exit values in use are checked")
 {
     EntryExitSettings settings;

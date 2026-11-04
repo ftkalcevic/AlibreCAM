@@ -255,6 +255,37 @@ private:
     static const LeadControls kRetract;
 };
 
+// The Facing operation's own tab.
+class CFacingPage : public COperationPage
+{
+public:
+    explicit CFacingPage(COperationDlg* pOwner);
+
+    void Load(const camcore::SequenceStep& step) override;
+    bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
+
+    enum { IDD = IDD_OP_FACING };
+
+protected:
+    afx_msg void OnChoiceChanged();
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    // A "% Tool Dia" or "Distance" pair of radio buttons, each with its box.
+    struct SizeControls
+    {
+        int percentRadio, percent, distanceRadio, distance;
+    };
+
+    void LoadSize(const SizeControls& ids, const camcore::ToolRelativeSize& size);
+    void SaveSize(const SizeControls& ids, const wchar_t* name, camcore::ToolRelativeSize& size, std::wstring& found);
+    void UpdateFields();
+
+    static const SizeControls kStep;
+    static const SizeControls kOvertravel;
+};
+
 // The Drill operation's own tab.
 class CDrillingPage : public COperationPage
 {

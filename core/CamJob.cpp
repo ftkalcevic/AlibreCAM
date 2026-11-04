@@ -517,6 +517,68 @@ namespace camcore
             return true;
         }
 
+        json WriteSize(const ToolRelativeSize& size)
+        {
+            return { { "usePercent", size.usePercent }, { "percent", size.percent }, { "distance", size.distance } };
+        }
+
+        bool ReadSize(const json& parent, const char* name, ToolRelativeSize& size)
+        {
+            const auto item = parent.find(name);
+            return item != parent.end() && item->is_object() && ReadBool(*item, "usePercent", size.usePercent) &&
+                   ReadNumber(*item, "percent", size.percent) && ReadNumber(*item, "distance", size.distance);
+        }
+
+        const char* CutDirectionName(CutDirection direction)
+        {
+            switch (direction)
+            {
+            case CutDirection::Conventional: return "conventional";
+            case CutDirection::Mixed:        return "mixed";
+            default:                         return "climb";
+            }
+        }
+
+        json WriteFacing(const FacingSettings& facing)
+        {
+            return
+            {
+                { "direction", CutDirectionName(facing.direction) },
+                { "stepDistance", WriteSize(facing.stepDistance) },
+                { "overtravel", WriteSize(facing.overtravel) }
+            };
+        }
+
+        // Facings saved before the Facing tab existed have the defaults.
+        bool ReadFacing(const json& step, FacingSettings& facing)
+        {
+            facing = FacingSettings();
+            const auto item = step.find("facing");
+            if (item == step.end())
+                return true;
+            if (!item->is_object())
+                return false;
+
+            std::string direction;
+            if (!ReadString(*item, "direction", direction) || !ReadSize(*item, "stepDistance", facing.stepDistance) ||
+                !ReadSize(*item, "overtravel", facing.overtravel))
+                return false;
+
+            static const CutDirection directions[] =
+            {
+                CutDirection::Climb, CutDirection::Conventional, CutDirection::Mixed
+            };
+            for (CutDirection candidate : directions)
+            {
+                if (direction == CutDirectionName(candidate))
+                {
+                    facing.direction = candidate;
+                    return true;
+                }
+            }
+            return false;
+        }
+
         // Operations saved before the Tool tab existed have no tool.
         bool ReadTool(const json& step, std::string& toolId)
         {
@@ -647,7 +709,8 @@ namespace camcore
                 return { { "type", "facing" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
                          { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
                          { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
-                         { "cutLevels", WriteCutLevels(step.cutLevels) }, { "entryExit", WriteEntryExit(step.entryExit) } };
+                         { "cutLevels", WriteCutLevels(step.cutLevels) }, { "entryExit", WriteEntryExit(step.entryExit) },
+                         { "facing", WriteFacing(step.facing) } };
 
             if (step.type == StepType::Drill)
                 return { { "type", "drill" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
@@ -705,7 +768,7 @@ namespace camcore
                 step.type = StepType::Facing;
                 return ReadTool(item, step.toolId) && ReadFeeds(item, step.feeds) && ReadToolpath(item, step.toolpath) &&
                        ReadFeatures(item, step.features) && ReadCutLevels(item, step.cutLevels) &&
-                       ReadEntryExit(item, step.entryExit) &&
+                       ReadEntryExit(item, step.entryExit) && ReadFacing(item, step.facing) &&
                        ReadClearance(item, step.clearance);
             }
 
