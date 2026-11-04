@@ -1350,6 +1350,15 @@ void CFacingPage::Load(const SequenceStep& step)
     CheckRadioButton(IDC_FACING_CLIMB, IDC_FACING_MIXED, direction);
     LoadSize(kStep, facing.stepDistance);
     LoadSize(kOvertravel, facing.overtravel);
+
+    CheckRadioButton(IDC_FACING_LINEAR, IDC_FACING_SPIRAL,
+                     facing.cutType == FacingCutType::Spiral ? IDC_FACING_SPIRAL : IDC_FACING_LINEAR);
+    SetNumber(IDC_FACING_CUT_ANGLE, facing.cutAngle);
+    const int start = (facing.start == StartCorner::TopRight)      ? IDC_FACING_TOP_RIGHT
+                      : (facing.start == StartCorner::BottomLeft)  ? IDC_FACING_BOTTOM_LEFT
+                      : (facing.start == StartCorner::BottomRight) ? IDC_FACING_BOTTOM_RIGHT
+                                                                   : IDC_FACING_TOP_LEFT;
+    CheckRadioButton(IDC_FACING_TOP_LEFT, IDC_FACING_BOTTOM_RIGHT, start);
     UpdateFields();
 }
 
@@ -1377,6 +1386,17 @@ bool CFacingPage::Save(SequenceStep& step, std::wstring& problems)
     }
     SaveSize(kStep, L"step", facing.stepDistance, found);
     SaveSize(kOvertravel, L"overtravel", facing.overtravel, found);
+
+    facing.cutType = (IsDlgButtonChecked(IDC_FACING_SPIRAL) == BST_CHECKED) ? FacingCutType::Spiral
+                                                                            : FacingCutType::Linear;
+    ReadNumber(IDC_FACING_CUT_ANGLE, L"The cut angle", facing.cutAngle, found);
+    switch (GetCheckedRadioButton(IDC_FACING_TOP_LEFT, IDC_FACING_BOTTOM_RIGHT))
+    {
+    case IDC_FACING_TOP_RIGHT:    facing.start = StartCorner::TopRight; break;
+    case IDC_FACING_BOTTOM_LEFT:  facing.start = StartCorner::BottomLeft; break;
+    case IDC_FACING_BOTTOM_RIGHT: facing.start = StartCorner::BottomRight; break;
+    default:                      facing.start = StartCorner::TopLeft; break;
+    }
 
     if (found.empty())
     {

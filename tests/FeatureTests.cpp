@@ -353,6 +353,9 @@ TEST_CASE("facing settings load back unchanged, and default when missing")
     facing.facing.direction = CutDirection::Mixed;
     facing.facing.stepDistance = { false, 30, 4.5 };
     facing.facing.overtravel = { true, 75, 6 };
+    facing.facing.cutType = FacingCutType::Spiral;
+    facing.facing.cutAngle = 30;
+    facing.facing.start = StartCorner::BottomRight;
     group.children.push_back(facing);
     job.sequence.push_back(group);
 
@@ -367,6 +370,9 @@ TEST_CASE("facing settings load back unchanged, and default when missing")
     CHECK(back.overtravel.usePercent);
     CHECK(back.overtravel.percent == 75);
     CHECK(back.overtravel.distance == 6);
+    CHECK(back.cutType == FacingCutType::Spiral);
+    CHECK(back.cutAngle == 30);
+    CHECK(back.start == StartCorner::BottomRight);
 
     // A facing saved before the Facing tab existed gets 25% and 50%.
     {
@@ -381,6 +387,9 @@ TEST_CASE("facing settings load back unchanged, and default when missing")
     CHECK(defaults.stepDistance.usePercent);
     CHECK(defaults.stepDistance.percent == 25);
     CHECK(defaults.overtravel.percent == 50);
+    CHECK(defaults.cutType == FacingCutType::Linear);
+    CHECK(defaults.cutAngle == 0);
+    CHECK(defaults.start == StartCorner::TopLeft);
 
     std::error_code ignored;
     fs::remove(path, ignored);

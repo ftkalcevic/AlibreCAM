@@ -539,14 +539,74 @@ namespace camcore
             }
         }
 
+        const char* CornerName(StartCorner corner)
+        {
+            switch (corner)
+            {
+            case StartCorner::TopRight:    return "topRight";
+            case StartCorner::BottomLeft:  return "bottomLeft";
+            case StartCorner::BottomRight: return "bottomRight";
+            default:                       return "topLeft";
+            }
+        }
+
         json WriteFacing(const FacingSettings& facing)
         {
             return
             {
                 { "direction", CutDirectionName(facing.direction) },
                 { "stepDistance", WriteSize(facing.stepDistance) },
-                { "overtravel", WriteSize(facing.overtravel) }
+                { "overtravel", WriteSize(facing.overtravel) },
+                { "cutType", facing.cutType == FacingCutType::Spiral ? "spiral" : "linear" },
+                { "cutAngle", facing.cutAngle },
+                { "start", CornerName(facing.start) }
             };
+        }
+
+        // Facings saved before these settings existed keep the defaults.
+        bool ReadFacingPattern(const json& item, FacingSettings& facing)
+        {
+            const auto cutType = item.find("cutType");
+            if (cutType != item.end())
+            {
+                if (*cutType == "linear")
+                    facing.cutType = FacingCutType::Linear;
+                else if (*cutType == "spiral")
+                    facing.cutType = FacingCutType::Spiral;
+                else
+                    return false;
+            }
+
+            const auto angle = item.find("cutAngle");
+            if (angle != item.end())
+            {
+                if (!angle->is_number())
+                    return false;
+                facing.cutAngle = angle->get<double>();
+            }
+
+            const auto start = item.find("start");
+            if (start != item.end())
+            {
+                if (!start->is_string())
+                    return false;
+                static const StartCorner corners[] =
+                {
+                    StartCorner::TopLeft, StartCorner::TopRight, StartCorner::BottomLeft, StartCorner::BottomRight
+                };
+                bool known = false;
+                for (StartCorner corner : corners)
+                {
+                    if (start->get<std::string>() == CornerName(corner))
+                    {
+                        facing.start = corner;
+                        known = true;
+                    }
+                }
+                if (!known)
+                    return false;
+            }
+            return true;
         }
 
         json WritePolyline(const Polyline& points)
@@ -589,7 +649,7 @@ namespace camcore
 
             std::string direction;
             if (!ReadString(*item, "direction", direction) || !ReadSize(*item, "stepDistance", facing.stepDistance) ||
-                !ReadSize(*item, "overtravel", facing.overtravel))
+                !ReadSize(*item, "overtravel", facing.overtravel) || !ReadFacingPattern(*item, facing))
                 return false;
 
             static const CutDirection directions[] =

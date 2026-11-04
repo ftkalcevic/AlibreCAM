@@ -158,6 +158,13 @@
 #define IDC_FACING_OVER_DISTANCE_RADIO  13218
 #define IDC_FACING_OVER_PERCENT         13219
 #define IDC_FACING_OVER_DISTANCE        13220
+#define IDC_FACING_LINEAR               13221
+#define IDC_FACING_SPIRAL               13222
+#define IDC_FACING_TOP_LEFT             13223
+#define IDC_FACING_TOP_RIGHT            13224
+#define IDC_FACING_BOTTOM_LEFT          13225
+#define IDC_FACING_BOTTOM_RIGHT         13226
+#define IDC_FACING_CUT_ANGLE            13227
 
 // Next default values for new objects
 //
@@ -165,7 +172,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        13024
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13221
+#define _APS_NEXT_CONTROL_VALUE         13228
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

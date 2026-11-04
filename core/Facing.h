@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "Features.h"
 #include "Origin.h"
 
 namespace camcore
@@ -16,6 +17,12 @@ namespace camcore
         Climb,
         Conventional,
         Mixed           // both, cutting in each direction
+    };
+
+    enum class FacingCutType
+    {
+        Linear,         // straight passes across the area
+        Spiral          // round the area, working inwards or outwards
     };
 
     // A size given as a share of the tool's diameter or as a distance. Both
@@ -33,6 +40,9 @@ namespace camcore
         CutDirection direction = CutDirection::Climb;
         ToolRelativeSize stepDistance{ true, 25.0, 2.0 };   // across, between passes
         ToolRelativeSize overtravel{ true, 50.0, 3.0 };     // past the area's edge
+        FacingCutType cutType = FacingCutType::Linear;
+        double cutAngle = 0.0;                              // degrees from the origin's X, about its Z
+        StartCorner start = StartCorner::TopLeft;           // seen from the origin's +Z
     };
 
     // The size in mm for a tool of this diameter.
