@@ -48,6 +48,9 @@ protected:
                     bool blankAllowed = false, bool* pBlank = nullptr);
     void SetNumber(int id, double value);
 
+    // Reads a number quietly, as the user types. False if the box isn't one.
+    bool ReadValue(int id, double& value);
+
     COperationDlg* m_pOwner;
 
 private:
@@ -210,7 +213,6 @@ protected:
     DECLARE_MESSAGE_MAP()
 
 private:
-    bool ReadValue(int id, double& value);      // quietly, as the user types
     static int StepPosition(double step, double depth);
     void ShowDepths();
     void FitSteps();
@@ -284,6 +286,36 @@ private:
 
     static const SizeControls kStep;
     static const SizeControls kOvertravel;
+};
+
+// The Profiling operation's own tab.
+class CProfilingPage : public COperationPage
+{
+public:
+    explicit CProfilingPage(COperationDlg* pOwner);
+
+    void Load(const camcore::SequenceStep& step) override;
+    bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
+
+    enum { IDD = IDD_OP_PROFILING };
+
+protected:
+    BOOL OnInitDialog() override;
+    afx_msg void OnChoiceChanged();
+    afx_msg void OnWidthChanged();
+    afx_msg void OnStepChanged();
+    afx_msg void OnHScroll(UINT code, UINT position, CScrollBar* pScrollBar);
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    void ShowStepover();
+    void UpdateFields();
+
+    double m_cutWidth;          // the stepover as edited so far
+    double m_stepPerCut;
+    CSliderCtrl m_stepSlider;
+    bool m_updating;            // the page is setting its own boxes
 };
 
 // The Drill operation's own tab.

@@ -76,6 +76,9 @@
     <ClCompile Include="FileIO.cpp" />
     <ClCompile Include="Origin.cpp" />
     <ClCompile Include="PseudoPost.cpp" />
+    <ClCompile Include="PathBuilder.cpp" />
+    <ClCompile Include="Profiling.cpp" />
+    <ClCompile Include="ProfileToolpath.cpp" />
     <ClCompile Include="ToolLibrary.cpp" />
     <ClCompile Include="Toolpath.cpp" />
   </ItemGroup>
@@ -89,6 +92,9 @@
     <ClInclude Include="EntryExit.h" />
     <ClInclude Include="Facing.h" />
     <ClInclude Include="FacingToolpath.h" />
+    <ClInclude Include="PathBuilder.h" />
+    <ClInclude Include="Profiling.h" />
+    <ClInclude Include="ProfileToolpath.h" />
     <ClInclude Include="Features.h" />
     <ClInclude Include="Feeds.h" />
     <ClInclude Include="FileIO.h" />

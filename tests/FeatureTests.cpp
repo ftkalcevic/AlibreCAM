@@ -48,6 +48,8 @@ TEST_CASE("Facing accepts flat faces and edges")
     CHECK(FeatureAllowed(FeatureFilter::FacingArea, PickKind::PlanarFace));
     CHECK(FeatureAllowed(FeatureFilter::FacingArea, PickKind::LineEdge));
     CHECK(FeatureAllowed(FeatureFilter::FacingArea, PickKind::CircleEdge));
+    CHECK(FeatureAllowed(FeatureFilter::FacingArea, PickKind::CurveEdge));
+    CHECK_FALSE(FeatureAllowed(FeatureFilter::Points, PickKind::CurveEdge));
     CHECK_FALSE(FeatureAllowed(FeatureFilter::FacingArea, PickKind::CylindricalFace));
     CHECK_FALSE(FeatureAllowed(FeatureFilter::FacingArea, PickKind::DesignPoint));
 }
@@ -485,6 +487,20 @@ TEST_CASE("facing takes edges that lie on one plane parallel to the origin plane
         CheckFacingFeatures(frame, { LineAt({ 0, 0, 3 }, { 50, 0, 3 }), LineAt({ 0, 10, 5 }, { 50, 10, 5 }) });
     CHECK_FALSE(heights.ok);
     CHECK(heights.problem.find("Edge 2") != std::string::npos);
+
+    // A flat spline joins them, but not one that rises in the middle or at an end.
+    PickedGeometry spline;
+    spline.kind = PickKind::CurveEdge;
+    spline.start = { 0, 20, 3 };
+    spline.point = { 10, 30, 3 };
+    spline.end = { 25, 20, 3 };
+    CHECK(CheckFacingFeatures(frame, { LineAt({ 0, 0, 3 }, { 50, 0, 3 }), spline }).ok);
+    PickedGeometry humped = spline;
+    humped.point.z = 4;
+    CHECK_FALSE(CheckFacingFeatures(frame, { humped }).ok);
+    PickedGeometry tipped = spline;
+    tipped.end.z = 2;
+    CHECK_FALSE(CheckFacingFeatures(frame, { tipped }).ok);
 
     // Holes and points aren't facing features.
     PickedGeometry hole;

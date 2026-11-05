@@ -242,9 +242,13 @@ namespace
         Log(L"[pick] circle axis left as Alibre gives it: no flat face along it");
     }
 
-    bool ReadEdge(IADEdge* pEdge, PickedGeometry& pick)
+    // Lines, circles and arcs. With allowCurves, any other curve too, such as a
+    // spline, as its ends and the point halfway along its parameter.
+    bool ReadEdge(IADEdge* pEdge, PickedGeometry& pick, bool allowCurves = false)
     {
         IADCurvePtr curve = pEdge->GetGeometry();
+        if (curve == nullptr)
+            return false;
 
         if (QI<IADLinePtr>(curve) != nullptr)
         {
@@ -272,6 +276,25 @@ namespace
             pick.point = ToVec3(arc->GetCenter());
             pick.direction = ToVec3(arc->GetAxis());
             pick.radius = arc->GetRadius();
+        }
+        else if (allowCurves)
+        {
+            double low = 0.0, high = 0.0;
+            curve->GetParameterExtents(&low, &high);
+            IADVertexPtr startVertex = pEdge->GetStartVertex();
+            IADVertexPtr endVertex = pEdge->GetEndVertex();
+            double from = low, to = high;
+            if (startVertex != nullptr && endVertex != nullptr)
+            {
+                from = curve->ParamAtPoint(startVertex->GetPoint());
+                to = curve->ParamAtPoint(endVertex->GetPoint());
+            }
+
+            pick.kind = PickKind::CurveEdge;
+            pick.start = ToVec3(curve->PointAtParam(from));
+            pick.end = ToVec3(curve->PointAtParam(to));
+            pick.point = ToVec3(curve->PointAtParam((from + to) / 2.0));
+            pick.direction = pick.end - pick.start;
         }
         else
         {
@@ -546,7 +569,7 @@ namespace
         }
         else if (IADEdgePtr edge = QI<IADEdgePtr>(target))
         {
-            read = ReadEdge(edge, pick);
+            read = ReadEdge(edge, pick, true);
         }
         else if (IADFacePtr face = QI<IADFacePtr>(target))
         {

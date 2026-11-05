@@ -68,5 +68,7 @@ namespace camcore
     // circular edges, which needn't close. The face must be parallel to the
     // frame's XY plane. The edges must all lie in one plane parallel to it, so a
     // straight edge must run across Z and a circle's axis along Z.
-    FacingFeatureCheck CheckFacingFeatures(const Frame& frame, const std::vector<PickedGeometry>& features);
+    // operation names the operation in the problems, as Profiling uses the same rules.
+    FacingFeatureCheck CheckFacingFeatures(const Frame& frame, const std::vector<PickedGeometry>& features,
+                                           const std::string& operation = "Facing");
 }

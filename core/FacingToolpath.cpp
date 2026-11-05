@@ -2,6 +2,8 @@
 
 #include "FacingToolpath.h"
 
+#include "PathBuilder.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -50,145 +52,6 @@ namespace camcore
             {
                 return { u * along.x + v * across.x, u * along.y + v * across.y, z };
             }
-        };
-
-        class PathBuilder
-        {
-        public:
-            PathBuilder(Toolpath& toolpath, const FeedSettings& feeds, double clearance, double cutZ)
-                : m_toolpath(toolpath), m_feeds(feeds), m_clearance(clearance), m_cutZ(cutZ)
-            {
-            }
-
-            // The entry and exit motions, and whether this level uses each.
-            void SetEntryExit(const EntryExitSettings* pSettings, bool entry, bool exit)
-            {
-                m_pEntryExit = pSettings;
-                m_useEntry = entry && pSettings != nullptr && pSettings->entry != EntryMode::None;
-                m_useExit = exit && pSettings != nullptr && pSettings->exit != ExitMode::None;
-            }
-
-            // Into a cut at point, which runs along direction. away is square to it,
-            // pointing away from the geometry. A positive lead angle or radius puts the
-            // lead on that side, and a negative one on the other.
-            void Enter(const Vec3& point, const Vec3& direction, const Vec3& away)
-            {
-                if (!m_useEntry)
-                {
-                    ArriveAt(point);
-                    return;
-                }
-
-                const EntryExitSettings& settings = *m_pEntryExit;
-                if (settings.entry == EntryMode::AlongPath3D)
-                {
-                    // Down a ramp in line with the cut, from the height above it.
-                    const double angle = settings.alongPathAngle * kPi / 180.0;
-                    const Vec3 top = Plus(point, direction, -settings.alongPathHeight / std::tan(angle));
-                    TransferTo(top);
-                    Add(MoveKind::Feed, { top.x, top.y, m_cutZ + settings.alongPathHeight }, m_feeds.plunge);
-                    Cut(point);
-                    return;
-                }
-
-                const LeadMotion& lead = settings.engage;
-                if (lead.shape == LeadShape::Radial)
-                {
-                    // A quarter circle, its centre the radius off to one side, ending
-                    // tangent to the cut. It always starts behind the cut.
-                    const Vec3 side = (lead.radius < 0.0) ? Vec3{ -away.x, -away.y, 0.0 } : away;
-                    const double radius = std::fabs(lead.radius);
-                    const Vec3 centre = Plus(point, side, radius);
-                    ArriveAt(Plus(centre, direction, -radius));
-                    ArcTo(point, centre, !TurnsLeft(direction, side));
-                    return;
-                }
-
-                // A straight line, the angle from the cut's line, positive to the away side.
-                const double angle = lead.angle * kPi / 180.0;
-                Vec3 start = Plus(point, direction, -lead.length * std::cos(angle));
-                start = Plus(start, away, lead.length * std::sin(angle));
-                ArriveAt(start);
-                Cut(point);
-            }
-
-            // Out of a cut that ended at point, running along direction, then up to
-            // the clearance plane.
-            void Exit(const Vec3& point, const Vec3& direction, const Vec3& away)
-            {
-                if (m_useExit)
-                {
-                    const LeadMotion& lead = m_pEntryExit->retract;
-                    if (lead.shape == LeadShape::Radial)
-                    {
-                        // A quarter circle on from the cut, curving to one side.
-                        const Vec3 side = (lead.radius < 0.0) ? Vec3{ -away.x, -away.y, 0.0 } : away;
-                        const double radius = std::fabs(lead.radius);
-                        const Vec3 centre = Plus(point, side, radius);
-                        ArcTo(Plus(centre, direction, radius), centre, !TurnsLeft(direction, side));
-                    }
-                    else
-                    {
-                        const double angle = lead.angle * kPi / 180.0;
-                        const Vec3 end = Plus(point, direction, lead.length * std::cos(angle));
-                        Cut(Plus(end, away, lead.length * std::sin(angle)));
-                    }
-                }
-                Leave();
-            }
-
-            // Across at the clearance plane to above the point.
-            void TransferTo(const Vec3& point)
-            {
-                const Vec3 above{ point.x, point.y, m_clearance };
-                if (m_toolpath.moves.empty() || m_feeds.transferAtRapid)
-                    Add(MoveKind::Rapid, above, 0.0);
-                else
-                    Add(MoveKind::Feed, above, m_feeds.transfer);
-            }
-
-            // Across at the clearance plane to above the point, then down to cut.
-            void ArriveAt(const Vec3& point)
-            {
-                TransferTo(point);
-                Add(MoveKind::Feed, { point.x, point.y, m_cutZ }, m_feeds.plunge);
-            }
-
-            void Cut(const Vec3& point) { Add(MoveKind::Feed, { point.x, point.y, m_cutZ }, m_feeds.cut); }
-
-            // Round an arc about centre to point, at the cut feed.
-            void ArcTo(const Vec3& point, const Vec3& centre, bool clockwise)
-            {
-                Add(MoveKind::Feed, { point.x, point.y, m_cutZ }, m_feeds.cut);
-                ToolpathMove& move = m_toolpath.moves.back();
-                move.arc = true;
-                move.centre = { centre.x, centre.y, m_cutZ };
-                move.clockwise = clockwise;
-            }
-
-            void Leave()
-            {
-                const Vec3& at = m_toolpath.moves.back().to;
-                Add(MoveKind::Rapid, { at.x, at.y, m_clearance }, 0.0);
-            }
-
-        private:
-            void Add(MoveKind kind, const Vec3& to, double feed)
-            {
-                ToolpathMove move;
-                move.kind = kind;
-                move.to = to;
-                move.feed = feed;
-                m_toolpath.moves.push_back(move);
-            }
-
-            Toolpath& m_toolpath;
-            const FeedSettings& m_feeds;
-            double m_clearance;
-            double m_cutZ;
-            const EntryExitSettings* m_pEntryExit = nullptr;
-            bool m_useEntry = false;
-            bool m_useExit = false;
         };
 
         // Where the boundary crosses the line v, as its lowest and highest u.

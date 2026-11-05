@@ -56,24 +56,26 @@ namespace camcore
         return problems;
     }
 
-    FacingFeatureCheck CheckFacingFeatures(const Frame& frame, const std::vector<PickedGeometry>& features)
+    FacingFeatureCheck CheckFacingFeatures(const Frame& frame, const std::vector<PickedGeometry>& features,
+                                           const std::string& operation)
     {
         if (features.empty())
-            return Refuse("There are no features. Pick one flat face, or the edges around the area to face.");
+            return Refuse("There are no features. Pick one flat face, or edges.");
 
         size_t faces = 0;
         for (const PickedGeometry& feature : features)
         {
             if (feature.kind == PickKind::PlanarFace)
                 ++faces;
-            else if (feature.kind != PickKind::LineEdge && feature.kind != PickKind::CircleEdge)
-                return Refuse("Facing can only use a flat face, or straight and circular edges.");
+            else if (feature.kind != PickKind::LineEdge && feature.kind != PickKind::CircleEdge &&
+                     feature.kind != PickKind::CurveEdge)
+                return Refuse(operation + " can only use a flat face, or edges.");
         }
 
         if (faces > 1)
-            return Refuse("Facing can use only one face.");
+            return Refuse(operation + " can use only one face.");
         if (faces == 1 && features.size() > 1)
-            return Refuse("Facing uses either one face or edges, not both.");
+            return Refuse(operation + " uses either one face or edges, not both.");
 
         FacingFeatureCheck check;
         if (faces == 1)
@@ -98,6 +100,16 @@ namespace camcore
                 if (LeanAlongZ(frame, edge.end - edge.start) > kFacingParallelTolerance)
                     return Refuse(which + " isn't parallel to the origin's XY plane.");
                 level = WorldToFrame(frame, edge.start).z;
+            }
+            else if (edge.kind == PickKind::CurveEdge)
+            {
+                // A curve is judged flat if its ends and its middle are at one height.
+                const double start = WorldToFrame(frame, edge.start).z;
+                const double middle = WorldToFrame(frame, edge.point).z;
+                const double end = WorldToFrame(frame, edge.end).z;
+                if (std::fabs(middle - start) > kFacingLevelTolerance || std::fabs(end - start) > kFacingLevelTolerance)
+                    return Refuse(which + " isn't flat on a plane parallel to the origin's XY plane.");
+                level = start;
             }
             else
             {

@@ -107,6 +107,7 @@ namespace camcore
             case PickKind::LineEdge:        return "lineEdge";
             case PickKind::CircleEdge:      return "circleEdge";
             case PickKind::DesignPoint:     return "designPoint";
+            case PickKind::CurveEdge:       return "curveEdge";
             default:                        return "none";
             }
         }
@@ -116,7 +117,7 @@ namespace camcore
             static const PickKind kinds[] =
             {
                 PickKind::PlanarFace, PickKind::CylindricalFace, PickKind::LineEdge, PickKind::CircleEdge,
-                PickKind::DesignPoint
+                PickKind::DesignPoint, PickKind::CurveEdge
             };
             for (PickKind candidate : kinds)
             {
@@ -157,7 +158,8 @@ namespace camcore
                 { "point", WriteVec3(pick.point) },
                 { "direction", WriteVec3(pick.direction) }
             };
-            if (pick.kind == PickKind::LineEdge || pick.kind == PickKind::CylindricalFace)
+            if (pick.kind == PickKind::LineEdge || pick.kind == PickKind::CylindricalFace ||
+                pick.kind == PickKind::CurveEdge)
             {
                 item["start"] = WriteVec3(pick.start);
                 item["end"] = WriteVec3(pick.end);
@@ -187,6 +189,7 @@ namespace camcore
             switch (pick.kind)
             {
             case PickKind::LineEdge:
+            case PickKind::CurveEdge:
                 return ReadVec3(item, "start", pick.start) && ReadVec3(item, "end", pick.end);
 
             case PickKind::CylindricalFace:
@@ -682,6 +685,120 @@ namespace camcore
             return true;
         }
 
+        json WriteProfiling(const ProfilingSettings& profiling)
+        {
+            return
+            {
+                { "stockToLeave", profiling.stockToLeave },
+                { "direction", CutDirectionName(profiling.direction) },
+                { "startSide", profiling.startSide == ProfileSide::Left ? "left" : "right" },
+                { "useClosedSide", profiling.useClosedSide },
+                { "closedSide", profiling.closedSide == ClosedProfileSide::Inside ? "inside" : "outside" },
+                { "useModelForSide", profiling.useModelForSide },
+                { "cutWidth", profiling.cutWidth },
+                { "stepPerCut", profiling.stepPerCut },
+                { "tabs",
+                  {
+                      { "use", profiling.useTabs },
+                      { "height", profiling.tabHeight },
+                      { "length", profiling.tabLength },
+                      { "spacing", profiling.tabSpacing == TabSpacing::Distance ? "distance" : "count" },
+                      { "count", profiling.tabCount },
+                      { "distance", profiling.tabDistance }
+                  } }
+            };
+        }
+
+        // Reads a name into one of two choices, leaving the value alone if it's missing.
+        template <typename T>
+        bool ReadChoice(const json& parent, const char* name, const char* firstName, T first, const char* secondName,
+                        T second, T& value)
+        {
+            const auto item = parent.find(name);
+            if (item == parent.end())
+                return true;
+            if (!item->is_string())
+                return false;
+            const std::string text = item->get<std::string>();
+            if (text == firstName)
+                value = first;
+            else if (text == secondName)
+                value = second;
+            else
+                return false;
+            return true;
+        }
+
+        // Reads a value only if it's there, so settings added later keep their defaults.
+        bool ReadOptionalNumber(const json& parent, const char* name, double& value)
+        {
+            const auto item = parent.find(name);
+            return item == parent.end() || ReadNumber(parent, name, value);
+        }
+
+        bool ReadOptionalBool(const json& parent, const char* name, bool& value)
+        {
+            const auto item = parent.find(name);
+            return item == parent.end() || ReadBool(parent, name, value);
+        }
+
+        // Profiling saved before the Profiling tab existed has the defaults.
+        bool ReadProfiling(const json& step, ProfilingSettings& profiling)
+        {
+            profiling = ProfilingSettings();
+            const auto item = step.find("profiling");
+            if (item == step.end())
+                return true;
+            if (!item->is_object())
+                return false;
+
+            const auto direction = item->find("direction");
+            if (direction != item->end())
+            {
+                if (!direction->is_string())
+                    return false;
+                const std::string name = direction->get<std::string>();
+                if (name == CutDirectionName(CutDirection::Climb))
+                    profiling.direction = CutDirection::Climb;
+                else if (name == CutDirectionName(CutDirection::Conventional))
+                    profiling.direction = CutDirection::Conventional;
+                else if (name == CutDirectionName(CutDirection::Mixed))
+                    profiling.direction = CutDirection::Mixed;
+                else
+                    return false;
+            }
+
+            if (!ReadOptionalNumber(*item, "stockToLeave", profiling.stockToLeave) ||
+                !ReadChoice(*item, "startSide", "right", ProfileSide::Right, "left", ProfileSide::Left,
+                            profiling.startSide) ||
+                !ReadOptionalBool(*item, "useClosedSide", profiling.useClosedSide) ||
+                !ReadChoice(*item, "closedSide", "outside", ClosedProfileSide::Outside, "inside",
+                            ClosedProfileSide::Inside, profiling.closedSide) ||
+                !ReadOptionalBool(*item, "useModelForSide", profiling.useModelForSide) ||
+                !ReadOptionalNumber(*item, "cutWidth", profiling.cutWidth) ||
+                !ReadOptionalNumber(*item, "stepPerCut", profiling.stepPerCut))
+                return false;
+
+            const auto tabs = item->find("tabs");
+            if (tabs == item->end())
+                return true;
+            if (!tabs->is_object())
+                return false;
+            const auto count = tabs->find("count");
+            if (count != tabs->end())
+            {
+                if (!count->is_number_integer())
+                    return false;
+                profiling.tabCount = count->get<int>();
+            }
+            return ReadOptionalBool(*tabs, "use", profiling.useTabs) &&
+                   ReadOptionalNumber(*tabs, "height", profiling.tabHeight) &&
+                   ReadOptionalNumber(*tabs, "length", profiling.tabLength) &&
+                   ReadChoice(*tabs, "spacing", "count", TabSpacing::Count, "distance", TabSpacing::Distance,
+                              profiling.tabSpacing) &&
+                   ReadOptionalNumber(*tabs, "distance", profiling.tabDistance);
+        }
+
         // Facings saved before the Facing tab existed have the defaults.
         bool ReadFacing(const json& step, FacingSettings& facing)
         {
@@ -825,7 +942,9 @@ namespace camcore
             return true;
         }
 
-        json WriteStep(const SequenceStep& step)
+        json WriteStep(const SequenceStep& step);
+
+        json WriteStepBody(const SequenceStep& step)
         {
             if (step.type == StepType::Group)
             {
@@ -844,6 +963,13 @@ namespace camcore
                          { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
                          { "cutLevels", WriteCutLevels(step.cutLevels) }, { "entryExit", WriteEntryExit(step.entryExit) },
                          { "facing", WriteFacing(step.facing) }, { "boundary", WritePath(step.boundary) } };
+
+            if (step.type == StepType::Profiling)
+                return { { "type", "profiling" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
+                         { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
+                         { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
+                         { "cutLevels", WriteCutLevels(step.cutLevels) }, { "entryExit", WriteEntryExit(step.entryExit) },
+                         { "profiling", WriteProfiling(step.profiling) } };
 
             if (step.type == StepType::Drill)
                 return { { "type", "drill" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
@@ -869,7 +995,9 @@ namespace camcore
             };
         }
 
-        bool ReadStep(const json& item, SequenceStep& step)
+        bool ReadStep(const json& item, SequenceStep& step);
+
+        bool ReadStepBody(const json& item, SequenceStep& step)
         {
             std::string type;
             if (!item.is_object() || !ReadString(item, "type", type))
@@ -906,6 +1034,15 @@ namespace camcore
                        ReadClearance(item, step.clearance);
             }
 
+            if (type == "profiling")
+            {
+                step.type = StepType::Profiling;
+                return ReadTool(item, step.toolId) && ReadFeeds(item, step.feeds) && ReadToolpath(item, step.toolpath) &&
+                       ReadFeatures(item, step.features) && ReadCutLevels(item, step.cutLevels) &&
+                       ReadEntryExit(item, step.entryExit) && ReadProfiling(item, step.profiling) &&
+                       ReadClearance(item, step.clearance);
+            }
+
             if (type == "drill")
             {
                 // Drills saved before the Drilling tab existed have no settings yet.
@@ -934,11 +1071,33 @@ namespace camcore
                    origin.options.xQuarterTurns >= 0 && origin.options.xQuarterTurns <= 3 &&
                    ReadVec3(*options, "offset", origin.options.offset);
         }
+
+        json WriteStep(const SequenceStep& step)
+        {
+            json item = WriteStepBody(step);
+            if (step.suppressed)
+                item["suppressed"] = true;
+            return item;
+        }
+
+        // Steps saved before suppressing existed aren't suppressed.
+        bool ReadStep(const json& item, SequenceStep& step)
+        {
+            if (!ReadStepBody(item, step))
+                return false;
+            const auto suppressed = item.find("suppressed");
+            if (suppressed == item.end())
+                return true;
+            if (!suppressed->is_boolean())
+                return false;
+            step.suppressed = suppressed->get<bool>();
+            return true;
+        }
     }
 
     bool IsOperation(StepType type)
     {
-        return type == StepType::Drill || type == StepType::Facing;
+        return type == StepType::Drill || type == StepType::Facing || type == StepType::Profiling;
     }
 
     std::string NewStableId()
@@ -1105,12 +1264,31 @@ namespace camcore
         if (stepIndex >= job.sequence.size())
             return kNoStepIndex;
 
+        // A Set Origin is its own, even suppressed. Steps below skip suppressed ones.
         for (size_t i = stepIndex + 1; i-- > 0;)
         {
-            if (job.sequence[i].type == StepType::SetOrigin)
+            const SequenceStep& step = job.sequence[i];
+            if (step.type == StepType::SetOrigin && (i == stepIndex || !step.suppressed))
                 return i;
         }
         return kNoStepIndex;
+    }
+
+    size_t WorkZeroIndex(const Job& job)
+    {
+        for (size_t i = 0; i < job.sequence.size(); ++i)
+        {
+            if (job.sequence[i].type == StepType::SetOrigin && !job.sequence[i].suppressed)
+                return i;
+        }
+        return kNoStepIndex;
+    }
+
+    bool IsOperationSuppressed(const Job& job, size_t folder, size_t operation)
+    {
+        if (folder >= job.sequence.size() || operation >= job.sequence[folder].children.size())
+            return false;
+        return job.sequence[folder].suppressed || job.sequence[folder].children[operation].suppressed;
     }
 
     bool MoveStep(Job& job, size_t from, size_t insertBefore, size_t& newIndex)

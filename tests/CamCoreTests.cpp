@@ -95,6 +95,185 @@ TEST_CASE("a saved job loads back unchanged")
     CHECK(loaded.job.assembly.guid == "A4A39FD0-567C-4D6B-A085-77688483C8EA");
 }
 
+TEST_CASE("a profiling operation is an operation, and loads back with its shared settings")
+{
+    CHECK(IsOperation(StepType::Profiling));
+
+    TempFolder folder;
+    const fs::path path = folder / "Bracket.cam";
+    Job job = SampleJob();
+    SequenceStep origin;
+    origin.type = StepType::SetOrigin;
+    origin.id = NewStableId();
+    origin.name = "Origin 1";
+    job.sequence.push_back(origin);
+    SequenceStep group;
+    group.type = StepType::Group;
+    group.id = NewStableId();
+    group.name = "Folder 1";
+    SequenceStep profiling;
+    profiling.type = StepType::Profiling;
+    profiling.id = NewStableId();
+    profiling.name = "Profiling 1";
+    profiling.toolId = "t1";
+    profiling.cutLevels.totalDepth = 3;
+    profiling.cutLevels.roughDepth = 2.5;
+    profiling.cutLevels.finishDepth = 0.5;
+    profiling.entryExit.entry = EntryMode::Entry2D;
+    profiling.profiling.stockToLeave = -0.25;
+    profiling.profiling.direction = CutDirection::Climb;
+    profiling.profiling.startSide = ProfileSide::Left;
+    profiling.profiling.useClosedSide = true;
+    profiling.profiling.closedSide = ClosedProfileSide::Inside;
+    profiling.profiling.useModelForSide = true;
+    profiling.profiling.cutWidth = 6;
+    profiling.profiling.stepPerCut = 2;
+    profiling.profiling.useTabs = true;
+    profiling.profiling.tabHeight = 1.5;
+    profiling.profiling.tabLength = 8;
+    profiling.profiling.tabSpacing = TabSpacing::Distance;
+    profiling.profiling.tabCount = 3;
+    profiling.profiling.tabDistance = 40;
+    PickedGeometry spline;
+    spline.kind = PickKind::CurveEdge;
+    spline.start = { 1, 2, 3 };
+    spline.point = { 4, 5, 3 };
+    spline.end = { 7, 8, 3 };
+    profiling.features.push_back(spline);
+    group.children.push_back(profiling);
+    job.sequence.push_back(group);
+    REQUIRE(SaveJob(job, path).ok);
+
+    const LoadResult loaded = LoadJob(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    const SequenceStep& back = loaded.job.sequence[1].children[0];
+    CHECK(back.type == StepType::Profiling);
+    CHECK(back.name == "Profiling 1");
+    CHECK(back.toolId == "t1");
+    CHECK(back.cutLevels.totalDepth == 3);
+    CHECK(back.entryExit.entry == EntryMode::Entry2D);
+    const ProfilingSettings& p = back.profiling;
+    CHECK(p.stockToLeave == -0.25);
+    CHECK(p.direction == CutDirection::Climb);
+    CHECK(p.startSide == ProfileSide::Left);
+    CHECK(p.useClosedSide);
+    CHECK(p.closedSide == ClosedProfileSide::Inside);
+    CHECK(p.useModelForSide);
+    CHECK(p.cutWidth == 6);
+    CHECK(p.stepPerCut == 2);
+    CHECK(p.useTabs);
+    CHECK(p.tabHeight == 1.5);
+    CHECK(p.tabLength == 8);
+    CHECK(p.tabSpacing == TabSpacing::Distance);
+    CHECK(p.tabCount == 3);
+    CHECK(p.tabDistance == 40);
+    REQUIRE(back.features.size() == 1);
+    CHECK(back.features[0].kind == PickKind::CurveEdge);
+    CHECK(back.features[0].start.y == 2);
+    CHECK(back.features[0].end.x == 7);
+    CHECK(back.features[0].point.x == 4);
+    CHECK(ReadText(path).find("\"profiling\"") != std::string::npos);
+}
+
+TEST_CASE("profiling settings default as asked, and are checked")
+{
+    ProfilingSettings settings;
+    CHECK(settings.stockToLeave == 0);
+    CHECK(settings.direction == CutDirection::Mixed);
+    CHECK(settings.startSide == ProfileSide::Right);
+    CHECK_FALSE(settings.useClosedSide);
+    CHECK(settings.closedSide == ClosedProfileSide::Outside);
+    CHECK_FALSE(settings.useTabs);
+    CHECK(settings.tabSpacing == TabSpacing::Count);
+    CHECK(ValidateProfiling(settings).empty());
+
+    // A width needs a step that fits in it. Equal is fine.
+    settings.cutWidth = 4;
+    CHECK(ValidateProfiling(settings).size() == 1);
+    settings.stepPerCut = 4;
+    CHECK(ValidateProfiling(settings).empty());
+    settings.stepPerCut = 5;
+    CHECK(ValidateProfiling(settings).size() == 1);
+    settings.stepPerCut = 1;
+    settings.cutWidth = -1;
+    CHECK(ValidateProfiling(settings).size() == 1);
+    settings.cutWidth = 4;
+
+    // Stock to leave can be negative.
+    settings.stockToLeave = -1;
+    CHECK(ValidateProfiling(settings).empty());
+
+    // Tab values are only checked when tabs are used, and only the chosen spacing.
+    settings.tabHeight = 0;
+    settings.tabDistance = 0;
+    CHECK(ValidateProfiling(settings).empty());
+    settings.useTabs = true;
+    CHECK(ValidateProfiling(settings).size() == 1);     // the height; the count is used
+    settings.tabHeight = 1;
+    settings.tabCount = 0;
+    CHECK(ValidateProfiling(settings).size() == 1);
+    settings.tabSpacing = TabSpacing::Distance;
+    CHECK(ValidateProfiling(settings).size() == 1);     // now the distance
+    settings.tabDistance = 30;
+    CHECK(ValidateProfiling(settings).empty());
+}
+
+TEST_CASE("suppressed steps load back suppressed, and suppressed origins are skipped")
+{
+    Job job = SampleJob();
+    for (int i = 0; i < 2; ++i)
+    {
+        SequenceStep origin;
+        origin.type = StepType::SetOrigin;
+        origin.id = NewStableId();
+        origin.name = "Origin " + std::to_string(i + 1);
+        job.sequence.push_back(origin);
+
+        SequenceStep group;
+        group.type = StepType::Group;
+        group.id = NewStableId();
+        group.name = "Folder " + std::to_string(i + 1);
+        SequenceStep drill;
+        drill.type = StepType::Drill;
+        drill.id = NewStableId();
+        drill.name = "Drill " + std::to_string(i + 1);
+        group.children.push_back(drill);
+        group.children.push_back(drill);
+        group.children.back().id = NewStableId();
+        job.sequence.push_back(group);
+    }
+    // Origin 1, Folder 1, Origin 2, Folder 2.
+
+    CHECK(ActiveOriginIndex(job, 3) == 2);
+    CHECK(WorkZeroIndex(job) == 0);
+    job.sequence[2].suppressed = true;
+    CHECK(ActiveOriginIndex(job, 3) == 0);      // past the suppressed one
+    CHECK(ActiveOriginIndex(job, 2) == 2);      // but it's still its own
+    job.sequence[0].suppressed = true;
+    CHECK(WorkZeroIndex(job) == kNoStepIndex);
+    CHECK(ActiveOriginIndex(job, 1) == kNoStepIndex);
+    job.sequence[2].suppressed = false;
+    CHECK(WorkZeroIndex(job) == 2);
+
+    job.sequence[1].children[1].suppressed = true;
+    job.sequence[3].suppressed = true;
+    CHECK_FALSE(IsOperationSuppressed(job, 1, 0));
+    CHECK(IsOperationSuppressed(job, 1, 1));
+    CHECK(IsOperationSuppressed(job, 3, 0));        // its folder is
+
+    TempFolder folder;
+    const fs::path path = folder / "Bracket.cam";
+    REQUIRE(SaveJob(job, path).ok);
+    const LoadResult loaded = LoadJob(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    CHECK(loaded.job.sequence[0].suppressed);
+    CHECK_FALSE(loaded.job.sequence[1].suppressed);
+    CHECK_FALSE(loaded.job.sequence[1].children[0].suppressed);
+    CHECK(loaded.job.sequence[1].children[1].suppressed);
+    CHECK_FALSE(loaded.job.sequence[2].suppressed);
+    CHECK(loaded.job.sequence[3].suppressed);
+}
+
 TEST_CASE("non-ASCII names and paths survive a save and load")
 {
     TempFolder folder;

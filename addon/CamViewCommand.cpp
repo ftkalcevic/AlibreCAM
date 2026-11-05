@@ -210,7 +210,11 @@ void CCamViewCommand::DrawScene(IADAddOnCanvasDisplay* pCanvas, const CamScene& 
     {
         for (const CamScene::Toolpath& toolpath : scene.toolpaths)
         {
-            const float weight = toolpath.selected ? kSelectedToolpathLineWeight : kToolpathLineWeight;
+            // A suppressed operation's toolpath is a thin grey line, a little bolder when selected.
+            const float weight = toolpath.suppressed ? (toolpath.selected ? kToolpathLineWeight
+                                                                          : kSuppressedToolpathLineWeight)
+                                 : toolpath.selected ? kSelectedToolpathLineWeight
+                                                     : kToolpathLineWeight;
             const struct
             {
                 const wchar_t* name;
@@ -218,9 +222,9 @@ void CCamViewCommand::DrawScene(IADAddOnCanvasDisplay* pCanvas, const CamScene& 
                 const std::vector<std::vector<Vec3>>& runs;
             } kinds[] =
             {
-                { L"Toolpath rapids", kRapidColour, toolpath.rapids },
-                { L"Toolpath feeds", kFeedColour, toolpath.feeds },
-                { L"Toolpath arcs", kArcColour, toolpath.arcs }
+                { L"Toolpath rapids", toolpath.suppressed ? kSuppressedColour : kRapidColour, toolpath.rapids },
+                { L"Toolpath feeds", toolpath.suppressed ? kSuppressedColour : kFeedColour, toolpath.feeds },
+                { L"Toolpath arcs", toolpath.suppressed ? kSuppressedColour : kArcColour, toolpath.arcs }
             };
 
             for (const auto& kind : kinds)

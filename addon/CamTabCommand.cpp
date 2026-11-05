@@ -7,6 +7,7 @@
 #include "DisplaySettings.h"
 #include "DrillToolpath.h"
 #include "FacingToolpath.h"
+#include "ProfileToolpath.h"
 #include "FileIO.h"
 #include "PostDialog.h"
 #include "PseudoPost.h"
@@ -45,9 +46,11 @@ namespace
         ID_CAM_ADD_FOLDER,
         ID_CAM_ADD_DRILL,
         ID_CAM_ADD_FACING,
+        ID_CAM_ADD_PROFILING,
         ID_CAM_EDIT_STEP,
         ID_CAM_RENAME_STEP,
         ID_CAM_DUPLICATE_STEP,
+        ID_CAM_SUPPRESS_STEP,
         ID_CAM_GENERATE,
         ID_CAM_POST,
         ID_CAM_DELETE_STEP
@@ -751,7 +754,9 @@ void CCamTabCommand::AddOperation(size_t folder, camcore::StepType type)
     camcore::SequenceStep operation;
     operation.type = type;
     operation.id = camcore::NewStableId();
-    operation.name = NewOperationName(m_job, type == camcore::StepType::Facing ? "Facing" : "Drill");
+    operation.name = NewOperationName(m_job, type == camcore::StepType::Facing      ? "Facing"
+                                             : type == camcore::StepType::Profiling ? "Profiling"
+                                                                                    : "Drill");
 
     // A new operation starts with the tool selected in the tree.
     operation.toolId = m_job.selectedToolId;
@@ -851,6 +856,35 @@ void CCamTabCommand::SelectStep(const StepRef& ref)
         RebuildScene();
 }
 
+bool CCamTabCommand::IsSuppressed(const StepRef& ref) const
+{
+    const camcore::SequenceStep* pStep = FindStep(ref);
+    return pStep != nullptr && pStep->suppressed;
+}
+
+bool CCamTabCommand::CanSuppress(const StepRef& ref) const
+{
+    // An open dialog holds a copy of its step, which would undo the change.
+    return CanEditSequence() && !IsDialogOpen() && FindStep(ref) != nullptr;
+}
+
+void CCamTabCommand::ToggleSuppressed(const StepRef& ref)
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    if (!CanSuppress(ref))
+        return;
+    camcore::SequenceStep* pStep = FindStep(ref);
+    pStep->suppressed = !pStep->suppressed;
+    Log(L"[sequence] %s %s", pStep->suppressed ? L"suppressed" : L"unsuppressed", FromUtf8(pStep->name).c_str());
+
+    // A Set Origin changes which origin the steps below it use.
+    m_selected = ref;
+    MarkJobChanged();
+    ShowSequence();
+    RebuildScene();
+}
+
 void CCamTabCommand::DuplicateStep(const StepRef& ref)
 {
     // An open dialog holds a step's position, as for dragging.
@@ -883,10 +917,10 @@ void CCamTabCommand::Generate(const StepRef& scope)
     if (!CanGenerate())
         return;
 
-    const std::vector<StepRef> targets = OperationsIn(scope);
+    const std::vector<StepRef> targets = OperationsIn(scope, false);
     if (targets.empty())
     {
-        ShowError(L"There are no operations to generate.");
+        ShowError(L"There are no operations to generate. Suppressed operations are only generated on their own.");
         return;
     }
 
@@ -924,7 +958,7 @@ void CCamTabCommand::Generate(const StepRef& scope)
         ::MessageBoxW(theApp.m_hAlibreWnd, (summary + L"\n" + problems).c_str(), L"AlibreCAM", MB_OK | MB_ICONWARNING);
 }
 
-std::vector<StepRef> CCamTabCommand::OperationsIn(const StepRef& scope) const
+std::vector<StepRef> CCamTabCommand::OperationsIn(const StepRef& scope, bool forPost) const
 {
     // No step means every operation, a folder means its operations, and an operation itself.
     std::vector<StepRef> targets;
@@ -932,10 +966,20 @@ std::vector<StepRef> CCamTabCommand::OperationsIn(const StepRef& scope) const
     {
         if (scope.step != StepRef::kNone && scope.step != i)
             continue;
+
+        // A suppressed folder's operations are only generated when it's the scope, and never posted.
+        const bool folderSuppressed = m_job.sequence[i].suppressed;
+        if (folderSuppressed && (forPost || scope.step == StepRef::kNone))
+            continue;
+
         for (size_t c = 0; c < m_job.sequence[i].children.size(); ++c)
         {
-            if (!scope.IsOperation() || scope.child == c)
-                targets.push_back(StepRef{ i, c });
+            if (scope.IsOperation() && scope.child != c)
+                continue;
+            const bool own = scope.IsOperation();
+            if (m_job.sequence[i].children[c].suppressed && (forPost || !own))
+                continue;
+            targets.push_back(StepRef{ i, c });
         }
     }
     return targets;
@@ -948,10 +992,10 @@ void CCamTabCommand::Post(const StepRef& scope)
     if (!CanGenerate())
         return;
 
-    const std::vector<StepRef> targets = OperationsIn(scope);
+    const std::vector<StepRef> targets = OperationsIn(scope, true);
     if (targets.empty())
     {
-        ShowError(L"There are no operations to post.");
+        ShowError(L"There are no operations to post. Suppressed operations aren't posted.");
         return;
     }
 
@@ -969,11 +1013,18 @@ void CCamTabCommand::Post(const StepRef& scope)
         return;
     }
 
-    // The job's one work zero is its first Set Origin, which every point is given from.
-    const camcore::FrameResult workZero = camcore::BuildFrame(m_job.sequence.front().origin);
+    // The job's one work zero is its first Set Origin that isn't suppressed,
+    // which every point is given from.
+    const size_t workZeroIndex = camcore::WorkZeroIndex(m_job);
+    if (workZeroIndex == camcore::kNoStepIndex)
+    {
+        ShowError(L"Every Set Origin is suppressed, so there's no work zero to post from.");
+        return;
+    }
+    const camcore::FrameResult workZero = camcore::BuildFrame(m_job.sequence[workZeroIndex].origin);
     if (!workZero.ok)
     {
-        ShowError(L"The first Set Origin is incomplete, so there's no work zero to post from.");
+        ShowError(L"The first Set Origin that isn't suppressed is incomplete, so there's no work zero to post from.");
         return;
     }
 
@@ -1038,7 +1089,8 @@ void CCamTabCommand::Post(const StepRef& scope)
 bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& problem)
 {
     camcore::SequenceStep& operation = m_job.sequence[target.step].children[target.child];
-    if (operation.type != camcore::StepType::Drill && operation.type != camcore::StepType::Facing)
+    if (operation.type != camcore::StepType::Drill && operation.type != camcore::StepType::Facing &&
+        operation.type != camcore::StepType::Profiling)
     {
         problem = "Toolpaths for this operation aren't built yet.";
         return false;
@@ -1075,19 +1127,10 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         }
     }
 
-    // Facing checks its features against the origin, turns them into the
-    // area's outline, then faces inside it.
-    if (operation.type == camcore::StepType::Facing)
-    {
-        operation.boundary.clear();
-        const camcore::FacingFeatureCheck check = camcore::CheckFacingFeatures(frame.frame, operation.features);
-        if (!check.ok)
-        {
-            problem = check.problem;
-            return false;
-        }
-
-        std::vector<camcore::Path> pieces;
+    // Each feature's outline, read again from the model, in the origin's frame
+    // with arcs' axes too, in the Features list's order.
+    std::vector<std::vector<camcore::Path>> outlines;
+    auto readOutlines = [&]() {
         for (const camcore::PickedGeometry& feature : operation.features)
         {
             std::vector<camcore::Path> outline;
@@ -1097,8 +1140,6 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
                 problem = ToUtf8(outlineProblem);
                 return false;
             }
-
-            // Into the origin's frame, arcs' axes too.
             for (camcore::Path& piece : outline)
             {
                 for (camcore::PathVertex& vertex : piece)
@@ -1111,8 +1152,69 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
                     }
                     vertex.point = camcore::WorldToFrame(frame.frame, vertex.point);
                 }
-                pieces.push_back(std::move(piece));
             }
+            outlines.push_back(std::move(outline));
+        }
+        return true;
+    };
+
+    // Profiling takes the same features as Facing, joins them end to end into
+    // its profile, then follows it.
+    if (operation.type == camcore::StepType::Profiling)
+    {
+        const camcore::FacingFeatureCheck check =
+            camcore::CheckFacingFeatures(frame.frame, operation.features, "Profiling");
+        if (!check.ok)
+        {
+            problem = check.problem;
+            return false;
+        }
+        if (!readOutlines())
+            return false;
+
+        camcore::ProfileToolpathInput profileInput;
+        profileInput.operation = &operation;
+        profileInput.tool = (pTool != nullptr) ? &tool : nullptr;
+        profileInput.havePartMaxZ = havePartMaxZ;
+        profileInput.partMaxZ = partMaxZ;
+        profileInput.profile = camcore::ChainProfile(outlines, check.level);
+        if (!profileInput.profile.ok)
+        {
+            problem = profileInput.profile.problem;
+            return false;
+        }
+        Log(L"[generate] profile of %zu points, %s", profileInput.profile.path.size(),
+            profileInput.profile.closed ? L"closed" : L"open");
+
+        const camcore::ToolpathResult profileResult = camcore::GenerateProfileToolpath(profileInput);
+        if (!profileResult.ok)
+        {
+            problem = profileResult.problem;
+            return false;
+        }
+        operation.toolpath = profileResult.toolpath;
+        return true;
+    }
+
+    // Facing checks its features against the origin, turns them into the
+    // area's outline, then faces inside it.
+    if (operation.type == camcore::StepType::Facing)
+    {
+        operation.boundary.clear();
+        const camcore::FacingFeatureCheck check = camcore::CheckFacingFeatures(frame.frame, operation.features);
+        if (!check.ok)
+        {
+            problem = check.problem;
+            return false;
+        }
+        if (!readOutlines())
+            return false;
+
+        std::vector<camcore::Path> pieces;
+        for (std::vector<camcore::Path>& outline : outlines)
+        {
+            for (camcore::Path& piece : outline)
+                pieces.push_back(std::move(piece));
         }
 
         operation.boundary = camcore::ClosePath(pieces, check.level);
@@ -1573,6 +1675,7 @@ void CCamTabCommand::RebuildScene()
             CamScene::Toolpath drawn;
             // Bold when its operation is selected, or its folder is, which selects them all.
             drawn.selected = (m_selected.step == i && (!m_selected.IsOperation() || m_selected.child == c));
+            drawn.suppressed = camcore::IsOperationSuppressed(m_job, i, c);
 
             // A run carries on while moves are the same kind: rapids, straight feeds,
             // or arcs, which have their own colour. The first move only says where it
@@ -1926,6 +2029,7 @@ BEGIN_MESSAGE_MAP(CCamTabWnd, CWnd)
     ON_NOTIFY(TVN_BEGINLABELEDIT, IDC_CAM_TREE, &CCamTabWnd::OnTreeBeginRename)
     ON_NOTIFY(TVN_ENDLABELEDIT, IDC_CAM_TREE, &CCamTabWnd::OnTreeEndRename)
     ON_NOTIFY(TVN_BEGINDRAG, IDC_CAM_TREE, &CCamTabWnd::OnTreeBeginDrag)
+    ON_NOTIFY(NM_CUSTOMDRAW, IDC_CAM_TREE, &CCamTabWnd::OnTreeCustomDraw)
     ON_WM_MOUSEMOVE()
     ON_WM_LBUTTONUP()
     ON_WM_RBUTTONDOWN()
@@ -2175,6 +2279,8 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     const UINT deletable = m_pTab->CanDelete(ref) ? MF_ENABLED : MF_GRAYED;
     const UINT duplicable = m_pTab->CanDrag(ref) ? MF_ENABLED : MF_GRAYED;
     const UINT generatable = m_pTab->CanGenerate() ? MF_ENABLED : MF_GRAYED;
+    const UINT suppressible = (onStep && m_pTab->CanSuppress(ref)) ? MF_ENABLED : MF_GRAYED;
+    const UINT suppressedCheck = (onStep && m_pTab->IsSuppressed(ref)) ? MF_CHECKED : MF_UNCHECKED;
 
     CMenu menu;
     menu.CreatePopupMenu();
@@ -2185,6 +2291,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         menu.AppendMenu(MF_STRING | renamable, ID_CAM_RENAME_STEP, L"Rename");
         menu.AppendMenu(MF_STRING | deletable, ID_CAM_DELETE_STEP, L"Delete");
         menu.AppendMenu(MF_STRING | duplicable, ID_CAM_DUPLICATE_STEP, L"Duplicate");
+        menu.AppendMenu(MF_STRING | suppressible | suppressedCheck, ID_CAM_SUPPRESS_STEP, L"Suppress");
         menu.AppendMenu(MF_SEPARATOR);
 
         holes.CreatePopupMenu();
@@ -2193,6 +2300,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
 
         twoAndAHalfAxis.CreatePopupMenu();
         twoAndAHalfAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_FACING, L"Facing...");
+        twoAndAHalfAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_PROFILING, L"Profiling...");
         menu.AppendMenu(MF_POPUP | editable, reinterpret_cast<UINT_PTR>(twoAndAHalfAxis.GetSafeHmenu()),
                         L"Add 2 1/2 Axis");
         menu.AppendMenu(MF_SEPARATOR);
@@ -2205,6 +2313,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         menu.AppendMenu(MF_STRING | renamable, ID_CAM_RENAME_STEP, L"Rename");
         menu.AppendMenu(MF_STRING | deletable, ID_CAM_DELETE_STEP, L"Delete");
         menu.AppendMenu(MF_STRING | duplicable, ID_CAM_DUPLICATE_STEP, L"Duplicate");
+        menu.AppendMenu(MF_STRING | suppressible | suppressedCheck, ID_CAM_SUPPRESS_STEP, L"Suppress");
         menu.AppendMenu(MF_SEPARATOR);
         menu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
     }
@@ -2219,6 +2328,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
             menu.AppendMenu(MF_STRING | editable, ID_CAM_EDIT_STEP, L"Edit...");
             menu.AppendMenu(MF_STRING | deletable, ID_CAM_DELETE_STEP, L"Delete");
             menu.AppendMenu(MF_STRING | duplicable, ID_CAM_DUPLICATE_STEP, L"Duplicate");
+            menu.AppendMenu(MF_STRING | suppressible | suppressedCheck, ID_CAM_SUPPRESS_STEP, L"Suppress");
         }
         else
         {
@@ -2243,10 +2353,12 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     case ID_CAM_ADD_FOLDER:  m_pTab->AddFolder(); break;
     case ID_CAM_ADD_DRILL:   m_pTab->AddOperation(ref.step, camcore::StepType::Drill); break;
     case ID_CAM_ADD_FACING:  m_pTab->AddOperation(ref.step, camcore::StepType::Facing); break;
+    case ID_CAM_ADD_PROFILING: m_pTab->AddOperation(ref.step, camcore::StepType::Profiling); break;
     case ID_CAM_EDIT_STEP:   m_pTab->EditStep(ref); break;
     case ID_CAM_RENAME_STEP: m_tree.EditLabel(hItem); break;
     case ID_CAM_DELETE_STEP: m_pTab->DeleteStep(ref); break;
     case ID_CAM_DUPLICATE_STEP: m_pTab->DuplicateStep(ref); break;
+    case ID_CAM_SUPPRESS_STEP: m_pTab->ToggleSuppressed(ref); break;
     case ID_CAM_GENERATE:    m_pTab->Generate(ref); break;
     case ID_CAM_POST:        m_pTab->Post(ref); break;
     default:                 break;
@@ -2509,6 +2621,7 @@ void CCamTabWnd::ShowSequence(const camcore::Job& job, const StepRef& selected)
         m_tree.DeleteItem(hChild);
         hChild = hNext;
     }
+    m_greyItems.clear();
 
     for (size_t i = 0; i < job.sequence.size(); ++i)
     {
@@ -2519,12 +2632,16 @@ void CCamTabWnd::ShowSequence(const camcore::Job& job, const StepRef& selected)
 
         const HTREEITEM hItem = m_tree.InsertItem(text.c_str(), m_hOperations);
         m_tree.SetItemData(hItem, StepItemData(StepRef{ i }));
+        if (step.suppressed)
+            m_greyItems.insert(hItem);
 
-        // A folder's operations sit under it.
+        // A folder's operations sit under it, grey if it's suppressed.
         for (size_t c = 0; c < step.children.size(); ++c)
         {
             const HTREEITEM hOperation = m_tree.InsertItem(FromUtf8(step.children[c].name).c_str(), hItem);
             m_tree.SetItemData(hOperation, StepItemData(StepRef{ i, c }));
+            if (step.suppressed || step.children[c].suppressed)
+                m_greyItems.insert(hOperation);
         }
         m_tree.Expand(hItem, TVE_EXPAND);
     }
@@ -2534,6 +2651,28 @@ void CCamTabWnd::ShowSequence(const camcore::Job& job, const StepRef& selected)
         m_tree.SelectItem(hSelect);
 
     m_fillingTree = false;
+}
+
+void CCamTabWnd::OnTreeCustomDraw(NMHDR* pNotify, LRESULT* pResult)
+{
+    // Suppressed steps are drawn with grey text, unless they're selected.
+    NMTVCUSTOMDRAW* pDraw = reinterpret_cast<NMTVCUSTOMDRAW*>(pNotify);
+    *pResult = CDRF_DODEFAULT;
+    switch (pDraw->nmcd.dwDrawStage)
+    {
+    case CDDS_PREPAINT:
+        *pResult = CDRF_NOTIFYITEMDRAW;
+        break;
+    case CDDS_ITEMPREPAINT:
+    {
+        const HTREEITEM hItem = reinterpret_cast<HTREEITEM>(pDraw->nmcd.dwItemSpec);
+        if (m_greyItems.count(hItem) != 0 && (pDraw->nmcd.uItemState & CDIS_SELECTED) == 0)
+            pDraw->clrText = ::GetSysColor(COLOR_GRAYTEXT);
+        break;
+    }
+    default:
+        break;
+    }
 }
 
 void CCamTabWnd::PostClearSelection()

@@ -27,6 +27,7 @@ namespace
         {
         case StepType::Drill:  return L"Drill";
         case StepType::Facing: return L"Facing";
+        case StepType::Profiling: return L"Profiling";
         default:               return L"Operation";
         }
     }
@@ -123,6 +124,7 @@ namespace
         case PickKind::DesignPoint:     return L"Point";
         case PickKind::PlanarFace:      return L"Face";
         case PickKind::LineEdge:        return L"Edge";
+        case PickKind::CurveEdge:       return L"Curve";
         default:                        return L"Other";
         }
     }
@@ -938,7 +940,7 @@ bool CCutLevelsPage::Save(SequenceStep& step, std::wstring& problems)
     return true;
 }
 
-bool CCutLevelsPage::ReadValue(int id, double& value)
+bool COperationPage::ReadValue(int id, double& value)
 {
     CString text;
     GetDlgItemText(id, text);
@@ -1442,6 +1444,218 @@ void CFacingPage::OnChoiceChanged()
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// CProfilingPage
+
+namespace
+{
+    // The Step/Cut slider runs from 1% to 100% of the total cut width.
+    const int kWidthSliderMin = 1;
+    const int kWidthSliderMax = 100;
+}
+
+BEGIN_MESSAGE_MAP(CProfilingPage, COperationPage)
+    ON_BN_CLICKED(IDC_PROF_USE_CLOSED, &CProfilingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_PROF_USE_TABS, &CProfilingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_PROF_TAB_COUNT_RADIO, &CProfilingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_PROF_TAB_DISTANCE_RADIO, &CProfilingPage::OnChoiceChanged)
+    ON_EN_KILLFOCUS(IDC_PROF_CUT_WIDTH, &CProfilingPage::OnWidthChanged)
+    ON_EN_KILLFOCUS(IDC_PROF_STEP, &CProfilingPage::OnStepChanged)
+    ON_WM_HSCROLL()
+END_MESSAGE_MAP()
+
+CProfilingPage::CProfilingPage(COperationDlg* pOwner)
+    : COperationPage(IDD_OP_PROFILING, pOwner)
+    , m_cutWidth(0.0)
+    , m_stepPerCut(0.0)
+    , m_updating(false)
+{
+}
+
+BOOL CProfilingPage::OnInitDialog()
+{
+    COperationPage::OnInitDialog();
+    m_stepSlider.SubclassDlgItem(IDC_PROF_STEP_SLIDER, this);
+    m_stepSlider.SetRange(kWidthSliderMin, kWidthSliderMax);
+    return TRUE;
+}
+
+void CProfilingPage::Load(const SequenceStep& step)
+{
+    const ProfilingSettings& profiling = step.profiling;
+    SetNumber(IDC_PROF_STOCK, profiling.stockToLeave);
+
+    const int direction = (profiling.direction == CutDirection::Climb)          ? IDC_PROF_CLIMB
+                          : (profiling.direction == CutDirection::Conventional) ? IDC_PROF_CONVENTIONAL
+                                                                                : IDC_PROF_MIXED;
+    CheckRadioButton(IDC_PROF_CLIMB, IDC_PROF_MIXED, direction);
+    CheckRadioButton(IDC_PROF_RIGHT, IDC_PROF_LEFT,
+                     profiling.startSide == ProfileSide::Left ? IDC_PROF_LEFT : IDC_PROF_RIGHT);
+    CheckDlgButton(IDC_PROF_USE_CLOSED, profiling.useClosedSide ? BST_CHECKED : BST_UNCHECKED);
+    CheckRadioButton(IDC_PROF_OUTSIDE, IDC_PROF_INSIDE,
+                     profiling.closedSide == ClosedProfileSide::Inside ? IDC_PROF_INSIDE : IDC_PROF_OUTSIDE);
+    CheckDlgButton(IDC_PROF_USE_MODEL, profiling.useModelForSide ? BST_CHECKED : BST_UNCHECKED);
+
+    m_cutWidth = profiling.cutWidth;
+    m_stepPerCut = profiling.stepPerCut;
+    ShowStepover();
+
+    CheckDlgButton(IDC_PROF_USE_TABS, profiling.useTabs ? BST_CHECKED : BST_UNCHECKED);
+    SetNumber(IDC_PROF_TAB_HEIGHT, profiling.tabHeight);
+    SetNumber(IDC_PROF_TAB_LENGTH, profiling.tabLength);
+    CheckRadioButton(IDC_PROF_TAB_COUNT_RADIO, IDC_PROF_TAB_DISTANCE_RADIO,
+                     profiling.tabSpacing == TabSpacing::Distance ? IDC_PROF_TAB_DISTANCE_RADIO
+                                                                  : IDC_PROF_TAB_COUNT_RADIO);
+    SetNumber(IDC_PROF_TAB_COUNT, profiling.tabCount);
+    SetNumber(IDC_PROF_TAB_DISTANCE, profiling.tabDistance);
+    UpdateFields();
+}
+
+bool CProfilingPage::Save(SequenceStep& step, std::wstring& problems)
+{
+    // Take in anything typed but not yet left.
+    OnWidthChanged();
+    OnStepChanged();
+
+    ProfilingSettings profiling = step.profiling;
+    std::wstring found;
+
+    ReadNumber(IDC_PROF_STOCK, L"The stock to leave", profiling.stockToLeave, found);
+    switch (GetCheckedRadioButton(IDC_PROF_CLIMB, IDC_PROF_MIXED))
+    {
+    case IDC_PROF_CLIMB:        profiling.direction = CutDirection::Climb; break;
+    case IDC_PROF_CONVENTIONAL: profiling.direction = CutDirection::Conventional; break;
+    default:                    profiling.direction = CutDirection::Mixed; break;
+    }
+    profiling.startSide = (IsDlgButtonChecked(IDC_PROF_LEFT) == BST_CHECKED) ? ProfileSide::Left : ProfileSide::Right;
+    profiling.useClosedSide = IsDlgButtonChecked(IDC_PROF_USE_CLOSED) == BST_CHECKED;
+    profiling.closedSide = (IsDlgButtonChecked(IDC_PROF_INSIDE) == BST_CHECKED) ? ClosedProfileSide::Inside
+                                                                               : ClosedProfileSide::Outside;
+    profiling.useModelForSide = IsDlgButtonChecked(IDC_PROF_USE_MODEL) == BST_CHECKED;
+
+    // The boxes must hold numbers even when they've been checked as the user typed.
+    double typed = 0.0;
+    if (ReadNumber(IDC_PROF_CUT_WIDTH, L"The total cut width", typed, found) &&
+        ReadNumber(IDC_PROF_STEP, L"The step/cut", typed, found))
+    {
+        profiling.cutWidth = m_cutWidth;
+        profiling.stepPerCut = m_stepPerCut;
+    }
+
+    // Tab values are read only when tabs are used, and only the chosen spacing.
+    profiling.useTabs = IsDlgButtonChecked(IDC_PROF_USE_TABS) == BST_CHECKED;
+    profiling.tabSpacing = (IsDlgButtonChecked(IDC_PROF_TAB_DISTANCE_RADIO) == BST_CHECKED) ? TabSpacing::Distance
+                                                                                            : TabSpacing::Count;
+    if (profiling.useTabs)
+    {
+        ReadNumber(IDC_PROF_TAB_HEIGHT, L"The tab height", profiling.tabHeight, found);
+        ReadNumber(IDC_PROF_TAB_LENGTH, L"The tab length", profiling.tabLength, found);
+        if (profiling.tabSpacing == TabSpacing::Count)
+        {
+            double count = 0.0;
+            if (ReadNumber(IDC_PROF_TAB_COUNT, L"The number of tabs", count, found))
+            {
+                if (count != std::floor(count) || count > 10000.0)
+                    AppendProblem(found, L"The number of tabs must be a whole number.");
+                else
+                    profiling.tabCount = static_cast<int>(count);
+            }
+        }
+        else
+        {
+            ReadNumber(IDC_PROF_TAB_DISTANCE, L"The distance between tabs", profiling.tabDistance, found);
+        }
+    }
+
+    if (found.empty())
+    {
+        for (const std::string& problem : ValidateProfiling(profiling))
+            AppendProblem(found, FromUtf8(problem));
+    }
+
+    if (!found.empty())
+    {
+        AppendProblem(problems, found);
+        return false;
+    }
+
+    step.profiling = profiling;
+    return true;
+}
+
+void CProfilingPage::ShowStepover()
+{
+    // Puts the width, step and slider in step with what's been edited.
+    m_updating = true;
+    SetNumber(IDC_PROF_CUT_WIDTH, m_cutWidth);
+    SetNumber(IDC_PROF_STEP, m_stepPerCut);
+    int position = kWidthSliderMax;
+    if (m_cutWidth > 0.0)
+        position = static_cast<int>(std::lround(m_stepPerCut / m_cutWidth * kWidthSliderMax));
+    m_stepSlider.SetPos((std::max)(kWidthSliderMin, (std::min)(kWidthSliderMax, position)));
+
+    // A width of 0 is one pass, so there's no step to set.
+    const BOOL stepped = m_cutWidth > 0.0;
+    GetDlgItem(IDC_PROF_STEP)->EnableWindow(stepped);
+    m_stepSlider.EnableWindow(stepped);
+    m_updating = false;
+}
+
+void CProfilingPage::OnWidthChanged()
+{
+    double width = 0.0;
+    if (m_updating || !ReadValue(IDC_PROF_CUT_WIDTH, width) || !(width >= 0.0) || width == m_cutWidth)
+        return;
+
+    // The step stays if it fits, and becomes the whole width otherwise.
+    m_cutWidth = width;
+    if (!(m_stepPerCut > 0.0) || m_stepPerCut > m_cutWidth)
+        m_stepPerCut = m_cutWidth;
+    ShowStepover();
+}
+
+void CProfilingPage::OnStepChanged()
+{
+    double step = 0.0;
+    if (m_updating || !ReadValue(IDC_PROF_STEP, step) || !(step > 0.0) || step == m_stepPerCut)
+        return;
+
+    m_stepPerCut = (std::min)(step, m_cutWidth);
+    ShowStepover();
+}
+
+void CProfilingPage::OnHScroll(UINT code, UINT position, CScrollBar* pScrollBar)
+{
+    COperationPage::OnHScroll(code, position, pScrollBar);
+    if (m_updating || pScrollBar == nullptr || pScrollBar->GetSafeHwnd() != m_stepSlider.GetSafeHwnd())
+        return;
+
+    m_stepPerCut = m_cutWidth * m_stepSlider.GetPos() / kWidthSliderMax;
+    ShowStepover();
+}
+
+void CProfilingPage::UpdateFields()
+{
+    // Outside and Inside only when closed curves use them.
+    const BOOL closed = IsDlgButtonChecked(IDC_PROF_USE_CLOSED) == BST_CHECKED;
+    GetDlgItem(IDC_PROF_OUTSIDE)->EnableWindow(closed);
+    GetDlgItem(IDC_PROF_INSIDE)->EnableWindow(closed);
+
+    // The rest of the Tabs group only when tabs are used, and only the chosen spacing's box.
+    const BOOL tabs = IsDlgButtonChecked(IDC_PROF_USE_TABS) == BST_CHECKED;
+    const BOOL byCount = IsDlgButtonChecked(IDC_PROF_TAB_DISTANCE_RADIO) != BST_CHECKED;
+    for (const int id : { IDC_PROF_TAB_HEIGHT, IDC_PROF_TAB_LENGTH, IDC_PROF_TAB_COUNT_RADIO,
+                          IDC_PROF_TAB_DISTANCE_RADIO })
+        GetDlgItem(id)->EnableWindow(tabs);
+    GetDlgItem(IDC_PROF_TAB_COUNT)->EnableWindow(tabs && byCount);
+    GetDlgItem(IDC_PROF_TAB_DISTANCE)->EnableWindow(tabs && !byCount);
+}
+
+void CProfilingPage::OnChoiceChanged()
+{
+    UpdateFields();
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // CDrillingPage
 
 BEGIN_MESSAGE_MAP(CDrillingPage, COperationPage)
@@ -1628,12 +1842,12 @@ BOOL COperationDlg::OnInitDialog()
     AddPage(L"Feeds && Speeds", std::make_unique<CFeedsPage>(this));
     AddPage(L"Clearance", std::make_unique<CClearancePage>(this));
 
-    // Drill and Facing have no Sorting tab.
-    if (m_step.type != StepType::Drill && m_step.type != StepType::Facing)
+    // Drill, Facing and Profiling have no Sorting tab.
+    if (m_step.type != StepType::Drill && m_step.type != StepType::Facing && m_step.type != StepType::Profiling)
         AddPage(L"Sorting", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
 
     // Then its own.
-    if (m_step.type == StepType::Facing)
+    if (m_step.type == StepType::Facing || m_step.type == StepType::Profiling)
     {
         // Cut Levels is shared by the operations that cut in levels.
         auto cutLevels = std::make_unique<CCutLevelsPage>(this);
@@ -1645,7 +1859,11 @@ BOOL COperationDlg::OnInitDialog()
         // Entry/Exit is shared with them too.
         AddPage(L"Entry/Exit", std::make_unique<CEntryExitPage>(this));
 
-        AddPage(L"Facing", std::make_unique<CFacingPage>(this));
+        // Then the operation's own tab.
+        if (m_step.type == StepType::Facing)
+            AddPage(L"Facing", std::make_unique<CFacingPage>(this));
+        else
+            AddPage(L"Profiling", std::make_unique<CProfilingPage>(this));
     }
     else if (m_step.type == StepType::Drill)
     {
@@ -1782,7 +2000,9 @@ void COperationDlg::ShowLocateProblem(const std::wstring& problem)
 FeatureFilter COperationDlg::GetFeatureFilter() const
 {
     // Each operation type has its own filter. Drill needs points, and Facing faces and edges.
-    return (m_step.type == StepType::Facing) ? FeatureFilter::FacingArea : FeatureFilter::Points;
+    // Profiling borrows Facing's until its own is decided.
+    return (m_step.type == StepType::Facing || m_step.type == StepType::Profiling) ? FeatureFilter::FacingArea
+                                                                                   : FeatureFilter::Points;
 }
 
 void COperationDlg::StartSelectingFeatures()

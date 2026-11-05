@@ -167,14 +167,35 @@
 #define IDC_FACING_CUT_ANGLE            13227
 #define IDC_OP_GENERATE                 13228
 #define IDC_FACING_ARC_STEPOVER         13229
+#define IDD_OP_PROFILING                13024
+#define IDC_PROF_STOCK                  13230
+#define IDC_PROF_CLIMB                  13231
+#define IDC_PROF_CONVENTIONAL           13232
+#define IDC_PROF_MIXED                  13233
+#define IDC_PROF_RIGHT                  13234
+#define IDC_PROF_LEFT                   13235
+#define IDC_PROF_USE_CLOSED             13236
+#define IDC_PROF_OUTSIDE                13237
+#define IDC_PROF_INSIDE                 13238
+#define IDC_PROF_USE_MODEL              13239
+#define IDC_PROF_CUT_WIDTH              13240
+#define IDC_PROF_STEP                   13241
+#define IDC_PROF_STEP_SLIDER            13242
+#define IDC_PROF_USE_TABS               13243
+#define IDC_PROF_TAB_HEIGHT             13244
+#define IDC_PROF_TAB_LENGTH             13245
+#define IDC_PROF_TAB_COUNT_RADIO        13246
+#define IDC_PROF_TAB_COUNT              13247
+#define IDC_PROF_TAB_DISTANCE_RADIO     13248
+#define IDC_PROF_TAB_DISTANCE           13249
 
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13024
+#define _APS_NEXT_RESOURCE_VALUE        13025
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13230
+#define _APS_NEXT_CONTROL_VALUE         13250
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

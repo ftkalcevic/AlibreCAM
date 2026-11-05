@@ -94,6 +94,11 @@ namespace camcore
         }
     }
 
+    Path ReversePath(const Path& path, bool closed)
+    {
+        return Reversed(path, closed);
+    }
+
     Path PathFromPoints(const Polyline& points)
     {
         Path path;

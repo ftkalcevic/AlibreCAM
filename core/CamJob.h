@@ -16,6 +16,7 @@
 #include "Facing.h"
 #include "Feeds.h"
 #include "Origin.h"
+#include "Profiling.h"
 #include "Toolpath.h"
 
 namespace camcore
@@ -37,7 +38,8 @@ namespace camcore
         SetOrigin,
         Group,          // shown as a folder in the tree
         Drill,          // an operation. Operations only go in groups.
-        Facing          // an operation
+        Facing,         // an operation
+        Profiling       // an operation, 2 1/2 axis profiling
     };
 
     bool IsOperation(StepType type);
@@ -48,6 +50,10 @@ namespace camcore
         StepType type = StepType::SetOrigin;
         std::string id;         // stable, from NewStableId
         std::string name;
+
+        // A suppressed step can still be edited, but isn't generated with its
+        // folder or the job, isn't posted, and a suppressed Set Origin is skipped.
+        bool suppressed = false;
 
         // Set Origin steps only
         OriginDefinition origin;
@@ -75,6 +81,9 @@ namespace camcore
         // Facing operations only, and the outline Generate found for the area,
         // in the origin's frame. Empty until Generate runs.
         FacingSettings facing;
+
+        // Profiling operations only.
+        ProfilingSettings profiling;
         Path boundary;
 
         // Groups only. Operations run in this order. Groups don't nest, and a
@@ -136,6 +145,13 @@ namespace camcore
     // The Set Origin a step runs under: the step itself if it's a Set Origin,
     // otherwise the nearest one above it. kNoStepIndex if there's none.
     size_t ActiveOriginIndex(const Job& job, size_t stepIndex);
+
+    // The job's work zero: its first Set Origin that isn't suppressed, or
+    // kNoStepIndex if there's none.
+    size_t WorkZeroIndex(const Job& job);
+
+    // True if an operation is suppressed, or the folder it's in is.
+    bool IsOperationSuppressed(const Job& job, size_t folder, size_t operation);
 
     // Moving changes the order only, never the level: top-level steps stay in the
     // sequence, and operations stay in groups. `insertBefore` counts positions as

@@ -38,6 +38,10 @@ namespace camcore
     // A path of straight lines through the points.
     Path PathFromPoints(const Polyline& points);
 
+    // A path run the other way. Each arc moves to the vertex it now starts from,
+    // turning the other way.
+    Path ReversePath(const Path& path, bool closed);
+
     // True if an arc in the XY plane, seen from +Z, runs anticlockwise.
     inline bool ArcIsAnticlockwise(const PathVertex& vertex) { return vertex.axis.z > 0.0; }
 

@@ -32,6 +32,7 @@ struct CamScene
         std::vector<std::vector<camcore::Vec3>> feeds;
         std::vector<std::vector<camcore::Vec3>> arcs;      // arc feeds, sampled
         bool selected = false;
+        bool suppressed = false;    // drawn thin and grey
     };
     std::vector<Toolpath> toolpaths;
     std::vector<std::vector<camcore::Vec3>> boundaries;     // facing areas, closed

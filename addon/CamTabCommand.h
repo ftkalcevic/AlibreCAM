@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <set>
+
 #include "CommandBase.h"
 #include "CamJob.h"
 #include "CamViewCommand.h"
@@ -65,6 +67,9 @@ public:
     void DeleteStep(const StepRef& ref);
     void SelectStep(const StepRef& ref);
     void DuplicateStep(const StepRef& ref);     // the copy goes just below
+    bool IsSuppressed(const StepRef& ref) const;
+    bool CanSuppress(const StepRef& ref) const;
+    void ToggleSuppressed(const StepRef& ref);
 
     // Calculates toolpaths: every operation with no step, a folder's, or one operation's.
     bool CanGenerate() const;
@@ -148,7 +153,9 @@ private:
     bool IsPicking() const;
     bool GenerateOperation(const StepRef& target, std::string& problem);
     bool ApplyOperationStep(camcore::SequenceStep step);
-    std::vector<StepRef> OperationsIn(const StepRef& scope) const;
+    // The operations in scope. Suppressed ones are left out, unless the scope is
+    // the operation itself and it isn't for a post.
+    std::vector<StepRef> OperationsIn(const StepRef& scope, bool forPost) const;
     void RestoreSelectionFilter();
     void HandleLocate();
 
@@ -231,6 +238,7 @@ protected:
     afx_msg void OnTreeBeginRename(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnTreeEndRename(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnTreeBeginDrag(NMHDR* pNotify, LRESULT* pResult);
+    afx_msg void OnTreeCustomDraw(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnMouseMove(UINT flags, CPoint point);
     afx_msg void OnLButtonUp(UINT flags, CPoint point);
     afx_msg void OnRButtonDown(UINT flags, CPoint point);
@@ -270,6 +278,7 @@ private:
     HTREEITEM m_hTools;
     HTREEITEM m_hOperations;
     bool m_fillingTree;
+    std::set<HTREEITEM> m_greyItems;    // suppressed steps, and operations in suppressed folders
     bool m_visible;
 
     bool m_dragging;

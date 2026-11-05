@@ -55,7 +55,8 @@ namespace camcore
         CylindricalFace,
         LineEdge,
         CircleEdge,     // a full circle or a circular arc
-        DesignPoint
+        DesignPoint,
+        CurveEdge       // any other edge, such as a spline: start and end, and point halfway along
     };
 
     // A face, edge or design point picked in the view.

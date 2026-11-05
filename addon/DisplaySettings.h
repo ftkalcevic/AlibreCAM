@@ -37,6 +37,8 @@ const DisplayColour kFeedColour = { 30, 110, 230, 255 };
 const DisplayColour kArcColour = { 210, 0, 210, 255 };      // arc feeds, so arcs stand out
 const float kToolpathLineWeight = 1.5f;
 const float kSelectedToolpathLineWeight = 3.0f;
+const DisplayColour kSuppressedColour = { 150, 150, 150, 255 };   // suppressed operations' toolpaths
+const float kSuppressedToolpathLineWeight = 0.75f;
 
 // A facing operation's boundary, as Generate found it.
 const DisplayColour kBoundaryColour = { 255, 150, 0, 255 };
