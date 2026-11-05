@@ -1161,12 +1161,12 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         return true;
     };
 
-    // Profiling takes the same features as Facing, joins them end to end into
-    // its profile, then follows it.
-    if (operation.type == camcore::StepType::Profiling)
-    {
-        const camcore::FacingFeatureCheck check =
-            camcore::CheckFacingFeatures(frame.frame, operation.features, "Profiling");
+    // Facing, Profiling and Pocketing sort their features into areas: each face
+    // on its own, and edges grouped where they meet, all flat at the highest
+    // point, which At Top and At Bottom are measured from.
+    camcore::AreaGeometry areas;
+    auto gatherAreas = [&](const char* name) {
+        const camcore::AreaFeatureCheck check = camcore::CheckAreaFeatures(operation.features, name);
         if (!check.ok)
         {
             problem = check.problem;
@@ -1174,20 +1174,43 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         }
         if (!readOutlines())
             return false;
+        std::vector<bool> isFace;
+        for (const camcore::PickedGeometry& feature : operation.features)
+            isFace.push_back(feature.kind == camcore::PickKind::PlanarFace);
+        areas = camcore::GatherAreas(outlines, isFace);
+        if (!areas.ok)
+        {
+            problem = areas.problem;
+            return false;
+        }
+        Log(L"[generate] %zu areas, at Z %.3f", areas.areas.size(), areas.level);
+        return true;
+    };
+    auto areaName = [&](size_t n, const char* kind) {
+        return (areas.areas.size() > 1) ? std::string(kind) + " " + std::to_string(n + 1) + ": " : std::string();
+    };
+
+    // Profiling joins each area's pieces end to end into a profile, then follows it.
+    if (operation.type == camcore::StepType::Profiling)
+    {
+        if (!gatherAreas("Profiling"))
+            return false;
 
         camcore::ProfileToolpathInput profileInput;
         profileInput.operation = &operation;
         profileInput.tool = (pTool != nullptr) ? &tool : nullptr;
         profileInput.havePartMaxZ = havePartMaxZ;
         profileInput.partMaxZ = partMaxZ;
-        profileInput.profile = camcore::ChainProfile(outlines, check.level);
-        if (!profileInput.profile.ok)
+        for (size_t n = 0; n < areas.areas.size(); ++n)
         {
-            problem = profileInput.profile.problem;
-            return false;
+            camcore::ProfileChain chain = camcore::ChainProfile(areas.areas[n], areas.level);
+            if (!chain.ok)
+            {
+                problem = areaName(n, "Profile") + chain.problem;
+                return false;
+            }
+            profileInput.profiles.push_back(std::move(chain));
         }
-        Log(L"[generate] profile of %zu points, %s", profileInput.profile.path.size(),
-            profileInput.profile.closed ? L"closed" : L"open");
 
         const camcore::ToolpathResult profileResult = camcore::GenerateProfileToolpath(profileInput);
         if (!profileResult.ok)
@@ -1199,17 +1222,10 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         return true;
     }
 
-    // Pocketing joins its features into a closed outline the same way, then clears inside it.
+    // Pocketing does the same, each area a closed pocket, then clears inside each.
     if (operation.type == camcore::StepType::Pocketing)
     {
-        const camcore::FacingFeatureCheck check =
-            camcore::CheckFacingFeatures(frame.frame, operation.features, "Pocketing");
-        if (!check.ok)
-        {
-            problem = check.problem;
-            return false;
-        }
-        if (!readOutlines())
+        if (!gatherAreas("Pocketing"))
             return false;
 
         camcore::PocketToolpathInput pocketInput;
@@ -1217,14 +1233,21 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         pocketInput.tool = (pTool != nullptr) ? &tool : nullptr;
         pocketInput.havePartMaxZ = havePartMaxZ;
         pocketInput.partMaxZ = partMaxZ;
-        pocketInput.outline = camcore::ChainProfile(outlines, check.level);
-        if (!pocketInput.outline.ok)
+        for (size_t n = 0; n < areas.areas.size(); ++n)
         {
-            problem = pocketInput.outline.problem;
-            return false;
+            camcore::ProfileChain chain = camcore::ChainProfile(areas.areas[n], areas.level);
+            if (!chain.ok)
+            {
+                problem = areaName(n, "Pocket") + chain.problem;
+                return false;
+            }
+            if (!chain.closed)
+            {
+                problem = areaName(n, "Pocket") + "the edges must join into a closed outline.";
+                return false;
+            }
+            pocketInput.outlines.push_back(std::move(chain));
         }
-        Log(L"[generate] pocket outline of %zu points, %s", pocketInput.outline.path.size(),
-            pocketInput.outline.closed ? L"closed" : L"open");
 
         const camcore::ToolpathResult pocketResult = camcore::GeneratePocketToolpath(pocketInput);
         if (!pocketResult.ok)
@@ -1236,32 +1259,23 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         return true;
     }
 
-    // Facing checks its features against the origin, turns them into the
-    // area's outline, then faces inside it.
+    // Facing closes each area's pieces into a boundary, bridging gaps, then faces inside each.
     if (operation.type == camcore::StepType::Facing)
     {
-        operation.boundary.clear();
-        const camcore::FacingFeatureCheck check = camcore::CheckFacingFeatures(frame.frame, operation.features);
-        if (!check.ok)
-        {
-            problem = check.problem;
-            return false;
-        }
-        if (!readOutlines())
+        operation.boundaries.clear();
+        if (!gatherAreas("Facing"))
             return false;
 
-        std::vector<camcore::Path> pieces;
-        for (std::vector<camcore::Path>& outline : outlines)
+        for (size_t n = 0; n < areas.areas.size(); ++n)
         {
-            for (camcore::Path& piece : outline)
-                pieces.push_back(std::move(piece));
-        }
-
-        operation.boundary = camcore::ClosePath(pieces, check.level);
-        if (operation.boundary.empty())
-        {
-            problem = "The features don't enclose an area.";
-            return false;
+            camcore::Path boundary = camcore::ClosePath(camcore::AreaPieces(areas.areas[n]), areas.level);
+            if (boundary.empty())
+            {
+                operation.boundaries.clear();
+                problem = areaName(n, "Area") + "the features don't enclose an area.";
+                return false;
+            }
+            operation.boundaries.push_back(std::move(boundary));
         }
 
         camcore::FacingToolpathInput facingInput;
@@ -1457,7 +1471,7 @@ bool CCamTabCommand::ApplyOperationStep(camcore::SequenceStep step)
     {
         // A new operation goes in the first time, and the dialog edits it in place after that.
         step.toolpath = camcore::Toolpath();
-        step.boundary.clear();
+        step.boundaries.clear();
         children.push_back(step);
         m_operationTarget.child = children.size() - 1;
     }
@@ -1469,12 +1483,12 @@ bool CCamTabCommand::ApplyOperationStep(camcore::SequenceStep step)
         if (camcore::SameSettings(current, step))
         {
             step.toolpath = current.toolpath;
-            step.boundary = current.boundary;
+            step.boundaries = current.boundaries;
         }
         else
         {
             step.toolpath = camcore::Toolpath();
-            step.boundary.clear();
+            step.boundaries.clear();
         }
         children[m_operationTarget.child] = step;
     }
@@ -1699,9 +1713,10 @@ void CCamTabCommand::RebuildScene()
         {
             // A facing's boundary, closed back to its start.
             // Arcs are drawn as short straight segments.
-            const camcore::Path& boundary = m_job.sequence[i].children[c].boundary;
-            if (!boundary.empty())
+            for (const camcore::Path& boundary : m_job.sequence[i].children[c].boundaries)
             {
+                if (boundary.empty())
+                    continue;
                 std::vector<camcore::Vec3> outline;
                 for (const camcore::Vec3& point : camcore::PathPoints(boundary, true))
                     outline.push_back(camcore::FramePointToWorld(frame.frame, point));

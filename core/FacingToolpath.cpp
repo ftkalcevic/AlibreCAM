@@ -253,9 +253,14 @@ namespace camcore
         if (input.tool == nullptr || !(input.tool->diameter > 0.0))
             return Failure("Choose a tool on the Tool tab.");
 
-        const Path& boundary = pOperation->boundary;
-        if (boundary.size() < 2)
+        const std::vector<Path>& boundaries = pOperation->boundaries;
+        if (boundaries.empty())
             return Failure("There's no boundary to face.");
+        for (const Path& boundary : boundaries)
+        {
+            if (boundary.size() < 2)
+                return Failure("There's no boundary to face.");
+        }
 
         const FacingSettings& facing = pOperation->facing;
         const std::vector<std::string> facingProblems = ValidateFacing(facing);
@@ -273,8 +278,8 @@ namespace camcore
         if (!entryProblems.empty())
             return Failure(entryProblems.front());
 
-        // The boundary is the cut geometry, at its own height.
-        const double z = boundary.front().point.z;
+        // The boundaries are the cut geometry, all at one height.
+        const double z = boundaries.front().front().point.z;
         const std::vector<CutLevel> levels = CutLevelHeights(pOperation->cutLevels, z);
         double clearance = 0.0;
         std::string clearanceProblem;
@@ -294,41 +299,72 @@ namespace camcore
         axes.along = PassDirection(facing.cutAngle);
         axes.across = { -axes.along.y, axes.along.x, 0.0 };
 
-        // The boundary's extent along and across the passes, and in the frame,
-        // counting how far its arcs reach.
-        double uMin = 0.0, uMax = 0.0, vMin = 0.0, vMax = 0.0, xMin = 0.0, xMax = 0.0, yMin = 0.0, yMax = 0.0;
-        PathExtent(boundary, axes.along, uMin, uMax);
-        PathExtent(boundary, axes.across, vMin, vMax);
-        PathExtent(boundary, { 1.0, 0.0, 0.0 }, xMin, xMax);
-        PathExtent(boundary, { 0.0, 1.0, 0.0 }, yMin, yMax);
+        // Each area's extent along and across the passes, and in the frame,
+        // counting how far its arcs reach, and where its Cut Start corner is.
+        struct Area
+        {
+            const Path* pBoundary = nullptr;
+            double uMin = 0.0, uMax = 0.0, vMin = 0.0, vMax = 0.0;
+            bool startHighV = false, startHighU = false;
+        };
+        std::vector<Area> areas;
+        for (const Path& boundary : boundaries)
+        {
+            Area area;
+            area.pBoundary = &boundary;
+            double xMin = 0.0, xMax = 0.0, yMin = 0.0, yMax = 0.0;
+            PathExtent(boundary, axes.along, area.uMin, area.uMax);
+            PathExtent(boundary, axes.across, area.vMin, area.vMax);
+            PathExtent(boundary, { 1.0, 0.0, 0.0 }, xMin, xMax);
+            PathExtent(boundary, { 0.0, 1.0, 0.0 }, yMin, yMax);
 
-        // The Cut Start corner, seen from +Z with X right and Y up, decides which
-        // side and which end the cut starts from.
-        const bool top = (facing.start == StartCorner::TopLeft || facing.start == StartCorner::TopRight);
-        const bool left = (facing.start == StartCorner::TopLeft || facing.start == StartCorner::BottomLeft);
-        const Vec3 corner{ left ? xMin : xMax, top ? yMax : yMin, z };
-        const bool startHighV = std::fabs(axes.V(corner) - vMax) < std::fabs(axes.V(corner) - vMin);
-        const bool startHighU = std::fabs(axes.U(corner) - uMax) < std::fabs(axes.U(corner) - uMin);
+            // The Cut Start corner, seen from +Z with X right and Y up, decides which
+            // side and which end the cut starts from.
+            const bool top = (facing.start == StartCorner::TopLeft || facing.start == StartCorner::TopRight);
+            const bool left = (facing.start == StartCorner::TopLeft || facing.start == StartCorner::BottomLeft);
+            const Vec3 corner{ left ? xMin : xMax, top ? yMax : yMin, z };
+            area.startHighV = std::fabs(axes.V(corner) - area.vMax) < std::fabs(axes.V(corner) - area.vMin);
+            area.startHighU = std::fabs(axes.U(corner) - area.uMax) < std::fabs(axes.U(corner) - area.uMin);
+            areas.push_back(area);
+        }
 
         // The whole area is cut at each level, from the top down, lifting to the
         // clearance plane between levels. Rough and finish levels share the feeds
         // until each has its own.
         // Entry and exit are at every level, or only into the first and out of the last.
         ToolpathResult result;
-        for (size_t l = 0; l < levels.size(); ++l)
-        {
+        auto cut = [&](const Area& area, size_t l) {
             const CutLevel& level = levels[l];
             PathBuilder path(result.toolpath, pOperation->feeds, clearance, level.z);
             path.SetEntryExit(&entryExit, entryExit.eachCutLevel || l == 0,
                               entryExit.eachCutLevel || l + 1 == levels.size());
             if (facing.cutType == FacingCutType::Spiral)
-                Spiral(path, axes, facing, uMin, uMax, vMin, vMax, startHighV, startHighU, step, overtravel, level.z);
+                Spiral(path, axes, facing, area.uMin, area.uMax, area.vMin, area.vMax, area.startHighV,
+                       area.startHighU, step, overtravel, level.z);
             else
-                LinearPasses(path, boundary, axes, facing, vMin, vMax, startHighV, startHighU, step, overtravel,
-                             level.z);
+                LinearPasses(path, *area.pBoundary, axes, facing, area.vMin, area.vMax, area.startHighV,
+                             area.startHighU, step, overtravel, level.z);
 
             if (!result.toolpath.moves.empty() && result.toolpath.moves.back().to.z != clearance)
                 path.Leave();
+        };
+
+        // Each area to its full depth before the next, or each level in every area first.
+        if (pOperation->cutLevels.order == CutLevelOrder::LevelFirst)
+        {
+            for (size_t l = 0; l < levels.size(); ++l)
+            {
+                for (const Area& area : areas)
+                    cut(area, l);
+            }
+        }
+        else
+        {
+            for (const Area& area : areas)
+            {
+                for (size_t l = 0; l < levels.size(); ++l)
+                    cut(area, l);
+            }
         }
 
         result.ok = !result.toolpath.moves.empty();

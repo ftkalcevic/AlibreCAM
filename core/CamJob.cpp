@@ -652,17 +652,21 @@ namespace camcore
             return list;
         }
 
-        // Facings never generated have no boundary. Older files have only points.
-        bool ReadBoundary(const json& step, Path& boundary)
+        json WriteBoundaries(const std::vector<Path>& boundaries)
+        {
+            json list = json::array();
+            for (const Path& path : boundaries)
+                list.push_back(WritePath(path));
+            return list;
+        }
+
+        // One boundary's vertices.
+        bool ReadPath(const json& list, Path& boundary)
         {
             boundary.clear();
-            const auto item = step.find("boundary");
-            if (item == step.end())
-                return true;
-            if (!item->is_array())
+            if (!list.is_array())
                 return false;
-
-            for (const json& entry : *item)
+            for (const json& entry : list)
             {
                 if (!entry.is_array() || (entry.size() != 3 && entry.size() != 9))
                     return false;
@@ -682,6 +686,36 @@ namespace camcore
                 }
                 boundary.push_back(vertex);
             }
+            return true;
+        }
+
+        // Facings never generated have no boundaries. Files from before several
+        // areas have one boundary, and older ones only points.
+        bool ReadBoundaries(const json& step, std::vector<Path>& boundaries)
+        {
+            boundaries.clear();
+            const auto many = step.find("boundaries");
+            if (many != step.end())
+            {
+                if (!many->is_array())
+                    return false;
+                for (const json& one : *many)
+                {
+                    Path path;
+                    if (!ReadPath(one, path))
+                        return false;
+                    boundaries.push_back(std::move(path));
+                }
+                return true;
+            }
+            const auto single = step.find("boundary");
+            if (single == step.end())
+                return true;
+            Path path;
+            if (!ReadPath(*single, path))
+                return false;
+            if (!path.empty())
+                boundaries.push_back(std::move(path));
             return true;
         }
 
@@ -1044,7 +1078,7 @@ namespace camcore
                          { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
                          { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
                          { "cutLevels", WriteCutLevels(step.cutLevels) }, { "entryExit", WriteEntryExit(step.entryExit) },
-                         { "facing", WriteFacing(step.facing) }, { "boundary", WritePath(step.boundary) } };
+                         { "facing", WriteFacing(step.facing) }, { "boundaries", WriteBoundaries(step.boundaries) } };
 
             if (step.type == StepType::Profiling)
                 return { { "type", "profiling" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
@@ -1119,7 +1153,7 @@ namespace camcore
                 return ReadTool(item, step.toolId) && ReadFeeds(item, step.feeds) && ReadToolpath(item, step.toolpath) &&
                        ReadFeatures(item, step.features) && ReadCutLevels(item, step.cutLevels) &&
                        ReadEntryExit(item, step.entryExit) && ReadFacing(item, step.facing) &&
-                       ReadBoundary(item, step.boundary) &&
+                       ReadBoundaries(item, step.boundaries) &&
                        ReadClearance(item, step.clearance);
             }
 
@@ -1313,8 +1347,8 @@ namespace camcore
         SequenceStep right = b;
         left.toolpath = Toolpath();
         right.toolpath = Toolpath();
-        left.boundary.clear();
-        right.boundary.clear();
+        left.boundaries.clear();
+        right.boundaries.clear();
         return WriteStep(left) == WriteStep(right);
     }
 

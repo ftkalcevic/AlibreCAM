@@ -89,7 +89,7 @@ namespace camcore
 
         // Pocketing operations only.
         PocketingSettings pocketing;
-        Path boundary;
+        std::vector<Path> boundaries;
 
         // Groups only. Operations run in this order. Groups don't nest, and a
         // Set Origin stays outside them, so a group can't hold either.

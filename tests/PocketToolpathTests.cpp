@@ -43,7 +43,7 @@ namespace
         PocketToolpathInput input;
         input.operation = &step;
         input.tool = &tool;
-        input.outline = outline;
+        input.outlines = { outline };
         return GeneratePocketToolpath(input);
     }
 
@@ -200,6 +200,72 @@ TEST_CASE("spiral cuts blend from loop to loop, then lap the wall")
     CHECK(first.x <= 12 + 1e-6);
     CHECK(Count(inside.toolpath, MoveKind::Rapid) == 2);
     CheckInsideWall(inside.toolpath);
+}
+
+TEST_CASE("separate loops of edges are separate pockets, cut depth first or level first")
+{
+    // Two 20 mm squares, 10 apart, as loose edges in the list.
+    auto line = [](Vec3 a, Vec3 b) { return PathFromPoints({ a, b }); };
+    const std::vector<std::vector<Path>> edges = {
+        { line({ 0, 0, 0 }, { 20, 0, 0 }) },   { line({ 30, 0, 0 }, { 50, 0, 0 }) },
+        { line({ 20, 0, 0 }, { 20, 20, 0 }) }, { line({ 50, 0, 0 }, { 50, 20, 0 }) },
+        { line({ 20, 20, 0 }, { 0, 20, 0 }) }, { line({ 50, 20, 0 }, { 30, 20, 0 }) },
+        { line({ 0, 20, 0 }, { 0, 0, 0 }) },   { line({ 30, 20, 0 }, { 30, 0, 0 }) },
+    };
+    const ProfileChains chains = ChainProfiles(edges, 0);
+    REQUIRE(chains.ok);
+    REQUIRE(chains.chains.size() == 2);
+    CHECK(chains.chains[0].closed);
+    CHECK(chains.chains[1].closed);
+    CHECK(chains.chains[0].path.front().point.x < 25);      // the first feature's loop comes first
+
+    SequenceStep step = PocketStep(PocketCutType::Offset);
+    step.cutLevels = CutLevelSettings();        // levels at -0.4, -0.8 and -1.0
+    static Tool tool;
+    tool.diameter = 4;
+    PocketToolpathInput input;
+    input.operation = &step;
+    input.tool = &tool;
+    input.outlines = chains.chains;
+
+    // Depth first: every level of the left pocket before the right one is touched.
+    auto order = [&]() {
+        std::vector<std::pair<bool, double>> visits;     // right pocket, level
+        for (const ToolpathMove& move : GeneratePocketToolpath(input).toolpath.moves)
+        {
+            if (move.kind != MoveKind::Feed || move.to.z > 0)
+                continue;
+            const std::pair<bool, double> visit{ move.to.x > 25, move.to.z };
+            if (visits.empty() || visits.back() != visit)
+                visits.push_back(visit);
+        }
+        return visits;
+    };
+    std::vector<std::pair<bool, double>> visits = order();
+    REQUIRE(visits.size() >= 6);
+    CHECK_FALSE(visits[0].first);
+    CHECK_FALSE(visits[2].first);
+    CHECK(visits[2].second == doctest::Approx(-1.0));
+    CHECK(visits[3].first);
+
+    // Level first: both pockets at the top level before going down.
+    step.cutLevels.order = CutLevelOrder::LevelFirst;
+    visits = order();
+    REQUIRE(visits.size() >= 6);
+    CHECK_FALSE(visits[0].first);
+    CHECK(visits[1].first);
+    CHECK(visits[1].second == doctest::Approx(-0.4));
+    CHECK(visits[2].second == doctest::Approx(-0.8));
+
+    // Every point stays inside one pocket's wall or the other's.
+    for (const ToolpathMove& move : GeneratePocketToolpath(input).toolpath.moves)
+    {
+        if (move.kind != MoveKind::Feed || move.to.z > 0)
+            continue;
+        const double x = move.to.x > 25 ? move.to.x - 30 : move.to.x;
+        CHECK(x >= 2 - 1e-6);
+        CHECK(x <= 18 + 1e-6);
+    }
 }
 
 TEST_CASE("pocketing needs a closed outline the tool fits in, and radial isn't built")

@@ -14,16 +14,18 @@ namespace camcore
     {
         const SequenceStep* operation = nullptr;
         const Tool* tool = nullptr;     // in millimetres, from ToolInMillimetres
-        ProfileChain outline;           // from ChainProfile, closed, in the operation's frame
+        std::vector<ProfileChain> outlines;     // from ChainProfiles, each closed, in the operation's frame
 
         // The parts' highest point along the frame's Z, for the clearance plane.
         bool havePartMaxZ = false;
         double partMaxZ = 0.0;
     };
 
-    // The pocket is the area inside the closed outline, and the tool centre
-    // stays its radius plus the stock to leave inside the outline (the wall).
-    // Islands aren't left yet.
+    // Each closed outline is a pocket of its own: the area inside it, the tool
+    // centre staying its radius plus the stock to leave inside it (the wall).
+    // Islands aren't left yet. Pockets are cut in the outlines' order: each to
+    // its full depth before the next (Depth First), or each level in every
+    // pocket before the next level (Level First).
     // Offset Cuts: loops following the wall, each a stepover further in until
     // nothing fits, from the middle out (Inside) or the wall in (Outside).
     // Linear Cuts: straight rows along the angle, a stepover apart, from the

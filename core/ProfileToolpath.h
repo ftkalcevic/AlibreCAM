@@ -34,6 +34,34 @@ namespace camcore
     // in the list. Every point is put at level.
     ProfileChain ChainProfile(const std::vector<std::vector<Path>>& pieces, double level);
 
+    // The features' pieces sorted into the separate profiles they make, each
+    // joined as ChainProfile does, in the order their first feature comes in the
+    // list. Pieces belong together when their ends meet.
+    struct ProfileChains
+    {
+        bool ok = false;
+        std::string problem;
+        std::vector<ProfileChain> chains;
+    };
+    ProfileChains ChainProfiles(const std::vector<std::vector<Path>>& pieces, double level);
+
+    // The features' outlines sorted into areas: each face's pieces on their own,
+    // and edges grouped where their ends meet, in the order of each area's first
+    // feature in the list. Only XY matters: everything is put flat at the
+    // highest point of the outlines, which At Top and At Bottom cut levels are
+    // measured from, and pieces with no length seen from above are left out.
+    struct AreaGeometry
+    {
+        bool ok = false;
+        std::string problem;
+        double level = 0.0;
+        std::vector<std::vector<std::vector<Path>>> areas;     // each area's pieces, by feature
+    };
+    AreaGeometry GatherAreas(const std::vector<std::vector<Path>>& outlines, const std::vector<bool>& isFace);
+
+    // An area's pieces in one list, for ClosePath.
+    std::vector<Path> AreaPieces(const std::vector<std::vector<Path>>& area);
+
     // A stretch of an offset profile the tool can follow without cutting into the profile.
     struct ProfileRun
     {
@@ -53,7 +81,7 @@ namespace camcore
     {
         const SequenceStep* operation = nullptr;
         const Tool* tool = nullptr;     // in millimetres, from ToolInMillimetres
-        ProfileChain profile;           // from ChainProfile, in the operation's frame
+        std::vector<ProfileChain> profiles;     // from ChainProfile, in the operation's frame, all at one level
 
         // The parts' highest point along the frame's Z, for the clearance plane.
         bool havePartMaxZ = false;
@@ -69,6 +97,8 @@ namespace camcore
     // the Entry/Exit tab's motions, lifting to the clearance plane between. Tabs
     // leave uncut material of the tab length on the levels below the tab top
     // (the bottom of the cut plus the tab height): the tool goes straight up to
-    // the tab top and back down at the plunge feed.
+    // the tab top and back down at the plunge feed. Each profile is cut in turn,
+    // to its full depth before the next (Depth First) or each level in every
+    // profile before the next level (Level First).
     ToolpathResult GenerateProfileToolpath(const ProfileToolpathInput& input);
 }

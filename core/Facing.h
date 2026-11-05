@@ -54,21 +54,14 @@ namespace camcore
 
     // Within these, a face or edge counts as parallel to the origin's XY plane
     // (about half a degree) and edges count as being at the same level (mm).
-    constexpr double kFacingParallelTolerance = 0.01;
-    constexpr double kFacingLevelTolerance = 0.01;
-
-    struct FacingFeatureCheck
+    // What Facing, Profiling and Pocketing take: faces and edges, any number of
+    // them. Only their positions in the origin's XY plane matter.
+    struct AreaFeatureCheck
     {
         bool ok = false;
-        std::string problem;    // why not. Empty when ok.
-        double level = 0.0;     // the features' Z in the frame, when ok
+        std::string problem;
     };
 
-    // Facing's features are either one flat face, or any number of straight or
-    // circular edges, which needn't close. The face must be parallel to the
-    // frame's XY plane. The edges must all lie in one plane parallel to it, so a
-    // straight edge must run across Z and a circle's axis along Z.
-    // operation names the operation in the problems, as Profiling uses the same rules.
-    FacingFeatureCheck CheckFacingFeatures(const Frame& frame, const std::vector<PickedGeometry>& features,
-                                           const std::string& operation = "Facing");
+    // operation names the operation in the problem.
+    AreaFeatureCheck CheckAreaFeatures(const std::vector<PickedGeometry>& features, const std::string& operation);
 }

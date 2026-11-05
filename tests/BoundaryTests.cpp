@@ -11,6 +11,8 @@
 #include <atomic>
 #include <chrono>
 #include <fstream>
+
+#include <nlohmann/json.hpp>
 #include <iterator>
 
 using namespace camcore;
@@ -105,12 +107,13 @@ TEST_CASE("a facing's boundary loads back unchanged")
     facing.type = StepType::Facing;
     facing.id = NewStableId();
     facing.name = "Facing 1";
-    facing.boundary = PathFromPoints(ClosePolygon({ { { 0, 0, 0 }, { 10, 0, 0 } }, { { 10, 0, 0 }, { 10, 6, 0 } } }, 4));
+    Path boundary = PathFromPoints(ClosePolygon({ { { 0, 0, 0 }, { 10, 0, 0 } }, { { 10, 0, 0 }, { 10, 6, 0 } } }, 4));
 
     // The closing side, from (10, 6) back to (0, 0), becomes an arc.
-    facing.boundary[2].arc = true;
-    facing.boundary[2].centre = { 5, 3, 4 };
-    facing.boundary[2].axis = { 0, 0, 1 };
+    boundary[2].arc = true;
+    boundary[2].centre = { 5, 3, 4 };
+    boundary[2].axis = { 0, 0, 1 };
+    facing.boundaries = { boundary, PathFromPoints({ { 20, 0, 4 }, { 30, 0, 4 }, { 30, 5, 4 } }) };
 
     // An arc move goes with it.
     ToolpathMove arc;
@@ -130,7 +133,9 @@ TEST_CASE("a facing's boundary loads back unchanged")
     std::filesystem::remove(path, ignored);
 
     REQUIRE(loaded.status == LoadStatus::Ok);
-    const Path& back = loaded.job.sequence[1].children[0].boundary;
+    REQUIRE(loaded.job.sequence[1].children[0].boundaries.size() == 2);
+    CHECK(loaded.job.sequence[1].children[0].boundaries[1].size() == 3);
+    const Path& back = loaded.job.sequence[1].children[0].boundaries[0];
     REQUIRE(back.size() == 3);
     CHECK(At(back[2].point, 10, 6));
     CHECK(back[0].point.z == 4);
@@ -171,7 +176,7 @@ TEST_CASE("a version 2 file, with only points and straight moves, still loads")
     facing.type = StepType::Facing;
     facing.id = NewStableId();
     facing.name = "Facing 1";
-    facing.boundary = PathFromPoints({ { 0, 0, 1 }, { 10, 0, 1 }, { 10, 6, 1 } });
+    facing.boundaries = { PathFromPoints({ { 0, 0, 1 }, { 10, 0, 1 }, { 10, 6, 1 } }) };
     ToolpathMove move;
     move.kind = MoveKind::Feed;
     move.to = { 1, 2, 3 };
@@ -189,6 +194,14 @@ TEST_CASE("a version 2 file, with only points and straight moves, still loads")
     const size_t at = text.find("\"formatVersion\": 3");
     REQUIRE(at != std::string::npos);
     text.replace(at, 18, "\"formatVersion\": 2");
+
+    // Before several areas, the one boundary was saved on its own.
+    nlohmann::json root = nlohmann::json::parse(text);
+    nlohmann::json& saved = root["sequence"][1]["children"][0];
+    REQUIRE(saved["boundaries"].size() == 1);
+    saved["boundary"] = saved["boundaries"][0];
+    saved.erase("boundaries");
+    text = root.dump(2);
     {
         std::ofstream out(path, std::ios::binary | std::ios::trunc);
         out << text;
@@ -200,8 +213,9 @@ TEST_CASE("a version 2 file, with only points and straight moves, still loads")
     REQUIRE(loaded.status == LoadStatus::Ok);
     CHECK(loaded.fileVersion == 2);
     const SequenceStep& back = loaded.job.sequence[1].children[0];
-    REQUIRE(back.boundary.size() == 3);
-    CHECK_FALSE(back.boundary[1].arc);
+    REQUIRE(back.boundaries.size() == 1);
+    REQUIRE(back.boundaries[0].size() == 3);
+    CHECK_FALSE(back.boundaries[0][1].arc);
     REQUIRE(back.toolpath.moves.size() == 1);
     CHECK_FALSE(back.toolpath.moves[0].arc);
 }

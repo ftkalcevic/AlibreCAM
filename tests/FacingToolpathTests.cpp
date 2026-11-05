@@ -15,7 +15,7 @@ namespace
     {
         SequenceStep step;
         step.type = StepType::Facing;
-        step.boundary = PathFromPoints({ { 0, 0, 0 }, { 100, 0, 0 }, { 100, 50, 0 }, { 0, 50, 0 } });
+        step.boundaries = { PathFromPoints({ { 0, 0, 0 }, { 100, 0, 0 }, { 100, 50, 0 }, { 0, 50, 0 } }) };
         step.facing.cutAngle = 90;      // along X
         step.facing.start = StartCorner::BottomLeft;
         step.clearance.mode = ClearanceMode::AbsoluteZ;
@@ -132,7 +132,7 @@ TEST_CASE("mixed steps over square to the passes when their ends don't line up")
 {
     SequenceStep step = FacingStep();
     step.facing.direction = CutDirection::Mixed;
-    step.boundary = PathFromPoints({ { 0, 0, 0 }, { 100, 0, 0 }, { 50, 50, 0 } });
+    step.boundaries = { PathFromPoints({ { 0, 0, 0 }, { 100, 0, 0 }, { 50, 50, 0 } }) };
     const ToolpathResult result = Generate(step);
     REQUIRE(result.ok);
 
@@ -235,7 +235,7 @@ TEST_CASE("same settings ignores what Generate makes")
 {
     SequenceStep a = FacingStep();
     SequenceStep b = a;
-    b.boundary.clear();
+    b.boundaries.clear();
     b.toolpath.moves.resize(3);
     CHECK(SameSettings(a, b));
 
@@ -383,7 +383,7 @@ TEST_CASE("passes end exactly on an arc in the boundary")
     PathVertex left;
     left.point = { -20, 0, 0 };
     left.arc = true;
-    step.boundary = { right, left };
+    step.boundaries = { Path{ right, left } };
 
     const ToolpathResult result = Generate(step);
     REQUIRE(result.ok);
@@ -470,6 +470,46 @@ TEST_CASE("entries and exits at each level, or only into the first and out of th
     CHECK(movesAt(each, -1.0) == movesAt(once, -1.0) + 1);
 }
 
+TEST_CASE("each area is faced from its own corner, depth first or level first")
+{
+    SequenceStep step = FacingStep();
+    step.boundaries.push_back(PathFromPoints({ { 200, 0, 0 }, { 240, 0, 0 }, { 240, 20, 0 }, { 200, 20, 0 } }));
+    step.cutLevels = CutLevelSettings();        // -0.4, -0.8, -1.0
+
+    // The second area starts at its own bottom left corner, less the overtravel.
+    auto visits = [&]() {
+        std::vector<std::pair<bool, double>> order;     // second area, level
+        for (const ToolpathMove& move : Generate(step).toolpath.moves)
+        {
+            if (move.kind != MoveKind::Feed || move.to.z > 0)
+                continue;
+            const std::pair<bool, double> visit{ move.to.x > 150, move.to.z };
+            if (order.empty() || order.back() != visit)
+                order.push_back(visit);
+        }
+        return order;
+    };
+    std::vector<std::pair<bool, double>> order = visits();
+    REQUIRE(order.size() == 6);
+    CHECK_FALSE(order[2].first);
+    CHECK(order[2].second == doctest::Approx(-1.0));
+    CHECK(order[3].first);
+    CHECK(order[3].second == doctest::Approx(-0.4));
+
+    step.cutLevels.order = CutLevelOrder::LevelFirst;
+    order = visits();
+    REQUIRE(order.size() == 6);
+    CHECK(order[1].first);
+    CHECK(order[1].second == doctest::Approx(-0.4));
+    CHECK_FALSE(order[2].first);
+
+    bool cornerStart = false;
+    for (const ToolpathMove& move : Generate(step).toolpath.moves)
+        cornerStart = cornerStart || (move.kind == MoveKind::Rapid && std::fabs(move.to.x - 245) < 1e-9 &&
+                                      std::fabs(move.to.y + 5) < 1e-9);
+    CHECK(cornerStart);     // climb from the bottom left starts at the right end of the bottom pass
+}
+
 TEST_CASE("a facing toolpath needs a tool, a boundary and room above it")
 {
     SequenceStep step = FacingStep();
@@ -477,7 +517,7 @@ TEST_CASE("a facing toolpath needs a tool, a boundary and room above it")
     input.operation = &step;
     CHECK_FALSE(GenerateFacingToolpath(input).ok);      // no tool
 
-    step.boundary.clear();
+    step.boundaries.clear();
     CHECK_FALSE(Generate(step).ok);
 
     step = FacingStep();

@@ -38,6 +38,13 @@ namespace camcore
     // A path of straight lines through the points.
     Path PathFromPoints(const Polyline& points);
 
+    // An open path put flat at level, seen from above. Arcs not about Z become
+    // straight segments, as they'd be ellipses.
+    Path FlattenPath(const Path& path, double level);
+
+    // An open path's length in X and Y, arcs included.
+    double LengthXY(const Path& path);
+
     // A path run the other way. Each arc moves to the vertex it now starts from,
     // turning the other way.
     Path ReversePath(const Path& path, bool closed);

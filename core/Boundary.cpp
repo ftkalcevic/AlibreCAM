@@ -94,6 +94,53 @@ namespace camcore
         }
     }
 
+    Path FlattenPath(const Path& path, double level)
+    {
+        Path flat;
+        for (size_t i = 0; i < path.size(); ++i)
+        {
+            PathVertex vertex = path[i];
+            vertex.point.z = level;
+            vertex.centre.z = level;
+            const double axisLength = Length(vertex.axis);
+            const bool aboutZ = axisLength > 0.0 && std::fabs(vertex.axis.z) > axisLength * (1.0 - 1e-6);
+            if (vertex.arc && !aboutZ && i + 1 < path.size())
+            {
+                // Seen from above it's an ellipse, so it goes as straight segments.
+                const Polyline points = ArcPoints3D(path[i].point, path[i + 1].point, path[i].centre, vertex.axis);
+                vertex.arc = false;
+                flat.push_back(vertex);
+                for (size_t p = 0; p + 1 < points.size(); ++p)
+                {
+                    PathVertex step;
+                    step.point = { points[p].x, points[p].y, level };
+                    flat.push_back(step);
+                }
+                continue;
+            }
+            if (vertex.arc)
+                vertex.axis = { 0.0, 0.0, vertex.axis.z > 0.0 ? 1.0 : -1.0 };
+            flat.push_back(vertex);
+        }
+        return flat;
+    }
+
+    double LengthXY(const Path& path)
+    {
+        double length = 0.0;
+        for (size_t i = 0; i + 1 < path.size(); ++i)
+        {
+            const PathVertex& from = path[i];
+            const Vec3& to = path[i + 1].point;
+            if (from.arc)
+                length += std::fabs(ArcSweep(from.point, to, from.centre, ArcIsAnticlockwise(from))) *
+                          DistanceXY(from.point, from.centre);
+            else
+                length += DistanceXY(from.point, to);
+        }
+        return length;
+    }
+
     Path ReversePath(const Path& path, bool closed)
     {
         return Reversed(path, closed);
@@ -336,31 +383,7 @@ namespace camcore
         chain.back().arc = false;      // closing back to the start is a straight line
 
         // Flatten onto the level. Arcs not about Z become straight segments.
-        Path flat;
-        for (size_t i = 0; i < chain.size(); ++i)
-        {
-            PathVertex vertex = chain[i];
-            vertex.point.z = level;
-            vertex.centre.z = level;
-            const double axisLength = Length(vertex.axis);
-            const bool aboutZ = axisLength > 0.0 && std::fabs(vertex.axis.z) > axisLength * (1.0 - 1e-6);
-            if (vertex.arc && !aboutZ && i + 1 < chain.size())
-            {
-                const Polyline points = ArcPoints3D(chain[i].point, chain[i + 1].point, chain[i].centre, vertex.axis);
-                vertex.arc = false;
-                flat.push_back(vertex);
-                for (size_t p = 0; p + 1 < points.size(); ++p)
-                {
-                    PathVertex step;
-                    step.point = { points[p].x, points[p].y, level };
-                    flat.push_back(step);
-                }
-                continue;
-            }
-            if (vertex.arc)
-                vertex.axis = { 0.0, 0.0, vertex.axis.z > 0.0 ? 1.0 : -1.0 };
-            flat.push_back(vertex);
-        }
+        const Path flat = FlattenPath(chain, level);
 
         // Drop points that repeat the one before. The later one says how the
         // path goes on, so its arc is kept.

@@ -506,6 +506,189 @@ namespace camcore
         return chain;
     }
 
+    ProfileChains ChainProfiles(const std::vector<std::vector<Path>>& pieces, double level)
+    {
+        ProfileChains result;
+
+        // Every piece, labelled with its feature.
+        struct Piece
+        {
+            const Path* pPath;
+            size_t feature;
+        };
+        std::vector<Piece> all;
+        for (size_t f = 0; f < pieces.size(); ++f)
+        {
+            for (const Path& path : pieces[f])
+            {
+                if (path.size() >= 2)
+                    all.push_back({ &path, f });
+            }
+        }
+        if (all.empty())
+        {
+            result.problem = "There's no profile to follow.";
+            return result;
+        }
+
+        // Group pieces whose ends meet, through any chain of them.
+        std::vector<size_t> group(all.size());
+        for (size_t i = 0; i < all.size(); ++i)
+            group[i] = i;
+        auto root = [&](size_t i) {
+            while (group[i] != i)
+                i = group[i] = group[group[i]];
+            return i;
+        };
+        for (size_t i = 0; i < all.size(); ++i)
+        {
+            for (size_t j = i + 1; j < all.size(); ++j)
+            {
+                bool meet = false;
+                for (const Vec3& a : { all[i].pPath->front().point, all[i].pPath->back().point })
+                {
+                    for (const Vec3& b : { all[j].pPath->front().point, all[j].pPath->back().point })
+                        meet = meet || DistanceXY(a, b) <= kProfileJoinTolerance;
+                }
+                if (meet)
+                    group[root(j)] = root(i);
+            }
+        }
+
+        // Each group is a profile, in the order its earliest piece comes.
+        std::vector<size_t> order;
+        for (size_t i = 0; i < all.size(); ++i)
+        {
+            if (std::find(order.begin(), order.end(), root(i)) == order.end())
+                order.push_back(root(i));
+        }
+        for (const size_t g : order)
+        {
+            std::vector<std::vector<Path>> own(pieces.size());
+            for (size_t i = 0; i < all.size(); ++i)
+            {
+                if (root(i) == g)
+                    own[all[i].feature].push_back(*all[i].pPath);
+            }
+            ProfileChain chain = ChainProfile(own, level);
+            if (!chain.ok)
+            {
+                result.problem = chain.problem;
+                result.chains.clear();
+                return result;
+            }
+            result.chains.push_back(std::move(chain));
+        }
+        result.ok = true;
+        return result;
+    }
+
+    AreaGeometry GatherAreas(const std::vector<std::vector<Path>>& outlines, const std::vector<bool>& isFace)
+    {
+        AreaGeometry result;
+
+        // The highest point of everything is the level it's all put at.
+        bool found = false;
+        for (const std::vector<Path>& outline : outlines)
+        {
+            for (const Path& piece : outline)
+            {
+                for (const PathVertex& vertex : piece)
+                {
+                    result.level = found ? (std::max)(result.level, vertex.point.z) : vertex.point.z;
+                    found = true;
+                }
+            }
+        }
+        if (!found)
+        {
+            result.problem = "The features have no outline.";
+            return result;
+        }
+
+        struct Item
+        {
+            Path path;
+            size_t feature;
+            bool face;
+        };
+        std::vector<Item> items;
+        for (size_t f = 0; f < outlines.size(); ++f)
+        {
+            for (const Path& piece : outlines[f])
+            {
+                Path flat = FlattenPath(piece, result.level);
+                if (flat.size() >= 2 && LengthXY(flat) > kProfileJoinTolerance)
+                    items.push_back({ std::move(flat), f, f < isFace.size() && isFace[f] });
+            }
+        }
+        if (items.empty())
+        {
+            result.problem = "Seen from above, the features have no length.";
+            return result;
+        }
+
+        // A face's pieces stay together and apart from everything else. Edges
+        // join any edge whose end they meet.
+        std::vector<size_t> group(items.size());
+        for (size_t i = 0; i < items.size(); ++i)
+            group[i] = i;
+        auto root = [&](size_t i) {
+            while (group[i] != i)
+                i = group[i] = group[group[i]];
+            return i;
+        };
+        for (size_t i = 0; i < items.size(); ++i)
+        {
+            for (size_t j = i + 1; j < items.size(); ++j)
+            {
+                bool together = false;
+                if (items[i].face || items[j].face)
+                {
+                    together = items[i].face && items[j].face && items[i].feature == items[j].feature;
+                }
+                else
+                {
+                    for (const Vec3& a : { items[i].path.front().point, items[i].path.back().point })
+                    {
+                        for (const Vec3& b : { items[j].path.front().point, items[j].path.back().point })
+                            together = together || DistanceXY(a, b) <= kProfileJoinTolerance;
+                    }
+                }
+                if (together)
+                    group[root(j)] = root(i);
+            }
+        }
+
+        // In the order of each group's first feature.
+        std::vector<size_t> order;
+        for (size_t i = 0; i < items.size(); ++i)
+        {
+            if (std::find(order.begin(), order.end(), root(i)) == order.end())
+                order.push_back(root(i));
+        }
+        for (const size_t g : order)
+        {
+            std::vector<std::vector<Path>> area(outlines.size());
+            for (size_t i = 0; i < items.size(); ++i)
+            {
+                if (root(i) == g)
+                    area[items[i].feature].push_back(items[i].path);
+            }
+            result.areas.push_back(std::move(area));
+        }
+        result.ok = true;
+        return result;
+    }
+
+    std::vector<Path> AreaPieces(const std::vector<std::vector<Path>>& area)
+    {
+        std::vector<Path> pieces;
+        for (const std::vector<Path>& feature : area)
+            pieces.insert(pieces.end(), feature.begin(), feature.end());
+        return pieces;
+    }
+
     std::vector<ProfileRun> OffsetProfile(const Path& profile, bool closed, double distance)
     {
         const std::vector<Seg> segs = ToSegs(profile, closed);
@@ -810,8 +993,13 @@ namespace camcore
             return Failure("This isn't a profiling operation.");
         if (input.tool == nullptr || !(input.tool->diameter > 0.0))
             return Failure("Choose a tool on the Tool tab.");
-        if (!input.profile.ok || input.profile.path.size() < 2)
-            return Failure(input.profile.problem.empty() ? "There's no profile to follow." : input.profile.problem);
+        if (input.profiles.empty())
+            return Failure("There's no profile to follow.");
+        for (const ProfileChain& profile : input.profiles)
+        {
+            if (!profile.ok || profile.path.size() < 2)
+                return Failure(profile.problem.empty() ? "There's no profile to follow." : profile.problem);
+        }
 
         const ProfilingSettings& settings = pOperation->profiling;
         for (const std::vector<std::string>& problems :
@@ -822,8 +1010,8 @@ namespace camcore
                 return Failure(problems.front());
         }
 
-        // The profile is the cut geometry, at its own height.
-        const double z = input.profile.path.front().point.z;
+        // The profiles are the cut geometry, all at one height.
+        const double z = input.profiles.front().path.front().point.z;
         const std::vector<CutLevel> levels = CutLevelHeights(pOperation->cutLevels, z);
         const EntryExitSettings& entryExit = pOperation->entryExit;
         double clearance = 0.0;
@@ -835,24 +1023,7 @@ namespace camcore
         if (entryExit.entry == EntryMode::AlongPath3D && !(clearance > levels.front().z + entryExit.alongPathHeight))
             return Failure("The along path height reaches the clearance plane.");
 
-        // Which side the tool runs on, as +1 for the profile's left and -1 for its right.
-        const bool closed = input.profile.closed;
-        double side = (settings.startSide == ProfileSide::Left) ? 1.0 : -1.0;
-        if (closed && settings.useClosedSide)
-        {
-            // An anticlockwise profile has its outside on the right.
-            const bool anticlockwise = SignedArea(input.profile.path) > 0.0;
-            const bool outside = settings.closedSide == ClosedProfileSide::Outside;
-            side = (outside == anticlockwise) ? -1.0 : 1.0;
-        }
-
-        // Climb keeps the profile on the cutter's right, so with the tool on the
-        // profile's left it runs the profile's way.
-        const bool forward = (settings.direction == CutDirection::Mixed)   ? true
-                             : (settings.direction == CutDirection::Climb) ? side > 0.0
-                                                                           : side < 0.0;
-
-        // The passes, from the widest out in to the one beside the profile.
+        // The passes' extra widths, from the widest out in to the one beside the profile.
         const double radius = input.tool->diameter / 2.0;
         std::vector<double> extras{ 0.0 };
         if (settings.cutWidth > 0.0)
@@ -862,60 +1033,110 @@ namespace camcore
             for (int i = 0; i <= steps; ++i)
                 extras.push_back(settings.cutWidth * (steps - i) / steps);
         }
-
-        const std::vector<Seg> profile = ToSegs(input.profile.path, closed);
-        std::vector<Vec3> tabCentres;
-        if (settings.useTabs)
-        {
-            for (const double at : TabPositions(RunLength(profile), closed, settings))
-                tabCentres.push_back(PointAtLength(profile, at));
-        }
         const double tabTop = levels.back().z + settings.tabHeight;
 
-        std::vector<std::vector<CutRun>> passes;
-        for (const double extra : extras)
+        // Each profile's side, direction and passes, worked out once.
+        struct Profile
         {
-            const double offset = radius + settings.stockToLeave + extra;
-            std::vector<CutRun> pass;
-            for (const ProfileRun& run : OffsetProfile(input.profile.path, closed, side * offset))
+            double side = 1.0;
+            bool forward = true;
+            std::vector<std::vector<CutRun>> passes;
+        };
+        std::vector<Profile> profiles;
+        for (size_t n = 0; n < input.profiles.size(); ++n)
+        {
+            const ProfileChain& chain = input.profiles[n];
+            Profile profile;
+
+            // Which side the tool runs on, as +1 for the profile's left and -1 for its right.
+            const bool closed = chain.closed;
+            profile.side = (settings.startSide == ProfileSide::Left) ? 1.0 : -1.0;
+            if (closed && settings.useClosedSide)
             {
-                CutRun cut;
-                cut.segs = ToSegs(run.path, run.closed);
-                cut.closed = run.closed;
-                cut.offset = offset;
-                if (cut.segs.empty())
-                    continue;
-                if (!forward)
-                {
-                    std::reverse(cut.segs.begin(), cut.segs.end());
-                    for (Seg& s : cut.segs)
-                        s = Reverse(s);
-                }
-                cut.lifted = LiftedSpans(cut, tabCentres, settings.tabLength / 2.0 + radius);
-                pass.push_back(std::move(cut));
+                // An anticlockwise profile has its outside on the right.
+                const bool anticlockwise = SignedArea(chain.path) > 0.0;
+                const bool outside = settings.closedSide == ClosedProfileSide::Outside;
+                profile.side = (outside == anticlockwise) ? -1.0 : 1.0;
             }
-            if (!forward)
-                std::reverse(pass.begin(), pass.end());
-            if (!pass.empty())
-                passes.push_back(std::move(pass));
+
+            // Climb keeps the profile on the cutter's right, so with the tool on the
+            // profile's left it runs the profile's way.
+            profile.forward = (settings.direction == CutDirection::Mixed)   ? true
+                              : (settings.direction == CutDirection::Climb) ? profile.side > 0.0
+                                                                            : profile.side < 0.0;
+
+            const std::vector<Seg> segs = ToSegs(chain.path, closed);
+            std::vector<Vec3> tabCentres;
+            if (settings.useTabs)
+            {
+                for (const double at : TabPositions(RunLength(segs), closed, settings))
+                    tabCentres.push_back(PointAtLength(segs, at));
+            }
+
+            for (const double extra : extras)
+            {
+                const double offset = radius + settings.stockToLeave + extra;
+                std::vector<CutRun> pass;
+                for (const ProfileRun& run : OffsetProfile(chain.path, closed, profile.side * offset))
+                {
+                    CutRun cut;
+                    cut.segs = ToSegs(run.path, run.closed);
+                    cut.closed = run.closed;
+                    cut.offset = offset;
+                    if (cut.segs.empty())
+                        continue;
+                    if (!profile.forward)
+                    {
+                        std::reverse(cut.segs.begin(), cut.segs.end());
+                        for (Seg& seg : cut.segs)
+                            seg = Reverse(seg);
+                    }
+                    cut.lifted = LiftedSpans(cut, tabCentres, settings.tabLength / 2.0 + radius);
+                    pass.push_back(std::move(cut));
+                }
+                if (!profile.forward)
+                    std::reverse(pass.begin(), pass.end());
+                if (!pass.empty())
+                    profile.passes.push_back(std::move(pass));
+            }
+            if (profile.passes.empty())
+            {
+                const std::string which =
+                    (input.profiles.size() > 1) ? "Profile " + std::to_string(n + 1) + ": " : std::string();
+                return Failure(which + "the tool doesn't fit anywhere along the profile.");
+            }
+            profiles.push_back(std::move(profile));
         }
-        if (passes.empty())
-            return Failure("The tool doesn't fit anywhere along the profile.");
 
         // Every pass at every level, top down. Entry and exit are at every level,
         // or only into the first and out of the last.
         ToolpathResult result;
-        for (size_t l = 0; l < levels.size(); ++l)
-        {
+        auto cut = [&](const Profile& profile, size_t l) {
             const CutLevel& level = levels[l];
             PathBuilder path(result.toolpath, pOperation->feeds, clearance, level.z);
             path.SetEntryExit(&entryExit, entryExit.eachCutLevel || l == 0,
                               entryExit.eachCutLevel || l + 1 == levels.size());
             const bool tabs = settings.useTabs && level.z < tabTop - 1e-9;
-            for (const std::vector<CutRun>& pass : passes)
+            for (const std::vector<CutRun>& pass : profile.passes)
             {
                 for (const CutRun& run : pass)
-                    CutAlong(path, run, level.z, tabTop, tabs, side, forward);
+                    CutAlong(path, run, level.z, tabTop, tabs, profile.side, profile.forward);
+            }
+        };
+        if (pOperation->cutLevels.order == CutLevelOrder::LevelFirst)
+        {
+            for (size_t l = 0; l < levels.size(); ++l)
+            {
+                for (const Profile& profile : profiles)
+                    cut(profile, l);
+            }
+        }
+        else
+        {
+            for (const Profile& profile : profiles)
+            {
+                for (size_t l = 0; l < levels.size(); ++l)
+                    cut(profile, l);
             }
         }
 
@@ -1319,10 +1540,15 @@ namespace camcore
             return Failure("This isn't a pocketing operation.");
         if (input.tool == nullptr || !(input.tool->diameter > 0.0))
             return Failure("Choose a tool on the Tool tab.");
-        if (!input.outline.ok || input.outline.path.size() < 2)
-            return Failure(input.outline.problem.empty() ? "There's no pocket outline." : input.outline.problem);
-        if (!input.outline.closed)
-            return Failure("The pocket's edges must join into a closed outline.");
+        if (input.outlines.empty())
+            return Failure("There's no pocket outline.");
+        for (const ProfileChain& outline : input.outlines)
+        {
+            if (!outline.ok || outline.path.size() < 2)
+                return Failure(outline.problem.empty() ? "There's no pocket outline." : outline.problem);
+            if (!outline.closed)
+                return Failure("Each pocket's edges must join into a closed outline.");
+        }
 
         const PocketingSettings& settings = pOperation->pocketing;
         if (settings.cutType == PocketCutType::Radial)
@@ -1335,8 +1561,8 @@ namespace camcore
                 return Failure(problems.front());
         }
 
-        // The outline is the cut geometry, at its own height.
-        const double z = input.outline.path.front().point.z;
+        // The outlines are the cut geometry, all at one height.
+        const double z = input.outlines.front().path.front().point.z;
         const std::vector<CutLevel> levels = CutLevelHeights(pOperation->cutLevels, z);
         const EntryExitSettings& entryExit = pOperation->entryExit;
         double clearance = 0.0;
@@ -1348,49 +1574,78 @@ namespace camcore
         if (entryExit.entry == EntryMode::AlongPath3D && !(clearance > levels.front().z + entryExit.alongPathHeight))
             return Failure("The along path height reaches the clearance plane.");
 
-        // Inside an anticlockwise outline is its left.
-        Path outline = input.outline.path;
-        if (SignedArea(outline) < 0.0)
-            outline = ReversePath(outline, true);
-        const std::vector<Seg> outlineSegs = ToSegs(outline, true);
-
         const double wall = input.tool->diameter / 2.0 + settings.stockToLeave;
         const double stepover = ResolveSize(settings.stepover, input.tool->diameter);
         if (!(wall > 0.0))
             return Failure("The stock to leave can't be less than minus the tool's radius.");
-        const std::vector<std::vector<ProfileRun>> rings = PocketRings(outline, wall, stepover);
-        if (rings.empty())
-            return Failure("The tool doesn't fit in the pocket.");
 
+        // Each pocket's pattern, worked out once.
+        struct Pocket
+        {
+            std::vector<Seg> outline;
+            std::vector<PocketPiece> pieces;
+        };
+        std::vector<Pocket> pockets;
         const CutDirection direction = PocketDirection(settings);
         const bool fromInside = settings.start == PocketStart::Inside;
-        std::vector<PocketPiece> pieces;
-        switch (settings.cutType)
+        for (size_t n = 0; n < input.outlines.size(); ++n)
         {
-        case PocketCutType::Linear:
-            pieces = LinearPieces(rings.front(), settings, stepover, problem);
-            if (!problem.empty())
-                return Failure(problem);
-            break;
-        case PocketCutType::Spiral:
-            pieces = SpiralPieces(rings, fromInside, direction, stepover);
-            break;
-        case PocketCutType::Offset:
-        default:
-            pieces = OffsetPieces(rings, fromInside, direction);
-            break;
+            // Inside an anticlockwise outline is its left.
+            Path outline = input.outlines[n].path;
+            if (SignedArea(outline) < 0.0)
+                outline = ReversePath(outline, true);
+
+            const std::vector<std::vector<ProfileRun>> rings = PocketRings(outline, wall, stepover);
+            const std::string which =
+                (input.outlines.size() > 1) ? "Pocket " + std::to_string(n + 1) + ": " : std::string();
+            if (rings.empty())
+                return Failure(which + "the tool doesn't fit in the pocket.");
+
+            Pocket pocket;
+            pocket.outline = ToSegs(outline, true);
+            switch (settings.cutType)
+            {
+            case PocketCutType::Linear:
+                pocket.pieces = LinearPieces(rings.front(), settings, stepover, problem);
+                if (!problem.empty())
+                    return Failure(which + problem);
+                break;
+            case PocketCutType::Spiral:
+                pocket.pieces = SpiralPieces(rings, fromInside, direction, stepover);
+                break;
+            case PocketCutType::Offset:
+            default:
+                pocket.pieces = OffsetPieces(rings, fromInside, direction);
+                break;
+            }
+            pockets.push_back(std::move(pocket));
         }
 
-        // Every level repeats the pattern, top down, with entries and exits at
-        // every level or only into the first and out of the last.
+        // Every level repeats each pocket's pattern, top down, with entries and
+        // exits at every level or only into the first and out of the last.
         const double furthest = 2.0 * stepover + 1e-6;
         ToolpathResult result;
-        for (size_t l = 0; l < levels.size(); ++l)
-        {
+        auto cut = [&](const Pocket& pocket, size_t l) {
             PathBuilder path(result.toolpath, pOperation->feeds, clearance, levels[l].z);
             path.SetEntryExit(&entryExit, entryExit.eachCutLevel || l == 0,
                               entryExit.eachCutLevel || l + 1 == levels.size());
-            CutPieces(path, pieces, levels[l].z, outlineSegs, wall, furthest);
+            CutPieces(path, pocket.pieces, levels[l].z, pocket.outline, wall, furthest);
+        };
+        if (pOperation->cutLevels.order == CutLevelOrder::LevelFirst)
+        {
+            for (size_t l = 0; l < levels.size(); ++l)
+            {
+                for (const Pocket& pocket : pockets)
+                    cut(pocket, l);
+            }
+        }
+        else
+        {
+            for (const Pocket& pocket : pockets)
+            {
+                for (size_t l = 0; l < levels.size(); ++l)
+                    cut(pocket, l);
+            }
         }
 
         result.ok = !result.toolpath.moves.empty();

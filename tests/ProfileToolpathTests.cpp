@@ -54,7 +54,7 @@ namespace
         ProfileToolpathInput input;
         input.operation = &step;
         input.tool = &tool;
-        input.profile = profile;
+        input.profiles = { profile };
         return GenerateProfileToolpath(input);
     }
 
@@ -326,15 +326,72 @@ TEST_CASE("tabs lift the tool over the tab length plus its diameter, on the leve
     CHECK(lifts == 4);      // up and over, on each of the two lower levels
 }
 
+TEST_CASE("areas: each face on its own, edges grouped where they meet, all flat at the highest point")
+{
+    auto line = [](Vec3 a, Vec3 b) { return PathFromPoints({ a, b }); };
+    const std::vector<std::vector<Path>> outlines = {
+        { line({ 0, 0, 2 }, { 10, 0, 2 }) },                    // edges A1
+        { line({ 100, 0, 0 }, { 110, 0, 0 }),                   // a face's loop, touching nothing
+          line({ 110, 0, 0 }, { 110, 10, 0 }), line({ 110, 10, 0 }, { 100, 0, 0 }) },
+        { line({ 10, 0, 5 }, { 10, 10, 5 }) },                  // A2, joins A1 seen from above
+        { line({ 50, 0, 1 }, { 60, 0, 1 }) },                   // B, apart
+        { line({ 0, 0, 0 }, { 0, 0, 8 }) },                     // along Z: nothing from above
+    };
+    const AreaGeometry areas = GatherAreas(outlines, { false, true, false, false, false });
+    REQUIRE(areas.ok);
+    CHECK(areas.level == doctest::Approx(8));
+    REQUIRE(areas.areas.size() == 3);
+    CHECK(areas.areas[0][0].size() == 1);       // A1 and A2
+    CHECK(areas.areas[0][2].size() == 1);
+    CHECK(areas.areas[1][1].size() == 3);       // the face
+    CHECK(areas.areas[2][3].size() == 1);       // B
+    for (const auto& area : areas.areas)
+    {
+        for (const Path& piece : AreaPieces(area))
+        {
+            for (const PathVertex& vertex : piece)
+                CHECK(vertex.point.z == 8);
+        }
+    }
+
+    // A face's loop doesn't join edges that touch it.
+    const AreaGeometry touching = GatherAreas({ { line({ 0, 0, 0 }, { 5, 0, 0 }), line({ 5, 0, 0 }, { 0, 5, 0 }),
+                                                  line({ 0, 5, 0 }, { 0, 0, 0 }) },
+                                                { line({ 5, 0, 0 }, { 9, 0, 0 }) } },
+                                              { true, false });
+    REQUIRE(touching.ok);
+    CHECK(touching.areas.size() == 2);
+}
+
+TEST_CASE("each profile is cut in turn, with its own side and tabs")
+{
+    SequenceStep step = ProfilingStep();
+    step.profiling.direction = CutDirection::Climb;
+    static Tool tool;
+    tool.diameter = 2;
+    ProfileToolpathInput input;
+    input.operation = &step;
+    input.tool = &tool;
+    input.profiles = { OpenLine(10), ChainProfile({ { Line({ 0, 20, 0 }, { 10, 20, 0 }) } }, 0) };
+    const std::vector<ToolpathMove> moves = GenerateProfileToolpath(input).toolpath.moves;
+    REQUIRE(moves.size() == 8);
+    CHECK(At(moves[1].to, 0, 1));
+    CHECK(At(moves[2].to, 10, 1));
+    CHECK(At(moves[5].to, 0, 21));
+    CHECK(At(moves[6].to, 10, 21));
+}
+
 TEST_CASE("a profiling toolpath needs a tool, a profile and room for the tool")
 {
     SequenceStep step = ProfilingStep();
     ProfileToolpathInput input;
     input.operation = &step;
-    input.profile = OpenLine(10);
+    input.profiles = { OpenLine(10) };
     CHECK_FALSE(GenerateProfileToolpath(input).ok);     // no tool
 
     CHECK_FALSE(Generate(step, ProfileChain()).ok);
+    input.profiles.clear();
+    CHECK_FALSE(GenerateProfileToolpath(input).ok);
 
     step.profiling.useClosedSide = true;
     step.profiling.closedSide = ClosedProfileSide::Inside;
