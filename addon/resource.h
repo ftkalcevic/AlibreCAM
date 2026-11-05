@@ -188,14 +188,31 @@
 #define IDC_PROF_TAB_COUNT              13247
 #define IDC_PROF_TAB_DISTANCE_RADIO     13248
 #define IDC_PROF_TAB_DISTANCE           13249
+#define IDD_OP_POCKETING                13025
+#define IDC_POCK_STOCK                  13250
+#define IDC_POCK_OFFSET                 13251
+#define IDC_POCK_LINEAR                 13252
+#define IDC_POCK_SPIRAL                 13253
+#define IDC_POCK_RADIAL                 13254
+#define IDC_POCK_CLIMB                  13255
+#define IDC_POCK_CONVENTIONAL           13256
+#define IDC_POCK_MIXED                  13257
+#define IDC_POCK_ANGLE                  13258
+#define IDC_POCK_ANGLE_LABEL            13259
+#define IDC_POCK_START_A                13260
+#define IDC_POCK_START_B                13261
+#define IDC_POCK_STEP_PERCENT_RADIO     13262
+#define IDC_POCK_STEP_PERCENT           13263
+#define IDC_POCK_STEP_DISTANCE_RADIO    13264
+#define IDC_POCK_STEP_DISTANCE          13265
 
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13025
+#define _APS_NEXT_RESOURCE_VALUE        13026
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13250
+#define _APS_NEXT_CONTROL_VALUE         13266
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

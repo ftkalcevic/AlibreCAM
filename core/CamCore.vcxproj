@@ -77,6 +77,7 @@
     <ClCompile Include="Origin.cpp" />
     <ClCompile Include="PseudoPost.cpp" />
     <ClCompile Include="PathBuilder.cpp" />
+    <ClCompile Include="Pocketing.cpp" />
     <ClCompile Include="Profiling.cpp" />
     <ClCompile Include="ProfileToolpath.cpp" />
     <ClCompile Include="ToolLibrary.cpp" />
@@ -93,6 +94,8 @@
     <ClInclude Include="Facing.h" />
     <ClInclude Include="FacingToolpath.h" />
     <ClInclude Include="PathBuilder.h" />
+    <ClInclude Include="Pocketing.h" />
+    <ClInclude Include="PocketToolpath.h" />
     <ClInclude Include="Profiling.h" />
     <ClInclude Include="ProfileToolpath.h" />
     <ClInclude Include="Features.h" />

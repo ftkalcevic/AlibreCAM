@@ -175,6 +175,103 @@ TEST_CASE("a profiling operation is an operation, and loads back with its shared
     CHECK(ReadText(path).find("\"profiling\"") != std::string::npos);
 }
 
+TEST_CASE("a pocketing operation is an operation, and loads back with its shared settings")
+{
+    CHECK(IsOperation(StepType::Pocketing));
+
+    TempFolder folder;
+    const fs::path path = folder / "Bracket.cam";
+    Job job = SampleJob();
+    SequenceStep origin;
+    origin.type = StepType::SetOrigin;
+    origin.id = NewStableId();
+    origin.name = "Origin 1";
+    job.sequence.push_back(origin);
+    SequenceStep group;
+    group.type = StepType::Group;
+    group.id = NewStableId();
+    group.name = "Folder 1";
+    SequenceStep pocketing;
+    pocketing.type = StepType::Pocketing;
+    pocketing.id = NewStableId();
+    pocketing.name = "Pocketing 1";
+    pocketing.toolId = "t2";
+    pocketing.cutLevels.totalDepth = 4;
+    pocketing.cutLevels.roughDepth = 4;
+    pocketing.cutLevels.finishDepth = 0;
+    pocketing.entryExit.entry = EntryMode::AlongPath3D;
+    pocketing.pocketing.stockToLeave = 0.3;
+    pocketing.pocketing.cutType = PocketCutType::Linear;
+    pocketing.pocketing.direction = CutDirection::Mixed;
+    pocketing.pocketing.cutAngle = 30;
+    pocketing.pocketing.start = PocketStart::Outside;
+    pocketing.pocketing.linearStart = PocketLinearStart::Top;
+    pocketing.pocketing.stepover = { false, 40, 1.5 };
+    group.children.push_back(pocketing);
+    job.sequence.push_back(group);
+    REQUIRE(SaveJob(job, path).ok);
+
+    const LoadResult loaded = LoadJob(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    const SequenceStep& back = loaded.job.sequence[1].children[0];
+    CHECK(back.type == StepType::Pocketing);
+    CHECK(back.name == "Pocketing 1");
+    CHECK(back.toolId == "t2");
+    CHECK(back.cutLevels.totalDepth == 4);
+    CHECK(back.entryExit.entry == EntryMode::AlongPath3D);
+    const PocketingSettings& p = back.pocketing;
+    CHECK(p.stockToLeave == 0.3);
+    CHECK(p.cutType == PocketCutType::Linear);
+    CHECK(p.direction == CutDirection::Mixed);
+    CHECK(p.cutAngle == 30);
+    CHECK(p.start == PocketStart::Outside);
+    CHECK(p.linearStart == PocketLinearStart::Top);
+    CHECK_FALSE(p.stepover.usePercent);
+    CHECK(p.stepover.percent == 40);
+    CHECK(p.stepover.distance == 1.5);
+    CHECK(ReadText(path).find("\"pocketing\"") != std::string::npos);
+}
+
+TEST_CASE("pocketing settings default as asked, and are checked")
+{
+    PocketingSettings settings;
+    CHECK(settings.stockToLeave == 0);
+    CHECK(settings.cutType == PocketCutType::Offset);
+    CHECK(settings.direction == CutDirection::Climb);
+    CHECK(settings.cutAngle == 0);
+    CHECK(settings.start == PocketStart::Inside);
+    CHECK(settings.linearStart == PocketLinearStart::Bottom);
+    CHECK(settings.stepover.usePercent);
+    CHECK(settings.stepover.percent == 50);
+    CHECK(settings.stepover.distance == 2);
+    CHECK(ValidatePocketing(settings).empty());
+
+    // Only Linear uses the angle, and Spiral can't be Mixed.
+    CHECK(PocketUsesAngle(PocketCutType::Linear));
+    CHECK_FALSE(PocketUsesAngle(PocketCutType::Offset));
+    settings.direction = CutDirection::Mixed;
+    CHECK(PocketDirection(settings) == CutDirection::Mixed);
+    settings.cutType = PocketCutType::Spiral;
+    CHECK(PocketDirection(settings) == CutDirection::Climb);
+    CHECK_FALSE(PocketAllowsMixed(PocketCutType::Spiral));
+    CHECK(PocketAllowsMixed(PocketCutType::Radial));
+
+    // The stepover in use must fit the tool, or be a distance more than 0.
+    settings.stepover.percent = 0;
+    CHECK(ValidatePocketing(settings).size() == 1);
+    settings.stepover.percent = 101;
+    CHECK(ValidatePocketing(settings).size() == 1);
+    settings.stepover.usePercent = false;
+    CHECK(ValidatePocketing(settings).empty());
+    settings.stepover.distance = 0;
+    CHECK(ValidatePocketing(settings).size() == 1);
+
+    // Stock to leave can be negative.
+    settings.stepover.distance = 1;
+    settings.stockToLeave = -0.2;
+    CHECK(ValidatePocketing(settings).empty());
+}
+
 TEST_CASE("profiling settings default as asked, and are checked")
 {
     ProfilingSettings settings;

@@ -6,7 +6,9 @@
 #include <cmath>
 #include <utility>
 
+#include "FacingToolpath.h"
 #include "PathBuilder.h"
+#include "PocketToolpath.h"
 
 namespace camcore
 {
@@ -920,6 +922,480 @@ namespace camcore
         result.ok = !result.toolpath.moves.empty();
         if (!result.ok)
             result.problem = "No passes fit the profile.";
+        return result;
+    }
+
+    /////////////////////////////////////////////////////////////////////////
+    // Pocketing
+
+    namespace
+    {
+        // A loop or row to cut, and the side of it that's open to the pocket.
+        struct PocketPiece
+        {
+            std::vector<Seg> segs;
+            Vec3 away;              // for the entry and exit motions
+            bool awayFromLoop = false;  // away is left of the loop's own way (true), or fixed
+        };
+
+        std::vector<Seg> ReverseSegs(const std::vector<Seg>& segs)
+        {
+            std::vector<Seg> reversed;
+            for (auto it = segs.rbegin(); it != segs.rend(); ++it)
+                reversed.push_back(Reverse(*it));
+            return reversed;
+        }
+
+        bool LoopIsAnticlockwise(const std::vector<Seg>& segs)
+        {
+            return SignedArea(ToPath(segs, true)) > 0.0;
+        }
+
+        // A closed loop started again at the point on it nearest to near.
+        std::vector<Seg> StartNear(const std::vector<Seg>& segs, const Vec3& near)
+        {
+            size_t best = 0;
+            double bestT = 0.0, bestDistance = -1.0;
+            for (size_t i = 0; i < segs.size(); ++i)
+            {
+                double t = 0.0;
+                const double d = NearestOn(segs[i], near, t);
+                if (bestDistance < 0.0 || d < bestDistance)
+                {
+                    bestDistance = d;
+                    best = i;
+                    bestT = t;
+                }
+            }
+
+            std::vector<Seg> rotated;
+            const bool split = bestT > 1e-9 && bestT < 1.0 - 1e-9;
+            if (split)
+                rotated.push_back(SubSeg(segs[best], bestT, 1.0));
+            const size_t first = (bestT >= 1.0 - 1e-9) ? best + 1 : (split ? best + 1 : best);
+            for (size_t k = 0; k < segs.size(); ++k)
+            {
+                const size_t i = (first + k) % segs.size();
+                if (split && i == best)
+                    break;
+                rotated.push_back(segs[i]);
+            }
+            if (split)
+                rotated.push_back(SubSeg(segs[best], 0.0, bestT));
+            return rotated;
+        }
+
+        // The point a share of the way round a loop, by length.
+        Vec3 PointRound(const std::vector<Seg>& segs, double share)
+        {
+            return PointAtLength(segs, RunLength(segs) * share);
+        }
+
+        // Every offset of the outline from the wall inwards, a stepover apart,
+        // until nothing fits.
+        std::vector<std::vector<ProfileRun>> PocketRings(const Path& outline, double wall, double stepover)
+        {
+            std::vector<std::vector<ProfileRun>> rings;
+            for (int k = 0; k < 100000; ++k)
+            {
+                std::vector<ProfileRun> ring = OffsetProfile(outline, true, wall + k * stepover);
+                std::vector<ProfileRun> kept;
+                for (ProfileRun& run : ring)
+                {
+                    if (RunLength(ToSegs(run.path, run.closed)) > 1e-6)
+                        kept.push_back(std::move(run));
+                }
+                if (kept.empty())
+                    break;
+                rings.push_back(std::move(kept));
+            }
+            return rings;
+        }
+
+        // Feeding straight from a to b keeps clear of the wall, and isn't far.
+        bool SafeLink(const std::vector<Seg>& outline, double wall, const Vec3& a, const Vec3& b, double furthest)
+        {
+            const double length = DistanceXY(a, b);
+            if (length > furthest)
+                return false;
+            const int samples = 8;
+            for (int i = 0; i <= samples; ++i)
+            {
+                const double t = static_cast<double>(i) / samples;
+                const Vec3 p{ a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, 0.0 };
+                if (DistanceToSegs(outline, p) < wall - 1e-3)
+                    return false;
+            }
+            return true;
+        }
+
+        // Cuts the pieces at one level, staying down between them when it's safe.
+        void CutPieces(PathBuilder& path, const std::vector<PocketPiece>& pieces, double z,
+                       const std::vector<Seg>& outline, double wall, double furthest)
+        {
+            auto awayAt = [](const PocketPiece& piece, const Vec3& tangent) {
+                return piece.awayFromLoop ? LeftOf(tangent) * (piece.away.x) : piece.away;
+            };
+
+            bool down = false;
+            Vec3 at, lastTangent, lastAway;
+            for (const PocketPiece& piece : pieces)
+            {
+                if (piece.segs.empty())
+                    continue;
+                const Seg& first = piece.segs.front();
+                const Vec3 start{ first.a.x, first.a.y, z };
+                const Vec3 tangent = TangentAt(first, 0.0);
+
+                if (down && SafeLink(outline, wall, at, start, furthest))
+                {
+                    if (DistanceXY(at, start) > kTiny)
+                        path.Cut(start);
+                }
+                else
+                {
+                    if (down)
+                        path.Exit(at, lastTangent, lastAway);
+                    path.Enter(start, tangent, awayAt(piece, tangent));
+                }
+
+                for (const Seg& s : piece.segs)
+                {
+                    if (s.arc)
+                        path.ArcTo(s.b, s.c, !s.ccw);
+                    else
+                        path.Cut(s.b);
+                }
+                const Seg& last = piece.segs.back();
+                at = { last.b.x, last.b.y, z };
+                lastTangent = TangentAt(last, 1.0);
+                lastAway = awayAt(piece, lastTangent);
+                down = true;
+            }
+            if (down)
+                path.Exit(at, lastTangent, lastAway);
+        }
+
+        // A loop to cut, turned the way it's cut and started near the last end.
+        // Its open side is towards the pocket: left of an anticlockwise loop,
+        // which is right when it's cut clockwise.
+        PocketPiece LoopPiece(const ProfileRun& run, bool anticlockwise, const Vec3* pNear)
+        {
+            PocketPiece piece;
+            std::vector<Seg> segs = ToSegs(run.path, run.closed);
+            if (run.closed)
+            {
+                if (LoopIsAnticlockwise(segs) != anticlockwise)
+                    segs = ReverseSegs(segs);
+                if (pNear != nullptr)
+                    segs = StartNear(segs, *pNear);
+            }
+            else if (!anticlockwise)
+            {
+                // Pieces of an outline's offset run its way, which is anticlockwise.
+                segs = ReverseSegs(segs);
+            }
+            piece.segs = std::move(segs);
+            piece.awayFromLoop = true;
+            piece.away = { anticlockwise ? 1.0 : -1.0, 0.0, 0.0 };     // which side of the tangent
+            return piece;
+        }
+
+        // The lap round the wall, after the rows or the spiral.
+        void AddLaps(std::vector<PocketPiece>& pieces, const std::vector<ProfileRun>& wallRing, bool anticlockwise)
+        {
+            for (const ProfileRun& run : wallRing)
+            {
+                const Vec3* pNear = nullptr;
+                Vec3 end;
+                if (!pieces.empty() && !pieces.back().segs.empty())
+                {
+                    end = pieces.back().segs.back().b;
+                    pNear = &end;
+                }
+                pieces.push_back(LoopPiece(run, anticlockwise, pNear));
+            }
+        }
+
+        std::vector<PocketPiece> OffsetPieces(const std::vector<std::vector<ProfileRun>>& rings, bool fromInside,
+                                              CutDirection direction)
+        {
+            std::vector<PocketPiece> pieces;
+            bool anticlockwise = (direction != CutDirection::Conventional);
+            for (size_t n = 0; n < rings.size(); ++n)
+            {
+                const std::vector<ProfileRun>& ring = rings[fromInside ? rings.size() - 1 - n : n];
+                for (const ProfileRun& run : ring)
+                {
+                    Vec3 end;
+                    const Vec3* pNear = nullptr;
+                    if (!pieces.empty())
+                    {
+                        end = pieces.back().segs.back().b;
+                        pNear = &end;
+                    }
+                    pieces.push_back(LoopPiece(run, anticlockwise, pNear));
+                    if (direction == CutDirection::Mixed)
+                        anticlockwise = !anticlockwise;
+                }
+            }
+            return pieces;
+        }
+
+        std::vector<PocketPiece> LinearPieces(const std::vector<ProfileRun>& wallRing, const PocketingSettings& settings,
+                                              double stepover, std::string& problem)
+        {
+            std::vector<PocketPiece> pieces;
+            for (const ProfileRun& run : wallRing)
+            {
+                if (!run.closed)
+                {
+                    problem = "The pocket is too narrow in places for linear cuts.";
+                    return pieces;
+                }
+            }
+
+            const Vec3 along = PassDirection(settings.cutAngle);
+            const Vec3 across = LeftOf(along);
+
+            // The rows run across the wall's extent, a stepover apart at most. The
+            // first and last would only touch the wall, which the lap cuts.
+            double low = 0.0, high = 0.0;
+            bool found = false;
+            for (const ProfileRun& run : wallRing)
+            {
+                double a = 0.0, b = 0.0;
+                PathExtent(run.path, across, a, b);
+                low = found ? (std::min)(low, a) : a;
+                high = found ? (std::max)(high, b) : b;
+                found = true;
+            }
+            const int intervals = (std::max)(1, static_cast<int>(std::ceil((high - low) / stepover - 1e-9)));
+            const double spacing = (high - low) / intervals;
+
+            // Start at Bottom starts on the frame's -Y side. Rows along Y start on -X.
+            const bool acrossGoesUp = std::fabs(across.y) > 1e-9 ? across.y > 0.0 : across.x < 0.0;
+            const bool fromLow = (settings.linearStart == PocketLinearStart::Bottom) == acrossGoesUp;
+            const double stepSign = fromLow ? 1.0 : -1.0;
+
+            // As for Facing: the uncut side is the way the rows step, and climb keeps it on the right.
+            const CutDirection direction = PocketDirection(settings);
+            const bool climbForward = (stepSign < 0.0);
+            bool forward = (direction == CutDirection::Conventional) ? !climbForward : climbForward;
+            const Vec3 cutSide = across * -stepSign;
+
+            for (int i = 1; i < intervals; ++i)
+            {
+                const double v = fromLow ? low + i * spacing : high - i * spacing;
+                std::vector<double> crossings;
+                for (const ProfileRun& run : wallRing)
+                {
+                    const std::vector<double> more = PathCrossings(run.path, along, across, v);
+                    crossings.insert(crossings.end(), more.begin(), more.end());
+                }
+                std::sort(crossings.begin(), crossings.end());
+
+                // Inside between each pair of crossings, cut in the row's direction.
+                std::vector<std::pair<double, double>> spans;
+                for (size_t k = 0; k + 1 < crossings.size(); k += 2)
+                {
+                    if (crossings[k + 1] - crossings[k] > 1e-6)
+                        spans.push_back({ crossings[k], crossings[k + 1] });
+                }
+                if (!forward)
+                    std::reverse(spans.begin(), spans.end());
+                for (const auto& span : spans)
+                {
+                    const double from = forward ? span.first : span.second;
+                    const double to = forward ? span.second : span.first;
+                    Seg row;
+                    row.a = { from * along.x + v * across.x, from * along.y + v * across.y, 0.0 };
+                    row.b = { to * along.x + v * across.x, to * along.y + v * across.y, 0.0 };
+                    PocketPiece piece;
+                    piece.segs.push_back(row);
+                    piece.away = cutSide;
+                    pieces.push_back(piece);
+                }
+                if (direction == CutDirection::Mixed)
+                    forward = !forward;
+            }
+
+            // Then round the wall, climbing for Mixed.
+            AddLaps(pieces, wallRing, direction != CutDirection::Conventional);
+            return pieces;
+        }
+
+        std::vector<PocketPiece> SpiralPieces(const std::vector<std::vector<ProfileRun>>& rings, bool fromInside,
+                                              CutDirection direction, double stepover)
+        {
+            const bool anticlockwise = (direction != CutDirection::Conventional);
+
+            // The spiral goes through the loops while each is one closed loop. Past
+            // that, the rest are cut as offset loops.
+            size_t spiralRings = 0;
+            while (spiralRings < rings.size() && rings[spiralRings].size() == 1 && rings[spiralRings][0].closed)
+                ++spiralRings;
+
+            std::vector<PocketPiece> pieces;
+            if (spiralRings >= 2)
+            {
+                // Built from the wall in, turned the opposite way if it'll be run backwards from the middle.
+                const bool buildAnticlockwise = fromInside ? !anticlockwise : anticlockwise;
+                std::vector<std::vector<Seg>> loops;
+                for (size_t k = 0; k < spiralRings; ++k)
+                {
+                    std::vector<Seg> segs = ToSegs(rings[k][0].path, true);
+                    if (LoopIsAnticlockwise(segs) != buildAnticlockwise)
+                        segs = ReverseSegs(segs);
+                    if (!loops.empty())
+                        segs = StartNear(segs, loops.back().front().a);
+                    loops.push_back(std::move(segs));
+                }
+
+                // Each turn blends from one loop to the next.
+                Polyline points;
+                const double spacing = (std::max)(0.25, stepover / 4.0);
+                for (size_t k = 0; k + 1 < loops.size(); ++k)
+                {
+                    const int samples = (std::max)(24, (std::min)(4000, static_cast<int>(std::ceil(RunLength(loops[k]) / spacing))));
+                    for (int i = 0; i < samples; ++i)
+                    {
+                        const double t = static_cast<double>(i) / samples;
+                        const Vec3 outer = PointRound(loops[k], t);
+                        const Vec3 inner = PointRound(loops[k + 1], t);
+                        points.push_back({ outer.x + (inner.x - outer.x) * t, outer.y + (inner.y - outer.y) * t, 0.0 });
+                    }
+                }
+                points.push_back(loops.back().front().a);
+                if (fromInside)
+                    std::reverse(points.begin(), points.end());
+
+                PocketPiece spiral;
+                for (size_t i = 0; i + 1 < points.size(); ++i)
+                {
+                    Seg s;
+                    s.a = points[i];
+                    s.b = points[i + 1];
+                    if (DistanceXY(s.a, s.b) > kTiny)
+                        spiral.segs.push_back(s);
+                }
+                spiral.awayFromLoop = true;
+                spiral.away = { anticlockwise ? 1.0 : -1.0, 0.0, 0.0 };
+
+                // The innermost loop is cut whole: first from the middle, last from the wall.
+                const ProfileRun& innermost = rings[spiralRings - 1][0];
+                const Vec3 middle = loops.back().front().a;
+                PocketPiece centre = LoopPiece(innermost, anticlockwise, &middle);
+                if (fromInside)
+                {
+                    pieces.push_back(centre);
+                    pieces.push_back(spiral);
+                }
+                else
+                {
+                    pieces.push_back(spiral);
+                    pieces.push_back(centre);
+                }
+            }
+
+            // Whatever the spiral can't reach, as loops, then the lap round the wall.
+            std::vector<std::vector<ProfileRun>> rest(rings.begin() + (std::min)(spiralRings, rings.size()), rings.end());
+            if (spiralRings < 2)
+                rest.assign(rings.begin() + (rings.empty() ? 0 : 1), rings.end());
+            // From the middle they come first, before the spiral works out.
+            const std::vector<PocketPiece> loops =
+                OffsetPieces(rest, fromInside, anticlockwise ? CutDirection::Climb : CutDirection::Conventional);
+            pieces.insert(fromInside ? pieces.begin() : pieces.end(), loops.begin(), loops.end());
+            if (!rings.empty())
+                AddLaps(pieces, rings.front(), anticlockwise);
+            return pieces;
+        }
+    }
+
+    ToolpathResult GeneratePocketToolpath(const PocketToolpathInput& input)
+    {
+        const SequenceStep* pOperation = input.operation;
+        if (pOperation == nullptr || pOperation->type != StepType::Pocketing)
+            return Failure("This isn't a pocketing operation.");
+        if (input.tool == nullptr || !(input.tool->diameter > 0.0))
+            return Failure("Choose a tool on the Tool tab.");
+        if (!input.outline.ok || input.outline.path.size() < 2)
+            return Failure(input.outline.problem.empty() ? "There's no pocket outline." : input.outline.problem);
+        if (!input.outline.closed)
+            return Failure("The pocket's edges must join into a closed outline.");
+
+        const PocketingSettings& settings = pOperation->pocketing;
+        if (settings.cutType == PocketCutType::Radial)
+            return Failure("Radial cuts aren't built yet.");
+        for (const std::vector<std::string>& problems :
+             { ValidatePocketing(settings), ValidateFeeds(pOperation->feeds), ValidateCutLevels(pOperation->cutLevels),
+               ValidateEntryExit(pOperation->entryExit) })
+        {
+            if (!problems.empty())
+                return Failure(problems.front());
+        }
+
+        // The outline is the cut geometry, at its own height.
+        const double z = input.outline.path.front().point.z;
+        const std::vector<CutLevel> levels = CutLevelHeights(pOperation->cutLevels, z);
+        const EntryExitSettings& entryExit = pOperation->entryExit;
+        double clearance = 0.0;
+        std::string problem;
+        if (!ClearanceHeight(pOperation->clearance, input.havePartMaxZ, input.partMaxZ, clearance, problem))
+            return Failure(problem);
+        if (!(clearance > CutTopZ(pOperation->cutLevels, z)))
+            return Failure("The clearance plane must be above the top of the cut.");
+        if (entryExit.entry == EntryMode::AlongPath3D && !(clearance > levels.front().z + entryExit.alongPathHeight))
+            return Failure("The along path height reaches the clearance plane.");
+
+        // Inside an anticlockwise outline is its left.
+        Path outline = input.outline.path;
+        if (SignedArea(outline) < 0.0)
+            outline = ReversePath(outline, true);
+        const std::vector<Seg> outlineSegs = ToSegs(outline, true);
+
+        const double wall = input.tool->diameter / 2.0 + settings.stockToLeave;
+        const double stepover = ResolveSize(settings.stepover, input.tool->diameter);
+        if (!(wall > 0.0))
+            return Failure("The stock to leave can't be less than minus the tool's radius.");
+        const std::vector<std::vector<ProfileRun>> rings = PocketRings(outline, wall, stepover);
+        if (rings.empty())
+            return Failure("The tool doesn't fit in the pocket.");
+
+        const CutDirection direction = PocketDirection(settings);
+        const bool fromInside = settings.start == PocketStart::Inside;
+        std::vector<PocketPiece> pieces;
+        switch (settings.cutType)
+        {
+        case PocketCutType::Linear:
+            pieces = LinearPieces(rings.front(), settings, stepover, problem);
+            if (!problem.empty())
+                return Failure(problem);
+            break;
+        case PocketCutType::Spiral:
+            pieces = SpiralPieces(rings, fromInside, direction, stepover);
+            break;
+        case PocketCutType::Offset:
+        default:
+            pieces = OffsetPieces(rings, fromInside, direction);
+            break;
+        }
+
+        // Every level repeats the pattern, top down, with entries and exits at
+        // every level or only into the first and out of the last.
+        const double furthest = 2.0 * stepover + 1e-6;
+        ToolpathResult result;
+        for (size_t l = 0; l < levels.size(); ++l)
+        {
+            PathBuilder path(result.toolpath, pOperation->feeds, clearance, levels[l].z);
+            path.SetEntryExit(&entryExit, entryExit.eachCutLevel || l == 0,
+                              entryExit.eachCutLevel || l + 1 == levels.size());
+            CutPieces(path, pieces, levels[l].z, outlineSegs, wall, furthest);
+        }
+
+        result.ok = !result.toolpath.moves.empty();
+        if (!result.ok)
+            result.problem = "Nothing fits in the pocket.";
         return result;
     }
 }

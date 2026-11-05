@@ -28,6 +28,7 @@ namespace
         case StepType::Drill:  return L"Drill";
         case StepType::Facing: return L"Facing";
         case StepType::Profiling: return L"Profiling";
+        case StepType::Pocketing: return L"Pocketing";
         default:               return L"Operation";
         }
     }
@@ -1656,6 +1657,164 @@ void CProfilingPage::OnChoiceChanged()
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// CPocketingPage
+
+BEGIN_MESSAGE_MAP(CPocketingPage, COperationPage)
+    ON_BN_CLICKED(IDC_POCK_OFFSET, &CPocketingPage::OnCutTypeChanged)
+    ON_BN_CLICKED(IDC_POCK_LINEAR, &CPocketingPage::OnCutTypeChanged)
+    ON_BN_CLICKED(IDC_POCK_SPIRAL, &CPocketingPage::OnCutTypeChanged)
+    ON_BN_CLICKED(IDC_POCK_RADIAL, &CPocketingPage::OnCutTypeChanged)
+    ON_BN_CLICKED(IDC_POCK_CLIMB, &CPocketingPage::OnDirectionChanged)
+    ON_BN_CLICKED(IDC_POCK_CONVENTIONAL, &CPocketingPage::OnDirectionChanged)
+    ON_BN_CLICKED(IDC_POCK_MIXED, &CPocketingPage::OnDirectionChanged)
+    ON_BN_CLICKED(IDC_POCK_START_A, &CPocketingPage::OnStartChanged)
+    ON_BN_CLICKED(IDC_POCK_START_B, &CPocketingPage::OnStartChanged)
+    ON_BN_CLICKED(IDC_POCK_STEP_PERCENT_RADIO, &CPocketingPage::OnStepoverChanged)
+    ON_BN_CLICKED(IDC_POCK_STEP_DISTANCE_RADIO, &CPocketingPage::OnStepoverChanged)
+END_MESSAGE_MAP()
+
+CPocketingPage::CPocketingPage(COperationDlg* pOwner)
+    : COperationPage(IDD_OP_POCKETING, pOwner)
+    , m_direction(CutDirection::Climb)
+    , m_start(PocketStart::Inside)
+    , m_linearStart(PocketLinearStart::Bottom)
+{
+}
+
+PocketCutType CPocketingPage::ShownCutType() const
+{
+    switch (GetCheckedRadioButton(IDC_POCK_OFFSET, IDC_POCK_RADIAL))
+    {
+    case IDC_POCK_LINEAR: return PocketCutType::Linear;
+    case IDC_POCK_SPIRAL: return PocketCutType::Spiral;
+    case IDC_POCK_RADIAL: return PocketCutType::Radial;
+    default:              return PocketCutType::Offset;
+    }
+}
+
+void CPocketingPage::Load(const SequenceStep& step)
+{
+    const PocketingSettings& pocketing = step.pocketing;
+    SetNumber(IDC_POCK_STOCK, pocketing.stockToLeave);
+    const int type = (pocketing.cutType == PocketCutType::Linear)   ? IDC_POCK_LINEAR
+                     : (pocketing.cutType == PocketCutType::Spiral) ? IDC_POCK_SPIRAL
+                     : (pocketing.cutType == PocketCutType::Radial) ? IDC_POCK_RADIAL
+                                                                    : IDC_POCK_OFFSET;
+    CheckRadioButton(IDC_POCK_OFFSET, IDC_POCK_RADIAL, type);
+    SetNumber(IDC_POCK_ANGLE, pocketing.cutAngle);
+
+    m_direction = pocketing.direction;
+    m_start = pocketing.start;
+    m_linearStart = pocketing.linearStart;
+
+    const ToolRelativeSize& stepover = pocketing.stepover;
+    CheckRadioButton(IDC_POCK_STEP_PERCENT_RADIO, IDC_POCK_STEP_DISTANCE_RADIO,
+                     stepover.usePercent ? IDC_POCK_STEP_PERCENT_RADIO : IDC_POCK_STEP_DISTANCE_RADIO);
+    SetNumber(IDC_POCK_STEP_PERCENT, stepover.percent);
+    SetNumber(IDC_POCK_STEP_DISTANCE, stepover.distance);
+    UpdateFields();
+}
+
+bool CPocketingPage::Save(SequenceStep& step, std::wstring& problems)
+{
+    PocketingSettings pocketing = step.pocketing;
+    std::wstring found;
+
+    ReadNumber(IDC_POCK_STOCK, L"The stock to leave", pocketing.stockToLeave, found);
+    pocketing.cutType = ShownCutType();
+    pocketing.direction = m_direction;
+    pocketing.start = m_start;
+    pocketing.linearStart = m_linearStart;
+
+    // Only the boxes in use are read.
+    if (PocketUsesAngle(pocketing.cutType))
+        ReadNumber(IDC_POCK_ANGLE, L"The angle of cuts", pocketing.cutAngle, found);
+    pocketing.stepover.usePercent = IsDlgButtonChecked(IDC_POCK_STEP_DISTANCE_RADIO) != BST_CHECKED;
+    if (pocketing.stepover.usePercent)
+        ReadNumber(IDC_POCK_STEP_PERCENT, L"The stepover percentage", pocketing.stepover.percent, found);
+    else
+        ReadNumber(IDC_POCK_STEP_DISTANCE, L"The stepover distance", pocketing.stepover.distance, found);
+
+    if (found.empty())
+    {
+        for (const std::string& problem : ValidatePocketing(pocketing))
+            AppendProblem(found, FromUtf8(problem));
+    }
+
+    if (!found.empty())
+    {
+        AppendProblem(problems, found);
+        return false;
+    }
+
+    step.pocketing = pocketing;
+    return true;
+}
+
+void CPocketingPage::UpdateFields()
+{
+    const PocketCutType type = ShownCutType();
+
+    // Spiral can't be Mixed, so it shows Climb while Mixed is kept for the other types.
+    const bool mixedAllowed = PocketAllowsMixed(type);
+    GetDlgItem(IDC_POCK_MIXED)->EnableWindow(mixedAllowed);
+    CutDirection shown = m_direction;
+    if (shown == CutDirection::Mixed && !mixedAllowed)
+        shown = CutDirection::Climb;
+    const int direction = (shown == CutDirection::Conventional) ? IDC_POCK_CONVENTIONAL
+                          : (shown == CutDirection::Mixed)      ? IDC_POCK_MIXED
+                                                                : IDC_POCK_CLIMB;
+    CheckRadioButton(IDC_POCK_CLIMB, IDC_POCK_MIXED, direction);
+
+    // Only Linear Cuts have an angle.
+    const bool angle = PocketUsesAngle(type);
+    GetDlgItem(IDC_POCK_ANGLE)->EnableWindow(angle);
+    GetDlgItem(IDC_POCK_ANGLE_LABEL)->EnableWindow(angle);
+
+    // The start point is the bottom or top for Linear Cuts, and inside or outside otherwise.
+    const bool linear = (type == PocketCutType::Linear);
+    SetDlgItemText(IDC_POCK_START_A, linear ? L"Start at Bottom" : L"Inside");
+    SetDlgItemText(IDC_POCK_START_B, linear ? L"Start at Top" : L"Outside");
+    const bool second = linear ? (m_linearStart == PocketLinearStart::Top) : (m_start == PocketStart::Outside);
+    CheckRadioButton(IDC_POCK_START_A, IDC_POCK_START_B, second ? IDC_POCK_START_B : IDC_POCK_START_A);
+
+    // Only the chosen stepover's box.
+    const bool percent = IsDlgButtonChecked(IDC_POCK_STEP_DISTANCE_RADIO) != BST_CHECKED;
+    GetDlgItem(IDC_POCK_STEP_PERCENT)->EnableWindow(percent);
+    GetDlgItem(IDC_POCK_STEP_DISTANCE)->EnableWindow(!percent);
+}
+
+void CPocketingPage::OnCutTypeChanged()
+{
+    UpdateFields();
+}
+
+void CPocketingPage::OnDirectionChanged()
+{
+    switch (GetCheckedRadioButton(IDC_POCK_CLIMB, IDC_POCK_MIXED))
+    {
+    case IDC_POCK_CONVENTIONAL: m_direction = CutDirection::Conventional; break;
+    case IDC_POCK_MIXED:        m_direction = CutDirection::Mixed; break;
+    default:                    m_direction = CutDirection::Climb; break;
+    }
+}
+
+void CPocketingPage::OnStartChanged()
+{
+    // The buttons belong to whichever start the shown cut type uses.
+    const bool second = IsDlgButtonChecked(IDC_POCK_START_B) == BST_CHECKED;
+    if (ShownCutType() == PocketCutType::Linear)
+        m_linearStart = second ? PocketLinearStart::Top : PocketLinearStart::Bottom;
+    else
+        m_start = second ? PocketStart::Outside : PocketStart::Inside;
+}
+
+void CPocketingPage::OnStepoverChanged()
+{
+    UpdateFields();
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // CDrillingPage
 
 BEGIN_MESSAGE_MAP(CDrillingPage, COperationPage)
@@ -1842,12 +2001,13 @@ BOOL COperationDlg::OnInitDialog()
     AddPage(L"Feeds && Speeds", std::make_unique<CFeedsPage>(this));
     AddPage(L"Clearance", std::make_unique<CClearancePage>(this));
 
-    // Drill, Facing and Profiling have no Sorting tab.
-    if (m_step.type != StepType::Drill && m_step.type != StepType::Facing && m_step.type != StepType::Profiling)
+    // Drill, Facing, Profiling and Pocketing have no Sorting tab.
+    if (m_step.type != StepType::Drill && m_step.type != StepType::Facing && m_step.type != StepType::Profiling &&
+        m_step.type != StepType::Pocketing)
         AddPage(L"Sorting", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
 
     // Then its own.
-    if (m_step.type == StepType::Facing || m_step.type == StepType::Profiling)
+    if (m_step.type == StepType::Facing || m_step.type == StepType::Profiling || m_step.type == StepType::Pocketing)
     {
         // Cut Levels is shared by the operations that cut in levels.
         auto cutLevels = std::make_unique<CCutLevelsPage>(this);
@@ -1862,8 +2022,10 @@ BOOL COperationDlg::OnInitDialog()
         // Then the operation's own tab.
         if (m_step.type == StepType::Facing)
             AddPage(L"Facing", std::make_unique<CFacingPage>(this));
-        else
+        else if (m_step.type == StepType::Profiling)
             AddPage(L"Profiling", std::make_unique<CProfilingPage>(this));
+        else
+            AddPage(L"Pocketing", std::make_unique<CPocketingPage>(this));
     }
     else if (m_step.type == StepType::Drill)
     {
@@ -2000,9 +2162,10 @@ void COperationDlg::ShowLocateProblem(const std::wstring& problem)
 FeatureFilter COperationDlg::GetFeatureFilter() const
 {
     // Each operation type has its own filter. Drill needs points, and Facing faces and edges.
-    // Profiling borrows Facing's until its own is decided.
-    return (m_step.type == StepType::Facing || m_step.type == StepType::Profiling) ? FeatureFilter::FacingArea
-                                                                                   : FeatureFilter::Points;
+    // Profiling and Pocketing borrow Facing's until their own are decided.
+    const bool area = m_step.type == StepType::Facing || m_step.type == StepType::Profiling ||
+                      m_step.type == StepType::Pocketing;
+    return area ? FeatureFilter::FacingArea : FeatureFilter::Points;
 }
 
 void COperationDlg::StartSelectingFeatures()

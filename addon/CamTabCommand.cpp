@@ -7,6 +7,7 @@
 #include "DisplaySettings.h"
 #include "DrillToolpath.h"
 #include "FacingToolpath.h"
+#include "PocketToolpath.h"
 #include "ProfileToolpath.h"
 #include "FileIO.h"
 #include "PostDialog.h"
@@ -47,6 +48,7 @@ namespace
         ID_CAM_ADD_DRILL,
         ID_CAM_ADD_FACING,
         ID_CAM_ADD_PROFILING,
+        ID_CAM_ADD_POCKETING,
         ID_CAM_EDIT_STEP,
         ID_CAM_RENAME_STEP,
         ID_CAM_DUPLICATE_STEP,
@@ -756,6 +758,7 @@ void CCamTabCommand::AddOperation(size_t folder, camcore::StepType type)
     operation.id = camcore::NewStableId();
     operation.name = NewOperationName(m_job, type == camcore::StepType::Facing      ? "Facing"
                                              : type == camcore::StepType::Profiling ? "Profiling"
+                                             : type == camcore::StepType::Pocketing ? "Pocketing"
                                                                                     : "Drill");
 
     // A new operation starts with the tool selected in the tree.
@@ -1090,7 +1093,7 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
 {
     camcore::SequenceStep& operation = m_job.sequence[target.step].children[target.child];
     if (operation.type != camcore::StepType::Drill && operation.type != camcore::StepType::Facing &&
-        operation.type != camcore::StepType::Profiling)
+        operation.type != camcore::StepType::Profiling && operation.type != camcore::StepType::Pocketing)
     {
         problem = "Toolpaths for this operation aren't built yet.";
         return false;
@@ -1193,6 +1196,43 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
             return false;
         }
         operation.toolpath = profileResult.toolpath;
+        return true;
+    }
+
+    // Pocketing joins its features into a closed outline the same way, then clears inside it.
+    if (operation.type == camcore::StepType::Pocketing)
+    {
+        const camcore::FacingFeatureCheck check =
+            camcore::CheckFacingFeatures(frame.frame, operation.features, "Pocketing");
+        if (!check.ok)
+        {
+            problem = check.problem;
+            return false;
+        }
+        if (!readOutlines())
+            return false;
+
+        camcore::PocketToolpathInput pocketInput;
+        pocketInput.operation = &operation;
+        pocketInput.tool = (pTool != nullptr) ? &tool : nullptr;
+        pocketInput.havePartMaxZ = havePartMaxZ;
+        pocketInput.partMaxZ = partMaxZ;
+        pocketInput.outline = camcore::ChainProfile(outlines, check.level);
+        if (!pocketInput.outline.ok)
+        {
+            problem = pocketInput.outline.problem;
+            return false;
+        }
+        Log(L"[generate] pocket outline of %zu points, %s", pocketInput.outline.path.size(),
+            pocketInput.outline.closed ? L"closed" : L"open");
+
+        const camcore::ToolpathResult pocketResult = camcore::GeneratePocketToolpath(pocketInput);
+        if (!pocketResult.ok)
+        {
+            problem = pocketResult.problem;
+            return false;
+        }
+        operation.toolpath = pocketResult.toolpath;
         return true;
     }
 
@@ -2301,6 +2341,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         twoAndAHalfAxis.CreatePopupMenu();
         twoAndAHalfAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_FACING, L"Facing...");
         twoAndAHalfAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_PROFILING, L"Profiling...");
+        twoAndAHalfAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_POCKETING, L"Pocketing...");
         menu.AppendMenu(MF_POPUP | editable, reinterpret_cast<UINT_PTR>(twoAndAHalfAxis.GetSafeHmenu()),
                         L"Add 2 1/2 Axis");
         menu.AppendMenu(MF_SEPARATOR);
@@ -2354,6 +2395,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     case ID_CAM_ADD_DRILL:   m_pTab->AddOperation(ref.step, camcore::StepType::Drill); break;
     case ID_CAM_ADD_FACING:  m_pTab->AddOperation(ref.step, camcore::StepType::Facing); break;
     case ID_CAM_ADD_PROFILING: m_pTab->AddOperation(ref.step, camcore::StepType::Profiling); break;
+    case ID_CAM_ADD_POCKETING: m_pTab->AddOperation(ref.step, camcore::StepType::Pocketing); break;
     case ID_CAM_EDIT_STEP:   m_pTab->EditStep(ref); break;
     case ID_CAM_RENAME_STEP: m_tree.EditLabel(hItem); break;
     case ID_CAM_DELETE_STEP: m_pTab->DeleteStep(ref); break;

@@ -318,6 +318,36 @@ private:
     bool m_updating;            // the page is setting its own boxes
 };
 
+// The Pocketing operation's own tab.
+class CPocketingPage : public COperationPage
+{
+public:
+    explicit CPocketingPage(COperationDlg* pOwner);
+
+    void Load(const camcore::SequenceStep& step) override;
+    bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
+
+    enum { IDD = IDD_OP_POCKETING };
+
+protected:
+    afx_msg void OnCutTypeChanged();
+    afx_msg void OnDirectionChanged();
+    afx_msg void OnStartChanged();
+    afx_msg void OnStepoverChanged();
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    camcore::PocketCutType ShownCutType() const;
+    void UpdateFields();
+
+    // What's been chosen, kept apart from the buttons, as Spiral can't show
+    // Mixed and the start buttons mean different things for Linear Cuts.
+    camcore::CutDirection m_direction;
+    camcore::PocketStart m_start;
+    camcore::PocketLinearStart m_linearStart;
+};
+
 // The Drill operation's own tab.
 class CDrillingPage : public COperationPage
 {

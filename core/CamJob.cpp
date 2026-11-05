@@ -799,6 +799,88 @@ namespace camcore
                    ReadOptionalNumber(*tabs, "distance", profiling.tabDistance);
         }
 
+        const char* PocketCutTypeName(PocketCutType type)
+        {
+            switch (type)
+            {
+            case PocketCutType::Linear: return "linear";
+            case PocketCutType::Spiral: return "spiral";
+            case PocketCutType::Radial: return "radial";
+            default:                    return "offset";
+            }
+        }
+
+        json WritePocketing(const PocketingSettings& pocketing)
+        {
+            return
+            {
+                { "stockToLeave", pocketing.stockToLeave },
+                { "cutType", PocketCutTypeName(pocketing.cutType) },
+                { "direction", CutDirectionName(pocketing.direction) },
+                { "cutAngle", pocketing.cutAngle },
+                { "start", pocketing.start == PocketStart::Outside ? "outside" : "inside" },
+                { "linearStart", pocketing.linearStart == PocketLinearStart::Top ? "top" : "bottom" },
+                { "stepover", WriteSize(pocketing.stepover) }
+            };
+        }
+
+        // Pocketing saved before the Pocketing tab existed has the defaults.
+        bool ReadPocketing(const json& step, PocketingSettings& pocketing)
+        {
+            pocketing = PocketingSettings();
+            const auto item = step.find("pocketing");
+            if (item == step.end())
+                return true;
+            if (!item->is_object())
+                return false;
+
+            const auto cutType = item->find("cutType");
+            if (cutType != item->end())
+            {
+                if (!cutType->is_string())
+                    return false;
+                bool known = false;
+                for (const PocketCutType candidate :
+                     { PocketCutType::Offset, PocketCutType::Linear, PocketCutType::Spiral, PocketCutType::Radial })
+                {
+                    if (cutType->get<std::string>() == PocketCutTypeName(candidate))
+                    {
+                        pocketing.cutType = candidate;
+                        known = true;
+                    }
+                }
+                if (!known)
+                    return false;
+            }
+
+            const auto direction = item->find("direction");
+            if (direction != item->end())
+            {
+                if (!direction->is_string())
+                    return false;
+                bool known = false;
+                for (const CutDirection candidate : { CutDirection::Climb, CutDirection::Conventional, CutDirection::Mixed })
+                {
+                    if (direction->get<std::string>() == CutDirectionName(candidate))
+                    {
+                        pocketing.direction = candidate;
+                        known = true;
+                    }
+                }
+                if (!known)
+                    return false;
+            }
+
+            if (item->find("stepover") != item->end() && !ReadSize(*item, "stepover", pocketing.stepover))
+                return false;
+            return ReadOptionalNumber(*item, "stockToLeave", pocketing.stockToLeave) &&
+                   ReadOptionalNumber(*item, "cutAngle", pocketing.cutAngle) &&
+                   ReadChoice(*item, "start", "inside", PocketStart::Inside, "outside", PocketStart::Outside,
+                              pocketing.start) &&
+                   ReadChoice(*item, "linearStart", "bottom", PocketLinearStart::Bottom, "top", PocketLinearStart::Top,
+                              pocketing.linearStart);
+        }
+
         // Facings saved before the Facing tab existed have the defaults.
         bool ReadFacing(const json& step, FacingSettings& facing)
         {
@@ -971,6 +1053,13 @@ namespace camcore
                          { "cutLevels", WriteCutLevels(step.cutLevels) }, { "entryExit", WriteEntryExit(step.entryExit) },
                          { "profiling", WriteProfiling(step.profiling) } };
 
+            if (step.type == StepType::Pocketing)
+                return { { "type", "pocketing" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
+                         { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
+                         { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
+                         { "cutLevels", WriteCutLevels(step.cutLevels) }, { "entryExit", WriteEntryExit(step.entryExit) },
+                         { "pocketing", WritePocketing(step.pocketing) } };
+
             if (step.type == StepType::Drill)
                 return { { "type", "drill" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
                          { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
@@ -1043,6 +1132,15 @@ namespace camcore
                        ReadClearance(item, step.clearance);
             }
 
+            if (type == "pocketing")
+            {
+                step.type = StepType::Pocketing;
+                return ReadTool(item, step.toolId) && ReadFeeds(item, step.feeds) && ReadToolpath(item, step.toolpath) &&
+                       ReadFeatures(item, step.features) && ReadCutLevels(item, step.cutLevels) &&
+                       ReadEntryExit(item, step.entryExit) && ReadPocketing(item, step.pocketing) &&
+                       ReadClearance(item, step.clearance);
+            }
+
             if (type == "drill")
             {
                 // Drills saved before the Drilling tab existed have no settings yet.
@@ -1097,7 +1195,8 @@ namespace camcore
 
     bool IsOperation(StepType type)
     {
-        return type == StepType::Drill || type == StepType::Facing || type == StepType::Profiling;
+        return type == StepType::Drill || type == StepType::Facing || type == StepType::Profiling ||
+               type == StepType::Pocketing;
     }
 
     std::string NewStableId()

@@ -16,6 +16,7 @@
 #include "Facing.h"
 #include "Feeds.h"
 #include "Origin.h"
+#include "Pocketing.h"
 #include "Profiling.h"
 #include "Toolpath.h"
 
@@ -39,7 +40,8 @@ namespace camcore
         Group,          // shown as a folder in the tree
         Drill,          // an operation. Operations only go in groups.
         Facing,         // an operation
-        Profiling       // an operation, 2 1/2 axis profiling
+        Profiling,      // an operation, 2 1/2 axis profiling
+        Pocketing       // an operation, 2 1/2 axis pocketing
     };
 
     bool IsOperation(StepType type);
@@ -84,6 +86,9 @@ namespace camcore
 
         // Profiling operations only.
         ProfilingSettings profiling;
+
+        // Pocketing operations only.
+        PocketingSettings pocketing;
         Path boundary;
 
         // Groups only. Operations run in this order. Groups don't nest, and a
