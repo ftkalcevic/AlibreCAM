@@ -68,6 +68,7 @@
     <ClCompile Include="BoundaryTests.cpp" />
     <ClCompile Include="CamCoreTests.cpp" />
     <ClCompile Include="FacingToolpathTests.cpp" />
+    <ClCompile Include="HolePocketToolpathTests.cpp" />
     <ClCompile Include="PocketToolpathTests.cpp" />
     <ClCompile Include="ProfileToolpathTests.cpp" />
     <ClCompile Include="FeatureTests.cpp" />

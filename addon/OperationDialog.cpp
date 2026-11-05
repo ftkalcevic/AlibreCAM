@@ -29,6 +29,7 @@ namespace
         case StepType::Facing: return L"Facing";
         case StepType::Profiling: return L"Profiling";
         case StepType::Pocketing: return L"Pocketing";
+        case StepType::HolePocketing: return L"Hole Pocketing";
         default:               return L"Operation";
         }
     }
@@ -1815,6 +1816,243 @@ void CPocketingPage::OnStepoverChanged()
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// CHolePocketingPage
+
+BEGIN_MESSAGE_MAP(CHolePocketingPage, COperationPage)
+    ON_BN_CLICKED(IDC_HP_AT_TOP, &CHolePocketingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_HP_AT_BOTTOM, &CHolePocketingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_HP_PICK_TOP, &CHolePocketingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_HP_USE_ARC, &CHolePocketingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_HP_STEP_PERCENT_RADIO, &CHolePocketingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_HP_STEP_DISTANCE_RADIO, &CHolePocketingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_HP_DOWN_PERCENT_RADIO, &CHolePocketingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_HP_DOWN_DISTANCE_RADIO, &CHolePocketingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_HP_DOWN_LEVELS_RADIO, &CHolePocketingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_HP_PITCH_ANGLE_RADIO, &CHolePocketingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_HP_PITCH_HEIGHT_RADIO, &CHolePocketingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_HP_PICK_TOP_BUTTON, &CHolePocketingPage::OnPickTop)
+    ON_BN_CLICKED(IDC_HP_PICK_DEPTH, &CHolePocketingPage::OnPickDepth)
+END_MESSAGE_MAP()
+
+CHolePocketingPage::CHolePocketingPage(COperationDlg* pOwner)
+    : COperationPage(IDD_OP_HOLE_POCKETING, pOwner)
+{
+}
+
+void CHolePocketingPage::Load(const SequenceStep& step)
+{
+    const HolePocketingSettings& hole = step.holePocketing;
+    const int location = (hole.location == CutGeometryLocation::AtBottom)  ? IDC_HP_AT_BOTTOM
+                         : (hole.location == CutGeometryLocation::PickTop) ? IDC_HP_PICK_TOP
+                                                                           : IDC_HP_AT_TOP;
+    CheckRadioButton(IDC_HP_AT_TOP, IDC_HP_PICK_TOP, location);
+    SetNumber(IDC_HP_TOP_Z, hole.topZ);
+
+    SetNumber(IDC_HP_DEPTH, hole.depth);
+    CheckDlgButton(IDC_HP_USE_MODEL, hole.useModelForDepth ? BST_CHECKED : BST_UNCHECKED);
+    SetNumber(IDC_HP_DIAMETER, hole.diameter);
+    CheckDlgButton(IDC_HP_USE_ARC, hole.useArcDiameter ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(IDC_HP_CLEAN_UP, hole.cleanUpEachLevel ? BST_CHECKED : BST_UNCHECKED);
+
+    CheckRadioButton(IDC_HP_CLIMB, IDC_HP_CONVENTIONAL,
+                     hole.direction == CutDirection::Conventional ? IDC_HP_CONVENTIONAL : IDC_HP_CLIMB);
+
+    CheckRadioButton(IDC_HP_STEP_PERCENT_RADIO, IDC_HP_STEP_DISTANCE_RADIO,
+                     hole.stepover.usePercent ? IDC_HP_STEP_PERCENT_RADIO : IDC_HP_STEP_DISTANCE_RADIO);
+    SetNumber(IDC_HP_STEP_PERCENT, hole.stepover.percent);
+    SetNumber(IDC_HP_STEP_DISTANCE, hole.stepover.distance);
+
+    const int down = (hole.stepDown == HoleStepDown::Distance) ? IDC_HP_DOWN_DISTANCE_RADIO
+                     : (hole.stepDown == HoleStepDown::Levels) ? IDC_HP_DOWN_LEVELS_RADIO
+                                                               : IDC_HP_DOWN_PERCENT_RADIO;
+    CheckRadioButton(IDC_HP_DOWN_PERCENT_RADIO, IDC_HP_DOWN_LEVELS_RADIO, down);
+    SetNumber(IDC_HP_DOWN_PERCENT, hole.stepDownPercent);
+    SetNumber(IDC_HP_DOWN_DISTANCE, hole.stepDownDistance);
+    SetNumber(IDC_HP_DOWN_LEVELS, hole.stepDownLevels);
+
+    SetNumber(IDC_HP_HELIX_DIA, hole.helixDiameter);
+    CheckRadioButton(IDC_HP_PITCH_ANGLE_RADIO, IDC_HP_PITCH_HEIGHT_RADIO,
+                     hole.pitch == HelixPitch::Height ? IDC_HP_PITCH_HEIGHT_RADIO : IDC_HP_PITCH_ANGLE_RADIO);
+    SetNumber(IDC_HP_PITCH_ANGLE, hole.pitchAngle);
+    SetNumber(IDC_HP_PITCH_HEIGHT, hole.pitchHeight);
+    SetNumber(IDC_HP_APPROACH, hole.approachDistance);
+
+    UpdateFields();
+    ShowLocating(LocateTarget::HoleTop, false);
+}
+
+bool CHolePocketingPage::Save(SequenceStep& step, std::wstring& problems)
+{
+    HolePocketingSettings hole = step.holePocketing;
+    std::wstring found;
+
+    // Only the boxes the chosen options use are read.
+    switch (GetCheckedRadioButton(IDC_HP_AT_TOP, IDC_HP_PICK_TOP))
+    {
+    case IDC_HP_AT_BOTTOM: hole.location = CutGeometryLocation::AtBottom; break;
+    case IDC_HP_PICK_TOP:  hole.location = CutGeometryLocation::PickTop; break;
+    default:               hole.location = CutGeometryLocation::AtTop; break;
+    }
+    if (hole.location == CutGeometryLocation::PickTop)
+        ReadNumber(IDC_HP_TOP_Z, L"The top Z", hole.topZ, found);
+
+    ReadNumber(IDC_HP_DEPTH, L"The hole depth", hole.depth, found);
+    hole.useModelForDepth = IsDlgButtonChecked(IDC_HP_USE_MODEL) == BST_CHECKED;
+    hole.useArcDiameter = IsDlgButtonChecked(IDC_HP_USE_ARC) == BST_CHECKED;
+    if (!hole.useArcDiameter)
+        ReadNumber(IDC_HP_DIAMETER, L"The hole diameter", hole.diameter, found);
+    hole.cleanUpEachLevel = IsDlgButtonChecked(IDC_HP_CLEAN_UP) == BST_CHECKED;
+    hole.direction = (IsDlgButtonChecked(IDC_HP_CONVENTIONAL) == BST_CHECKED) ? CutDirection::Conventional
+                                                                             : CutDirection::Climb;
+
+    hole.stepover.usePercent = IsDlgButtonChecked(IDC_HP_STEP_DISTANCE_RADIO) != BST_CHECKED;
+    if (hole.stepover.usePercent)
+        ReadNumber(IDC_HP_STEP_PERCENT, L"The stepover percentage", hole.stepover.percent, found);
+    else
+        ReadNumber(IDC_HP_STEP_DISTANCE, L"The stepover distance", hole.stepover.distance, found);
+
+    switch (GetCheckedRadioButton(IDC_HP_DOWN_PERCENT_RADIO, IDC_HP_DOWN_LEVELS_RADIO))
+    {
+    case IDC_HP_DOWN_DISTANCE_RADIO:
+        hole.stepDown = HoleStepDown::Distance;
+        ReadNumber(IDC_HP_DOWN_DISTANCE, L"The step down distance", hole.stepDownDistance, found);
+        break;
+    case IDC_HP_DOWN_LEVELS_RADIO:
+    {
+        hole.stepDown = HoleStepDown::Levels;
+        double levels = 0.0;
+        if (ReadNumber(IDC_HP_DOWN_LEVELS, L"The number of levels", levels, found))
+        {
+            if (levels != std::floor(levels) || levels > 10000.0)
+                AppendProblem(found, L"The number of levels must be a whole number.");
+            else
+                hole.stepDownLevels = static_cast<int>(levels);
+        }
+        break;
+    }
+    default:
+        hole.stepDown = HoleStepDown::Percent;
+        ReadNumber(IDC_HP_DOWN_PERCENT, L"The step down percentage", hole.stepDownPercent, found);
+        break;
+    }
+
+    ReadNumber(IDC_HP_HELIX_DIA, L"The helix diameter", hole.helixDiameter, found);
+    hole.pitch = (IsDlgButtonChecked(IDC_HP_PITCH_HEIGHT_RADIO) == BST_CHECKED) ? HelixPitch::Height : HelixPitch::Angle;
+    if (hole.pitch == HelixPitch::Angle)
+        ReadNumber(IDC_HP_PITCH_ANGLE, L"The helix angle", hole.pitchAngle, found);
+    else
+        ReadNumber(IDC_HP_PITCH_HEIGHT, L"The helix height", hole.pitchHeight, found);
+    ReadNumber(IDC_HP_APPROACH, L"The approach distance", hole.approachDistance, found);
+
+    if (found.empty())
+    {
+        for (const std::string& problem : ValidateHolePocketing(hole))
+            AppendProblem(found, FromUtf8(problem));
+    }
+
+    if (!found.empty())
+    {
+        AppendProblem(problems, found);
+        return false;
+    }
+
+    step.holePocketing = hole;
+    return true;
+}
+
+void CHolePocketingPage::UpdateFields()
+{
+    const BOOL pickTop = GetCheckedRadioButton(IDC_HP_AT_TOP, IDC_HP_PICK_TOP) == IDC_HP_PICK_TOP;
+    GetDlgItem(IDC_HP_TOP_Z)->EnableWindow(pickTop);
+    GetDlgItem(IDC_HP_PICK_TOP_BUTTON)->EnableWindow(pickTop);
+
+    // Each picked circle's own diameter, or the one typed in.
+    const BOOL typed = IsDlgButtonChecked(IDC_HP_USE_ARC) != BST_CHECKED;
+    GetDlgItem(IDC_HP_DIAMETER)->EnableWindow(typed);
+    GetDlgItem(IDC_HP_DIAMETER_LABEL)->EnableWindow(typed);
+
+    // Only the chosen box of each set.
+    const BOOL stepPercent = IsDlgButtonChecked(IDC_HP_STEP_DISTANCE_RADIO) != BST_CHECKED;
+    GetDlgItem(IDC_HP_STEP_PERCENT)->EnableWindow(stepPercent);
+    GetDlgItem(IDC_HP_STEP_DISTANCE)->EnableWindow(!stepPercent);
+
+    const int down = GetCheckedRadioButton(IDC_HP_DOWN_PERCENT_RADIO, IDC_HP_DOWN_LEVELS_RADIO);
+    GetDlgItem(IDC_HP_DOWN_PERCENT)->EnableWindow(down != IDC_HP_DOWN_DISTANCE_RADIO && down != IDC_HP_DOWN_LEVELS_RADIO);
+    GetDlgItem(IDC_HP_DOWN_DISTANCE)->EnableWindow(down == IDC_HP_DOWN_DISTANCE_RADIO);
+    GetDlgItem(IDC_HP_DOWN_LEVELS)->EnableWindow(down == IDC_HP_DOWN_LEVELS_RADIO);
+
+    const BOOL byAngle = IsDlgButtonChecked(IDC_HP_PITCH_HEIGHT_RADIO) != BST_CHECKED;
+    GetDlgItem(IDC_HP_PITCH_ANGLE)->EnableWindow(byAngle);
+    GetDlgItem(IDC_HP_PITCH_HEIGHT)->EnableWindow(!byAngle);
+}
+
+void CHolePocketingPage::OnChoiceChanged()
+{
+    UpdateFields();
+}
+
+void CHolePocketingPage::OnPickTop()
+{
+    if (m_pOwner->IsLocating())
+        m_pOwner->StopLocating();
+    else
+        m_pOwner->StartLocating(LocateTarget::HoleTop);
+}
+
+void CHolePocketingPage::OnPickDepth()
+{
+    if (m_pOwner->IsLocating())
+        m_pOwner->StopLocating();
+    else
+        m_pOwner->StartLocating(LocateTarget::HoleDepth);
+}
+
+void CHolePocketingPage::ShowLocating(LocateTarget target, bool locating)
+{
+    SetDlgItemText(IDC_HP_PICK_TOP_BUTTON, (locating && target == LocateTarget::HoleTop) ? L"Stop" : L"Pick");
+    SetDlgItemText(IDC_HP_PICK_DEPTH, (locating && target == LocateTarget::HoleDepth) ? L"Stop" : L"Pick");
+}
+
+double CHolePocketingPage::ReferenceZ()
+{
+    // As for Cut Levels: Pick Top gives the level, otherwise the highest of the operation's features.
+    double z = 0.0;
+    if (GetCheckedRadioButton(IDC_HP_AT_TOP, IDC_HP_PICK_TOP) == IDC_HP_PICK_TOP)
+        return ReadValue(IDC_HP_TOP_Z, z) ? z : 0.0;
+
+    camcore::Frame frame;
+    if (!m_pOwner->GetFrame(frame))
+        return 0.0;
+    bool first = true;
+    for (const PickedGeometry& feature : m_pOwner->GetFeatures())
+    {
+        const double height = WorldToFrame(frame, FeaturePoint(frame, feature)).z;
+        z = first ? height : (std::max)(z, height);
+        first = false;
+    }
+    return z;
+}
+
+void CHolePocketingPage::SetTopZ(double z)
+{
+    SetNumber(IDC_HP_TOP_Z, z);
+    CheckRadioButton(IDC_HP_AT_TOP, IDC_HP_PICK_TOP, IDC_HP_PICK_TOP);
+    UpdateFields();
+}
+
+void CHolePocketingPage::SetDepthToHeight(double z)
+{
+    const double depth = std::fabs(ReferenceZ() - z);
+    if (!(depth > 0.0))
+    {
+        MessageBoxW(L"That item is at the cut geometry's level, so it gives no depth.", L"Hole Pocketing",
+                    MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    SetNumber(IDC_HP_DEPTH, depth);
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // CDrillingPage
 
 BEGIN_MESSAGE_MAP(CDrillingPage, COperationPage)
@@ -1967,6 +2205,7 @@ COperationDlg::COperationDlg(CCamTabCommand* pTab, const SequenceStep& step)
     , m_pFeatures(nullptr)
     , m_pDrilling(nullptr)
     , m_pCutLevels(nullptr)
+    , m_pHolePocketing(nullptr)
     , m_locating(false)
     , m_locateTarget(LocateTarget::DrillDepth)
     , m_selectingFeatures(false)
@@ -2001,9 +2240,9 @@ BOOL COperationDlg::OnInitDialog()
     AddPage(L"Feeds && Speeds", std::make_unique<CFeedsPage>(this));
     AddPage(L"Clearance", std::make_unique<CClearancePage>(this));
 
-    // Drill, Facing, Profiling and Pocketing have no Sorting tab.
+    // Drill, Hole Pocketing, Facing, Profiling and Pocketing have no Sorting tab.
     if (m_step.type != StepType::Drill && m_step.type != StepType::Facing && m_step.type != StepType::Profiling &&
-        m_step.type != StepType::Pocketing)
+        m_step.type != StepType::Pocketing && m_step.type != StepType::HolePocketing)
         AddPage(L"Sorting", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
 
     // Then its own.
@@ -2034,6 +2273,14 @@ BOOL COperationDlg::OnInitDialog()
         AddPage(L"Drilling", std::move(drilling));
         if (pDrilling->GetSafeHwnd() != nullptr)
             m_pDrilling = pDrilling;
+    }
+    else if (m_step.type == StepType::HolePocketing)
+    {
+        auto hole = std::make_unique<CHolePocketingPage>(this);
+        CHolePocketingPage* pHole = hole.get();
+        AddPage(L"Hole Pocketing", std::move(hole));
+        if (pHole->GetSafeHwnd() != nullptr)
+            m_pHolePocketing = pHole;
     }
 
     for (const auto& page : m_pages)
@@ -2084,7 +2331,11 @@ void COperationDlg::OnTabChanged(NMHDR* /*pNotify*/, LRESULT* pResult)
 void COperationDlg::StartLocating(LocateTarget target)
 {
     const bool forDrilling = (target == LocateTarget::DrillDepth);
-    if ((forDrilling ? m_pDrilling == nullptr : m_pCutLevels == nullptr) || m_pTab == nullptr)
+    const bool forHole = (target == LocateTarget::HoleTop || target == LocateTarget::HoleDepth);
+    const bool havePage = forDrilling ? m_pDrilling != nullptr
+                          : forHole   ? m_pHolePocketing != nullptr
+                                      : m_pCutLevels != nullptr;
+    if (!havePage || m_pTab == nullptr)
         return;
 
     StopSelectingFeatures();
@@ -2093,6 +2344,8 @@ void COperationDlg::StartLocating(LocateTarget target)
     m_locateTarget = target;
     if (forDrilling)
         m_pDrilling->ShowLocating(true);
+    else if (forHole)
+        m_pHolePocketing->ShowLocating(target, true);
     else
         m_pCutLevels->ShowLocating(target, true);
     m_pTab->BeginLocate();
@@ -2108,6 +2361,8 @@ void COperationDlg::StopLocating()
         m_pDrilling->ShowLocating(false);
     if (m_pCutLevels != nullptr)
         m_pCutLevels->ShowLocating(m_locateTarget, false);
+    if (m_pHolePocketing != nullptr)
+        m_pHolePocketing->ShowLocating(m_locateTarget, false);
     if (m_pTab != nullptr)
         m_pTab->EndLocate();
 }
@@ -2137,6 +2392,17 @@ void COperationDlg::SetLocatedHeight(bool found, double height)
         return;
     }
 
+    if (target == LocateTarget::HoleTop || target == LocateTarget::HoleDepth)
+    {
+        if (m_pHolePocketing == nullptr)
+            return;
+        if (target == LocateTarget::HoleTop)
+            m_pHolePocketing->SetTopZ(height);
+        else
+            m_pHolePocketing->SetDepthToHeight(height);
+        return;
+    }
+
     if (m_pCutLevels == nullptr)
         return;
     if (target == LocateTarget::CutTop)
@@ -2147,7 +2413,7 @@ void COperationDlg::SetLocatedHeight(bool found, double height)
 
 void COperationDlg::ShowLocateProblem(const std::wstring& problem)
 {
-    // The Drilling tab has room for a note. Cut Levels doesn't, so it gets a message.
+    // The Drilling tab has room for a note. Cut Levels and Hole Pocketing don't, so they get a message.
     if (m_locateTarget == LocateTarget::DrillDepth)
     {
         if (m_pDrilling != nullptr)

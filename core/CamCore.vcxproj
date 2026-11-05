@@ -76,6 +76,8 @@
     <ClCompile Include="FileIO.cpp" />
     <ClCompile Include="Origin.cpp" />
     <ClCompile Include="PseudoPost.cpp" />
+    <ClCompile Include="HolePocketing.cpp" />
+    <ClCompile Include="HolePocketToolpath.cpp" />
     <ClCompile Include="PathBuilder.cpp" />
     <ClCompile Include="Pocketing.cpp" />
     <ClCompile Include="Profiling.cpp" />
@@ -93,6 +95,8 @@
     <ClInclude Include="EntryExit.h" />
     <ClInclude Include="Facing.h" />
     <ClInclude Include="FacingToolpath.h" />
+    <ClInclude Include="HolePocketing.h" />
+    <ClInclude Include="HolePocketToolpath.h" />
     <ClInclude Include="PathBuilder.h" />
     <ClInclude Include="Pocketing.h" />
     <ClInclude Include="PocketToolpath.h" />

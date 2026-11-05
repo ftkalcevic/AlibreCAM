@@ -232,6 +232,115 @@ TEST_CASE("a pocketing operation is an operation, and loads back with its shared
     CHECK(ReadText(path).find("\"pocketing\"") != std::string::npos);
 }
 
+TEST_CASE("hole pocketing settings default as asked, are checked, and load back")
+{
+    HolePocketingSettings settings;
+    CHECK(settings.location == CutGeometryLocation::AtTop);
+    CHECK(settings.depth == 10);
+    CHECK_FALSE(settings.useModelForDepth);
+    CHECK(settings.useArcDiameter);
+    CHECK(settings.diameter == 10);
+    CHECK_FALSE(settings.cleanUpEachLevel);
+    CHECK(settings.direction == CutDirection::Climb);
+    CHECK(settings.stepover.percent == 50);
+    CHECK(settings.stepDown == HoleStepDown::Percent);
+    CHECK(settings.stepDownPercent == 25);
+    CHECK(settings.stepDownDistance == 1);
+    CHECK(settings.stepDownLevels == 4);
+    CHECK(settings.helixDiameter == 3);
+    CHECK(settings.pitch == HelixPitch::Angle);
+    CHECK(settings.pitchAngle == 3);
+    CHECK(settings.pitchHeight == 1);
+    CHECK(settings.approachDistance == 1);
+    CHECK(ValidateHolePocketing(settings).empty());
+
+    // The diameter's only checked when it's used, and so are the step down and pitch choices.
+    settings.diameter = 0;
+    CHECK(ValidateHolePocketing(settings).empty());
+    settings.useArcDiameter = false;
+    CHECK(ValidateHolePocketing(settings).size() == 1);
+    settings.diameter = 8;
+    settings.stepDownLevels = 0;
+    CHECK(ValidateHolePocketing(settings).empty());
+    settings.stepDown = HoleStepDown::Levels;
+    CHECK(ValidateHolePocketing(settings).size() == 1);
+    settings.stepDownLevels = 3;
+    settings.pitchAngle = 90;
+    CHECK(ValidateHolePocketing(settings).size() == 1);
+    settings.pitch = HelixPitch::Height;
+    CHECK(ValidateHolePocketing(settings).empty());
+    settings.depth = 0;
+    settings.approachDistance = -1;
+    settings.direction = CutDirection::Mixed;
+    CHECK(ValidateHolePocketing(settings).size() == 3);
+
+    // Saved and loaded with its operation.
+    TempFolder folder;
+    const fs::path path = folder / "Bracket.cam";
+    Job job = SampleJob();
+    SequenceStep origin;
+    origin.type = StepType::SetOrigin;
+    origin.id = NewStableId();
+    origin.name = "Origin 1";
+    job.sequence.push_back(origin);
+    SequenceStep group;
+    group.type = StepType::Group;
+    group.id = NewStableId();
+    group.name = "Folder 1";
+    SequenceStep hole;
+    hole.type = StepType::HolePocketing;
+    hole.id = NewStableId();
+    hole.name = "Hole Pocketing 1";
+    HolePocketingSettings& h = hole.holePocketing;
+    h.location = CutGeometryLocation::PickTop;
+    h.topZ = 4;
+    h.depth = 12;
+    h.useModelForDepth = true;
+    h.diameter = 9;
+    h.useArcDiameter = false;
+    h.cleanUpEachLevel = true;
+    h.direction = CutDirection::Conventional;
+    h.stepover = { false, 30, 1.5 };
+    h.stepDown = HoleStepDown::Levels;
+    h.stepDownPercent = 20;
+    h.stepDownDistance = 0.5;
+    h.stepDownLevels = 6;
+    h.helixDiameter = 4;
+    h.pitch = HelixPitch::Height;
+    h.pitchAngle = 2;
+    h.pitchHeight = 0.8;
+    h.approachDistance = 2;
+    group.children.push_back(hole);
+    job.sequence.push_back(group);
+    REQUIRE(SaveJob(job, path).ok);
+
+    const LoadResult loaded = LoadJob(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    const SequenceStep& back = loaded.job.sequence[1].children[0];
+    CHECK(IsOperation(back.type));
+    CHECK(back.type == StepType::HolePocketing);
+    const HolePocketingSettings& b = back.holePocketing;
+    CHECK(b.location == CutGeometryLocation::PickTop);
+    CHECK(b.topZ == 4);
+    CHECK(b.depth == 12);
+    CHECK(b.useModelForDepth);
+    CHECK(b.diameter == 9);
+    CHECK_FALSE(b.useArcDiameter);
+    CHECK(b.cleanUpEachLevel);
+    CHECK(b.direction == CutDirection::Conventional);
+    CHECK_FALSE(b.stepover.usePercent);
+    CHECK(b.stepover.distance == 1.5);
+    CHECK(b.stepDown == HoleStepDown::Levels);
+    CHECK(b.stepDownPercent == 20);
+    CHECK(b.stepDownDistance == 0.5);
+    CHECK(b.stepDownLevels == 6);
+    CHECK(b.helixDiameter == 4);
+    CHECK(b.pitch == HelixPitch::Height);
+    CHECK(b.pitchAngle == 2);
+    CHECK(b.pitchHeight == 0.8);
+    CHECK(b.approachDistance == 2);
+}
+
 TEST_CASE("pocketing settings default as asked, and are checked")
 {
     PocketingSettings settings;

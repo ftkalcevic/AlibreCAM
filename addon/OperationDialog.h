@@ -22,7 +22,9 @@ enum class LocateTarget
 {
     DrillDepth,     // the Drilling tab's depth
     CutTop,         // the Cut Levels tab's Pick Top Z
-    CutDepth        // the Cut Levels tab's total depth
+    CutDepth,       // the Cut Levels tab's total depth
+    HoleTop,        // the Hole Pocketing tab's Pick Top Z
+    HoleDepth       // the Hole Pocketing tab's hole depth
 };
 
 // One tab of the dialog. A tab with settings derives from this.
@@ -348,6 +350,33 @@ private:
     camcore::PocketLinearStart m_linearStart;
 };
 
+// The Hole Pocketing operation's own tab.
+class CHolePocketingPage : public COperationPage
+{
+public:
+    explicit CHolePocketingPage(COperationDlg* pOwner);
+
+    void Load(const camcore::SequenceStep& step) override;
+    bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
+
+    void ShowLocating(LocateTarget target, bool locating);
+    void SetTopZ(double z);
+    void SetDepthToHeight(double z);    // the depth becomes the distance from the cut geometry
+
+    enum { IDD = IDD_OP_HOLE_POCKETING };
+
+protected:
+    afx_msg void OnChoiceChanged();
+    afx_msg void OnPickTop();
+    afx_msg void OnPickDepth();
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    void UpdateFields();
+    double ReferenceZ();
+};
+
 // The Drill operation's own tab.
 class CDrillingPage : public COperationPage
 {
@@ -435,6 +464,7 @@ private:
     CFeaturesPage* m_pFeatures;     // owned by m_pages
     CDrillingPage* m_pDrilling;     // owned by m_pages. Null for other operations.
     CCutLevelsPage* m_pCutLevels;   // owned by m_pages. Null for operations without one.
+    CHolePocketingPage* m_pHolePocketing;   // owned by m_pages. Null for other operations.
     bool m_locating;
     LocateTarget m_locateTarget;
     bool m_selectingFeatures;

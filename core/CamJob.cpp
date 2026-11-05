@@ -915,6 +915,148 @@ namespace camcore
                               pocketing.linearStart);
         }
 
+        const char* HoleStepDownName(HoleStepDown stepDown)
+        {
+            switch (stepDown)
+            {
+            case HoleStepDown::Distance: return "distance";
+            case HoleStepDown::Levels:   return "levels";
+            default:                     return "percent";
+            }
+        }
+
+        json WriteHolePocketing(const HolePocketingSettings& hole)
+        {
+            return
+            {
+                { "location", CutLocationName(hole.location) },
+                { "topZ", hole.topZ },
+                { "depth", hole.depth },
+                { "useModelForDepth", hole.useModelForDepth },
+                { "diameter", hole.diameter },
+                { "useArcDiameter", hole.useArcDiameter },
+                { "cleanUpEachLevel", hole.cleanUpEachLevel },
+                { "direction", CutDirectionName(hole.direction) },
+                { "stepover", WriteSize(hole.stepover) },
+                { "stepDown",
+                  {
+                      { "by", HoleStepDownName(hole.stepDown) },
+                      { "percent", hole.stepDownPercent },
+                      { "distance", hole.stepDownDistance },
+                      { "levels", hole.stepDownLevels }
+                  } },
+                { "helix",
+                  {
+                      { "diameter", hole.helixDiameter },
+                      { "pitch", hole.pitch == HelixPitch::Height ? "height" : "angle" },
+                      { "angle", hole.pitchAngle },
+                      { "height", hole.pitchHeight },
+                      { "approach", hole.approachDistance }
+                  } }
+            };
+        }
+
+        // Hole pocketing saved before the Hole Pocketing tab existed has the defaults.
+        bool ReadHolePocketing(const json& step, HolePocketingSettings& hole)
+        {
+            hole = HolePocketingSettings();
+            const auto item = step.find("holePocketing");
+            if (item == step.end())
+                return true;
+            if (!item->is_object())
+                return false;
+
+            const auto location = item->find("location");
+            if (location != item->end())
+            {
+                if (!location->is_string())
+                    return false;
+                bool known = false;
+                for (const CutGeometryLocation candidate :
+                     { CutGeometryLocation::AtTop, CutGeometryLocation::AtBottom, CutGeometryLocation::PickTop })
+                {
+                    if (location->get<std::string>() == CutLocationName(candidate))
+                    {
+                        hole.location = candidate;
+                        known = true;
+                    }
+                }
+                if (!known)
+                    return false;
+            }
+
+            const auto direction = item->find("direction");
+            if (direction != item->end())
+            {
+                if (!direction->is_string())
+                    return false;
+                const std::string name = direction->get<std::string>();
+                if (name == CutDirectionName(CutDirection::Climb))
+                    hole.direction = CutDirection::Climb;
+                else if (name == CutDirectionName(CutDirection::Conventional))
+                    hole.direction = CutDirection::Conventional;
+                else
+                    return false;
+            }
+
+            if (item->find("stepover") != item->end() && !ReadSize(*item, "stepover", hole.stepover))
+                return false;
+            if (!ReadOptionalNumber(*item, "topZ", hole.topZ) || !ReadOptionalNumber(*item, "depth", hole.depth) ||
+                !ReadOptionalBool(*item, "useModelForDepth", hole.useModelForDepth) ||
+                !ReadOptionalNumber(*item, "diameter", hole.diameter) ||
+                !ReadOptionalBool(*item, "useArcDiameter", hole.useArcDiameter) ||
+                !ReadOptionalBool(*item, "cleanUpEachLevel", hole.cleanUpEachLevel))
+                return false;
+
+            const auto stepDown = item->find("stepDown");
+            if (stepDown != item->end())
+            {
+                if (!stepDown->is_object())
+                    return false;
+                const auto by = stepDown->find("by");
+                if (by != stepDown->end())
+                {
+                    if (!by->is_string())
+                        return false;
+                    bool known = false;
+                    for (const HoleStepDown candidate : { HoleStepDown::Percent, HoleStepDown::Distance, HoleStepDown::Levels })
+                    {
+                        if (by->get<std::string>() == HoleStepDownName(candidate))
+                        {
+                            hole.stepDown = candidate;
+                            known = true;
+                        }
+                    }
+                    if (!known)
+                        return false;
+                }
+                const auto levels = stepDown->find("levels");
+                if (levels != stepDown->end())
+                {
+                    if (!levels->is_number_integer())
+                        return false;
+                    hole.stepDownLevels = levels->get<int>();
+                }
+                if (!ReadOptionalNumber(*stepDown, "percent", hole.stepDownPercent) ||
+                    !ReadOptionalNumber(*stepDown, "distance", hole.stepDownDistance))
+                    return false;
+            }
+
+            const auto helix = item->find("helix");
+            if (helix != item->end())
+            {
+                if (!helix->is_object())
+                    return false;
+                if (!ReadOptionalNumber(*helix, "diameter", hole.helixDiameter) ||
+                    !ReadChoice(*helix, "pitch", "angle", HelixPitch::Angle, "height", HelixPitch::Height, hole.pitch) ||
+                    !ReadOptionalNumber(*helix, "angle", hole.pitchAngle) ||
+                    !ReadOptionalNumber(*helix, "height", hole.pitchHeight) ||
+                    !ReadOptionalNumber(*helix, "approach", hole.approachDistance))
+                    return false;
+            }
+            return true;
+        }
+
         // Facings saved before the Facing tab existed have the defaults.
         bool ReadFacing(const json& step, FacingSettings& facing)
         {
@@ -1094,6 +1236,12 @@ namespace camcore
                          { "cutLevels", WriteCutLevels(step.cutLevels) }, { "entryExit", WriteEntryExit(step.entryExit) },
                          { "pocketing", WritePocketing(step.pocketing) } };
 
+            if (step.type == StepType::HolePocketing)
+                return { { "type", "holePocketing" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
+                         { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
+                         { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
+                         { "holePocketing", WriteHolePocketing(step.holePocketing) } };
+
             if (step.type == StepType::Drill)
                 return { { "type", "drill" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
                          { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
@@ -1175,6 +1323,14 @@ namespace camcore
                        ReadClearance(item, step.clearance);
             }
 
+            if (type == "holePocketing")
+            {
+                step.type = StepType::HolePocketing;
+                return ReadTool(item, step.toolId) && ReadFeeds(item, step.feeds) && ReadToolpath(item, step.toolpath) &&
+                       ReadFeatures(item, step.features) && ReadHolePocketing(item, step.holePocketing) &&
+                       ReadClearance(item, step.clearance);
+            }
+
             if (type == "drill")
             {
                 // Drills saved before the Drilling tab existed have no settings yet.
@@ -1230,7 +1386,7 @@ namespace camcore
     bool IsOperation(StepType type)
     {
         return type == StepType::Drill || type == StepType::Facing || type == StepType::Profiling ||
-               type == StepType::Pocketing;
+               type == StepType::Pocketing || type == StepType::HolePocketing;
     }
 
     std::string NewStableId()

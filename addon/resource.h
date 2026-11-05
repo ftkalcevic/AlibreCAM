@@ -205,14 +205,45 @@
 #define IDC_POCK_STEP_PERCENT           13263
 #define IDC_POCK_STEP_DISTANCE_RADIO    13264
 #define IDC_POCK_STEP_DISTANCE          13265
+#define IDD_OP_HOLE_POCKETING           13026
+#define IDC_HP_AT_TOP                   13266
+#define IDC_HP_AT_BOTTOM                13267
+#define IDC_HP_PICK_TOP                 13268
+#define IDC_HP_TOP_Z                    13269
+#define IDC_HP_PICK_TOP_BUTTON          13270
+#define IDC_HP_DEPTH                    13271
+#define IDC_HP_PICK_DEPTH               13272
+#define IDC_HP_USE_MODEL                13273
+#define IDC_HP_DIAMETER                 13274
+#define IDC_HP_USE_ARC                  13275
+#define IDC_HP_CLEAN_UP                 13276
+#define IDC_HP_CLIMB                    13277
+#define IDC_HP_CONVENTIONAL             13278
+#define IDC_HP_STEP_PERCENT_RADIO       13279
+#define IDC_HP_STEP_PERCENT             13280
+#define IDC_HP_STEP_DISTANCE_RADIO      13281
+#define IDC_HP_STEP_DISTANCE            13282
+#define IDC_HP_DOWN_PERCENT_RADIO       13283
+#define IDC_HP_DOWN_PERCENT             13284
+#define IDC_HP_DOWN_DISTANCE_RADIO      13285
+#define IDC_HP_DOWN_DISTANCE            13286
+#define IDC_HP_DOWN_LEVELS_RADIO        13287
+#define IDC_HP_DOWN_LEVELS              13288
+#define IDC_HP_HELIX_DIA                13289
+#define IDC_HP_PITCH_ANGLE_RADIO        13290
+#define IDC_HP_PITCH_ANGLE              13291
+#define IDC_HP_PITCH_HEIGHT_RADIO       13292
+#define IDC_HP_PITCH_HEIGHT             13293
+#define IDC_HP_APPROACH                 13294
+#define IDC_HP_DIAMETER_LABEL           13295
 
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13026
+#define _APS_NEXT_RESOURCE_VALUE        13027
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13266
+#define _APS_NEXT_CONTROL_VALUE         13296
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

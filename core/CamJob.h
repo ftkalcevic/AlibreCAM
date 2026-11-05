@@ -16,6 +16,7 @@
 #include "Facing.h"
 #include "Feeds.h"
 #include "Origin.h"
+#include "HolePocketing.h"
 #include "Pocketing.h"
 #include "Profiling.h"
 #include "Toolpath.h"
@@ -41,7 +42,8 @@ namespace camcore
         Drill,          // an operation. Operations only go in groups.
         Facing,         // an operation
         Profiling,      // an operation, 2 1/2 axis profiling
-        Pocketing       // an operation, 2 1/2 axis pocketing
+        Pocketing,      // an operation, 2 1/2 axis pocketing
+        HolePocketing   // an operation: round holes cut with an end mill on a spiral
     };
 
     bool IsOperation(StepType type);
@@ -89,6 +91,9 @@ namespace camcore
 
         // Pocketing operations only.
         PocketingSettings pocketing;
+
+        // Hole Pocketing operations only.
+        HolePocketingSettings holePocketing;
         std::vector<Path> boundaries;
 
         // Groups only. Operations run in this order. Groups don't nest, and a

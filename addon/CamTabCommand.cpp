@@ -7,6 +7,7 @@
 #include "DisplaySettings.h"
 #include "DrillToolpath.h"
 #include "FacingToolpath.h"
+#include "HolePocketToolpath.h"
 #include "PocketToolpath.h"
 #include "ProfileToolpath.h"
 #include "FileIO.h"
@@ -46,6 +47,7 @@ namespace
         ID_CAM_ADD_ORIGIN,
         ID_CAM_ADD_FOLDER,
         ID_CAM_ADD_DRILL,
+        ID_CAM_ADD_HOLE_POCKETING,
         ID_CAM_ADD_FACING,
         ID_CAM_ADD_PROFILING,
         ID_CAM_ADD_POCKETING,
@@ -759,6 +761,7 @@ void CCamTabCommand::AddOperation(size_t folder, camcore::StepType type)
     operation.name = NewOperationName(m_job, type == camcore::StepType::Facing      ? "Facing"
                                              : type == camcore::StepType::Profiling ? "Profiling"
                                              : type == camcore::StepType::Pocketing ? "Pocketing"
+                                             : type == camcore::StepType::HolePocketing ? "Hole Pocketing"
                                                                                     : "Drill");
 
     // A new operation starts with the tool selected in the tree.
@@ -1093,7 +1096,8 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
 {
     camcore::SequenceStep& operation = m_job.sequence[target.step].children[target.child];
     if (operation.type != camcore::StepType::Drill && operation.type != camcore::StepType::Facing &&
-        operation.type != camcore::StepType::Profiling && operation.type != camcore::StepType::Pocketing)
+        operation.type != camcore::StepType::Profiling && operation.type != camcore::StepType::Pocketing &&
+        operation.type != camcore::StepType::HolePocketing)
     {
         problem = "Toolpaths for this operation aren't built yet.";
         return false;
@@ -1290,6 +1294,25 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
             return false;
         }
         operation.toolpath = facingResult.toolpath;
+        return true;
+    }
+
+    // Hole pocketing, like drilling, works from each feature's centre in the origin's frame.
+    if (operation.type == camcore::StepType::HolePocketing)
+    {
+        camcore::HolePocketToolpathInput holeInput;
+        holeInput.operation = &operation;
+        holeInput.frame = frame.frame;
+        holeInput.tool = (pTool != nullptr) ? &tool : nullptr;
+        holeInput.havePartMaxZ = havePartMaxZ;
+        holeInput.partMaxZ = partMaxZ;
+        const camcore::ToolpathResult holeResult = camcore::GenerateHolePocketToolpath(holeInput);
+        if (!holeResult.ok)
+        {
+            problem = holeResult.problem;
+            return false;
+        }
+        operation.toolpath = holeResult.toolpath;
         return true;
     }
 
@@ -2351,6 +2374,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
 
         holes.CreatePopupMenu();
         holes.AppendMenu(MF_STRING | editable, ID_CAM_ADD_DRILL, L"Drill...");
+        holes.AppendMenu(MF_STRING | editable, ID_CAM_ADD_HOLE_POCKETING, L"Hole Pocketing...");
         menu.AppendMenu(MF_POPUP | editable, reinterpret_cast<UINT_PTR>(holes.GetSafeHmenu()), L"Add Holes");
 
         twoAndAHalfAxis.CreatePopupMenu();
@@ -2408,6 +2432,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     case ID_CAM_ADD_ORIGIN:  m_pTab->AddSetOrigin(); break;
     case ID_CAM_ADD_FOLDER:  m_pTab->AddFolder(); break;
     case ID_CAM_ADD_DRILL:   m_pTab->AddOperation(ref.step, camcore::StepType::Drill); break;
+    case ID_CAM_ADD_HOLE_POCKETING: m_pTab->AddOperation(ref.step, camcore::StepType::HolePocketing); break;
     case ID_CAM_ADD_FACING:  m_pTab->AddOperation(ref.step, camcore::StepType::Facing); break;
     case ID_CAM_ADD_PROFILING: m_pTab->AddOperation(ref.step, camcore::StepType::Profiling); break;
     case ID_CAM_ADD_POCKETING: m_pTab->AddOperation(ref.step, camcore::StepType::Pocketing); break;
