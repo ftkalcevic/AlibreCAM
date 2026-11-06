@@ -43,3 +43,7 @@ const float kSuppressedToolpathLineWeight = 0.75f;
 // A facing operation's boundary, as Generate found it.
 const DisplayColour kBoundaryColour = { 255, 150, 0, 255 };
 const float kBoundaryLineWeight = 2.0f;
+
+// The chosen operation's picked features.
+const DisplayColour kFeatureHighlightColour = { 255, 150, 0, 255 };
+const float kFeatureHighlightLineWeight = 3.0f;

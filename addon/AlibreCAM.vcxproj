@@ -114,6 +114,7 @@
     <ClCompile Include="OperationDialog.cpp" />
     <ClCompile Include="OriginDialog.cpp" />
     <ClCompile Include="PostDialog.cpp" />
+    <ClCompile Include="SettingsDialog.cpp" />
     <ClCompile Include="ToolDialogs.cpp" />
     <ClCompile Include="AlibreCAM.cpp" />
     <ClCompile Include="stdafx.cpp">
@@ -133,6 +134,7 @@
     <ClInclude Include="OperationDialog.h" />
     <ClInclude Include="OriginDialog.h" />
     <ClInclude Include="PostDialog.h" />
+    <ClInclude Include="SettingsDialog.h" />
     <ClInclude Include="ToolDialogs.h" />
     <ClInclude Include="AlibreCAM.h" />
     <ClInclude Include="resource.h" />
@@ -143,6 +145,9 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="res\AlibreCAM.ico" />
+    <Image Include="res\CamToolbar16.bmp" />
+    <Image Include="res\CamToolbar24.bmp" />
+    <Image Include="res\CamToolbar32.bmp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="AlibreCAM.def" />

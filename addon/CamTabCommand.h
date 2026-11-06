@@ -14,6 +14,7 @@
 #include "GeometryReader.h"
 #include "OperationDialog.h"
 #include "OriginDialog.h"
+#include "ProgramSettings.h"
 #include "ToolLibrary.h"
 
 class CAddOnInterface;
@@ -88,6 +89,7 @@ public:
     void OnTabVisibilityChanged(bool visible);
     void RefreshView();
     void SetForeground(bool foreground);
+    void SetToolpathsShown(bool shown);
     const CamScene& GetScene() const { return m_scene; }
     void HandleSelection();
     void ClearPickedSelection();
@@ -109,6 +111,13 @@ public:
 
     // Shows the rows chosen in the Features list in the view.
     void ShowFeaturesInView(const std::vector<camcore::PickedGeometry>& features);
+
+    // The features whose outlines are drawn in orange: the open operation
+    // dialog's, otherwise the tree's selected operation's (all of a folder's
+    // operations' for a folder). Their outlines are read from the model and kept
+    // until the features change.
+    std::vector<camcore::PickedGeometry> HighlightedFeatures() const;
+    void UpdateHighlights();
     void OnOperationDialogDone(COperationDlg* pDialog, bool apply);
     void OnOperationDialogGenerate(COperationDlg* pDialog);
 
@@ -193,6 +202,8 @@ private:
     COperationDlg* m_pOperationDlg;
     StepRef m_operationTarget;          // the folder, and the operation in it or kNewStep
     bool m_showingFeatures;             // Features list rows are selected in the view
+    std::vector<camcore::PickedGeometry> m_highlighted;    // the features m_highlightOutlines were read for
+    std::vector<std::vector<camcore::Vec3>> m_highlightOutlines;   // in assembly mm
 
     std::filesystem::path m_lastPostPath;   // so the next post suggests the same folder
 
@@ -232,6 +243,9 @@ protected:
     afx_msg void OnSave();
     afx_msg void OnRefresh();
     afx_msg void OnForeground();
+    afx_msg void OnShowToolpaths();
+    afx_msg void OnToolbarTip(NMHDR* pNotify, LRESULT* pResult);
+    afx_msg void OnSettings();
     afx_msg void OnTreeSelectionChanged(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnTreeDoubleClick(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnTreeRightClick(NMHDR* pNotify, LRESULT* pResult);
@@ -252,6 +266,7 @@ protected:
 
 private:
     void LayoutControls(int cx, int cy);
+    void ApplyViewSize();           // the text and icons at m_settings' size
     HTREEITEM ItemUnderCursor(bool select);
     bool IsStepItem(HTREEITEM hItem) const;
     StepRef StepOfItem(HTREEITEM hItem) const;
@@ -273,7 +288,12 @@ private:
     CTreeCtrl m_tree;
     CStatic m_status;
     CButton m_refresh;
-    CButton m_foreground;
+    CToolBarCtrl m_toolbar;         // view toggles above the tree
+    CToolBarCtrl m_settingsBar;     // the gear, at the right
+    CImageList m_toolbarImages;
+    CFont m_font;                   // the tab's text, at the view size
+    camcore::ProgramSettings m_settings;
+    bool m_settingsWritable;        // false if the file is damaged or newer, so it isn't overwritten
     CButton m_save;
     HTREEITEM m_hTools;
     HTREEITEM m_hOperations;

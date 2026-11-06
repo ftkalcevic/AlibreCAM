@@ -37,8 +37,27 @@ END
 
 IDI_ALIBRECAM             ICON                    "res\\AlibreCAM.ico"
 
+// The CAM tab's toolbar at each view size: square images side by side (draw over
+// model, show toolpaths, settings), magenta for transparent.
+IDB_CAM_TOOLBAR_16        BITMAP                  "res\\CamToolbar16.bmp"
+IDB_CAM_TOOLBAR_24        BITMAP                  "res\\CamToolbar24.bmp"
+IDB_CAM_TOOLBAR_32        BITMAP                  "res\\CamToolbar32.bmp"
+
 /////////////////////////////////////////////////////////////////////////////
 // Dialog
+
+IDD_SETTINGS DIALOGEX 0, 0, 180, 92
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "AlibreCAM Settings"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "CAM View Size",IDC_STATIC,7,7,166,56
+    CONTROL         "Small",IDC_VIEW_SMALL,"Button",BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,15,20,80,10
+    CONTROL         "Medium",IDC_VIEW_MEDIUM,"Button",BS_AUTORADIOBUTTON,15,33,80,10
+    CONTROL         "Large",IDC_VIEW_LARGE,"Button",BS_AUTORADIOBUTTON,15,46,80,10
+    DEFPUSHBUTTON   "OK",IDOK,67,71,50,14,WS_GROUP
+    PUSHBUTTON      "Cancel",IDCANCEL,123,71,50,14
+END
 
 IDD_ABOUTBOX DIALOGEX 0, 0, 250, 104
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU

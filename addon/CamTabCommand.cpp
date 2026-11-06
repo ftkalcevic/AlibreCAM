@@ -12,6 +12,7 @@
 #include "ProfileToolpath.h"
 #include "FileIO.h"
 #include "PostDialog.h"
+#include "SettingsDialog.h"
 #include "PseudoPost.h"
 #include "GeometryReader.h"
 #include "ModelReader.h"
@@ -42,6 +43,10 @@ namespace
         IDC_CAM_SAVE,
         IDC_CAM_REFRESH,
         IDC_CAM_FOREGROUND,
+        IDC_CAM_TOOLBAR,
+        IDC_CAM_SHOW_TOOLPATHS,
+        IDC_CAM_SETTINGS_BAR,
+        IDC_CAM_SETTINGS,
 
         // Tree menu commands
         ID_CAM_ADD_ORIGIN,
@@ -855,11 +860,69 @@ void CCamTabCommand::SelectStep(const StepRef& ref)
     if (FindStep(ref) == nullptr)
         return;
 
-    // The origin, and which toolpath is drawn bold, follow the selection.
+    // The origin, which toolpath is drawn bold, and which features are shown follow the selection.
     const bool changed = (ref.step != m_selected.step || ref.child != m_selected.child);
     m_selected = ref;
     if (changed)
         RebuildScene();
+}
+
+std::vector<camcore::PickedGeometry> CCamTabCommand::HighlightedFeatures() const
+{
+    // The open dialog's list, as it's being edited.
+    if (m_pOperationDlg != nullptr)
+        return m_pOperationDlg->GetFeatures();
+
+    std::vector<camcore::PickedGeometry> features;
+    if (m_selected.step != StepRef::kNone && m_selected.step < m_job.sequence.size())
+    {
+        const camcore::SequenceStep& step = m_job.sequence[m_selected.step];
+        for (size_t c = 0; c < step.children.size(); ++c)
+        {
+            if (m_selected.IsOperation() && m_selected.child != c)
+                continue;
+            const std::vector<camcore::PickedGeometry>& own = step.children[c].features;
+            features.insert(features.end(), own.begin(), own.end());
+        }
+    }
+    return features;
+}
+
+void CCamTabCommand::UpdateHighlights()
+{
+    // Read again only when the features change.
+    const std::vector<camcore::PickedGeometry> features = HighlightedFeatures();
+    bool same = features.size() == m_highlighted.size();
+    for (size_t i = 0; same && i < features.size(); ++i)
+        same = camcore::SameFeature(features[i], m_highlighted[i]);
+    if (same)
+        return;
+
+    m_highlighted = features;
+    m_highlightOutlines.clear();
+    IADSessionPtr session;
+    try
+    {
+        session = GetSession();
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[features] could not find the session: hr=0x%08X", static_cast<unsigned>(error.Error()));
+        return;
+    }
+
+    // A face shows its outer loop, and an edge itself. Points have no outline.
+    for (const camcore::PickedGeometry& feature : features)
+    {
+        if (feature.kind == camcore::PickKind::DesignPoint)
+            continue;
+        std::vector<camcore::Path> outline;
+        std::wstring problem;
+        if (!ReadFeatureOutline(session, feature, outline, problem))
+            continue;
+        for (const camcore::Path& piece : outline)
+            m_highlightOutlines.push_back(camcore::PathPoints(piece, false));
+    }
 }
 
 bool CCamTabCommand::IsSuppressed(const StepRef& ref) const
@@ -1447,6 +1510,9 @@ void CCamTabCommand::OpenOperationDialog(const camcore::SequenceStep& step, cons
     }
     m_pOperationDlg->ShowWindow(SW_SHOW);
     Log(L"[operation] editing %s", target.child == kNewStep ? L"a new operation" : FromUtf8(step.name).c_str());
+
+    // Its own features are outlined from the start, in place of the tree's.
+    RebuildScene();
 }
 
 void CCamTabCommand::CloseOperationDialog()
@@ -1476,7 +1542,10 @@ void CCamTabCommand::OnOperationDialogDone(COperationDlg* pDialog, bool apply)
     }
 
     if (!apply || !ApplyOperationStep(pDialog->GetStep()))
+    {
+        RebuildScene();     // the tree's selection is outlined again
         return;
+    }
 
     Log(L"[operation] applied %s", FromUtf8(pDialog->GetStep().name).c_str());
     MarkJobChanged();
@@ -1670,6 +1739,12 @@ void CCamTabCommand::SetForeground(bool foreground)
     RebuildScene();
 }
 
+void CCamTabCommand::SetToolpathsShown(bool shown)
+{
+    m_scene.toolpathsShown = shown;
+    RebuildScene();
+}
+
 void CCamTabCommand::ReadModelSize()
 {
     try
@@ -1719,6 +1794,10 @@ void CCamTabCommand::RebuildScene()
         }
     }
 
+    // The chosen operation's features, outlined in orange.
+    UpdateHighlights();
+    m_scene.highlights = m_highlightOutlines;
+
     // Every generated toolpath, brought from its origin's frame into the assembly.
     m_scene.showToolpaths = !IsPicking();
     m_scene.toolpaths.clear();
@@ -1736,9 +1815,13 @@ void CCamTabCommand::RebuildScene()
         {
             // A facing's boundary, closed back to its start.
             // Arcs are drawn as short straight segments.
+            // Only the selected operation's, or its folder's, or the dialog's, like the bold toolpath.
+            const bool chosen = (m_selected.step == i && (!m_selected.IsOperation() || m_selected.child == c)) ||
+                                (m_pOperationDlg != nullptr && m_operationTarget.step == i &&
+                                 m_operationTarget.child == c);
             for (const camcore::Path& boundary : m_job.sequence[i].children[c].boundaries)
             {
-                if (boundary.empty())
+                if (boundary.empty() || !chosen)
                     continue;
                 std::vector<camcore::Vec3> outline;
                 for (const camcore::Vec3& point : camcore::PathPoints(boundary, true))
@@ -1900,6 +1983,9 @@ void CCamTabCommand::EndFeatureSelect()
         Log(L"[features] could not find the session: hr=0x%08X", static_cast<unsigned>(error.Error()));
     }
     RestoreSelectionFilter();
+
+    // The list may have changed, so its outlines are drawn again.
+    RebuildScene();
 }
 
 void CCamTabCommand::ShowFeaturesInView(const std::vector<camcore::PickedGeometry>& features)
@@ -1925,6 +2011,8 @@ void CCamTabCommand::ShowFeaturesInView(const std::vector<camcore::PickedGeometr
     {
         Log(L"[features] could not find the session: hr=0x%08X", static_cast<unsigned>(error.Error()));
     }
+
+    RebuildScene();     // rows may have been deleted or moved
 }
 
 bool CCamTabCommand::GetOperationFrame(camcore::Frame& frame) const
@@ -2101,6 +2189,10 @@ BEGIN_MESSAGE_MAP(CCamTabWnd, CWnd)
     ON_BN_CLICKED(IDC_CAM_SAVE, &CCamTabWnd::OnSave)
     ON_BN_CLICKED(IDC_CAM_REFRESH, &CCamTabWnd::OnRefresh)
     ON_BN_CLICKED(IDC_CAM_FOREGROUND, &CCamTabWnd::OnForeground)
+    ON_BN_CLICKED(IDC_CAM_SHOW_TOOLPATHS, &CCamTabWnd::OnShowToolpaths)
+    ON_NOTIFY(TBN_GETINFOTIP, IDC_CAM_TOOLBAR, &CCamTabWnd::OnToolbarTip)
+    ON_NOTIFY(TBN_GETINFOTIP, IDC_CAM_SETTINGS_BAR, &CCamTabWnd::OnToolbarTip)
+    ON_BN_CLICKED(IDC_CAM_SETTINGS, &CCamTabWnd::OnSettings)
     ON_NOTIFY(TVN_SELCHANGED, IDC_CAM_TREE, &CCamTabWnd::OnTreeSelectionChanged)
     ON_NOTIFY(NM_DBLCLK, IDC_CAM_TREE, &CCamTabWnd::OnTreeDoubleClick)
     ON_NOTIFY(NM_RCLICK, IDC_CAM_TREE, &CCamTabWnd::OnTreeRightClick)
@@ -2122,6 +2214,7 @@ CCamTabWnd::CCamTabWnd(CCamTabCommand* pTab)
     , m_hOperations(nullptr)
     , m_fillingTree(false)
     , m_visible(false)
+    , m_settingsWritable(true)
     , m_dragging(false)
 {
 }
@@ -2165,17 +2258,44 @@ int CCamTabWnd::OnCreate(LPCREATESTRUCT pCreate)
                      IDC_CAM_REFRESH);
     m_refresh.SetFont(pFont);
 
-    m_foreground.Create(L"Draw over model", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-                        CRect(0, 0, 10, 10), this, IDC_CAM_FOREGROUND);
-    m_foreground.SetFont(pFont);
-    m_foreground.SetCheck(BST_CHECKED);
+    // The view toggles: small image buttons, pushed in while on, each with a tooltip.
+    m_toolbar.Create(WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_TOOLTIPS | CCS_NODIVIDER | CCS_NORESIZE |
+                         CCS_NOPARENTALIGN,
+                     CRect(0, 0, 10, 10), this, IDC_CAM_TOOLBAR);
+    TBBUTTON buttons[2] = {};
+    const int commands[2] = { IDC_CAM_FOREGROUND, IDC_CAM_SHOW_TOOLPATHS };
+    for (int i = 0; i < 2; ++i)
+    {
+        buttons[i].iBitmap = i;
+        buttons[i].idCommand = commands[i];
+        buttons[i].fsState = TBSTATE_ENABLED | TBSTATE_CHECKED;     // both start on
+        buttons[i].fsStyle = BTNS_CHECK;
+    }
+    m_toolbar.AddButtons(2, buttons);
+
+    // The gear opens the Settings dialog. It's a toolbar of its own, kept at the right.
+    m_settingsBar.Create(WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_TOOLTIPS | CCS_NODIVIDER | CCS_NORESIZE |
+                             CCS_NOPARENTALIGN,
+                         CRect(0, 0, 10, 10), this, IDC_CAM_SETTINGS_BAR);
+    TBBUTTON gear = {};
+    gear.iBitmap = 2;
+    gear.idCommand = IDC_CAM_SETTINGS;
+    gear.fsState = TBSTATE_ENABLED;
+    gear.fsStyle = BTNS_BUTTON;
+    m_settingsBar.AddButtons(1, &gear);
+
 
     m_save.Create(L"Save", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, CRect(0, 0, 10, 10), this, IDC_CAM_SAVE);
     m_save.SetFont(pFont);
 
-    CRect client;
-    GetClientRect(&client);
-    LayoutControls(client.Width(), client.Height());
+    // The view size, and the text and icons at it.
+    const camcore::ProgramSettingsLoadResult loaded = camcore::LoadProgramSettings(ProgramSettingsPath());
+    m_settings = loaded.settings;
+    m_settingsWritable = loaded.status == camcore::LoadStatus::Ok || loaded.status == camcore::LoadStatus::NotFound;
+    if (!m_settingsWritable)
+        Log(L"[settings] %s", FromUtf8(loaded.message).c_str());
+    ApplyViewSize();
+
 
     // The window Alibre creates for the tab doesn't always resize this one.
     SetTimer(kResizeTimer, kResizeMilliseconds, nullptr);
@@ -2207,21 +2327,27 @@ void CCamTabWnd::LayoutControls(int cx, int cy)
     if (m_tree.GetSafeHwnd() == nullptr)
         return;
 
+    const double scale = camcore::ViewTextScale(m_settings.viewSize);
     const int margin = 4;
-    const int buttonHeight = 23;
-    const int checkHeight = 18;
-    const int statusHeight = 60;
+    const int buttonHeight = static_cast<int>(23 * scale + 0.5);
+    const int statusHeight = static_cast<int>(60 * scale + 0.5);
     const int width = (cx > margin * 2) ? cx - margin * 2 : 1;
 
+    // The toolbars across the top (the gear at the right), then the tree, the
+    // status, and the buttons at the bottom.
+    const int icon = camcore::ViewIconSize(m_settings.viewSize);
+    const int toolbarHeight = icon + 8;
+    const int gearWidth = icon + 10;
+    const int treeY = margin + toolbarHeight + margin;
     const int saveY = cy - margin - buttonHeight;
     const int refreshY = saveY - margin - buttonHeight;
-    const int foregroundY = refreshY - margin - checkHeight;
-    const int statusY = foregroundY - margin - statusHeight;
-    const int treeHeight = statusY - margin * 2;
+    const int statusY = refreshY - margin - statusHeight;
+    const int treeHeight = statusY - margin - treeY;
 
-    m_tree.MoveWindow(margin, margin, width, (treeHeight > 40) ? treeHeight : 40);
+    m_toolbar.MoveWindow(margin, margin, (width > gearWidth) ? width - gearWidth : 1, toolbarHeight);
+    m_settingsBar.MoveWindow(margin + width - gearWidth, margin, gearWidth, toolbarHeight);
+    m_tree.MoveWindow(margin, treeY, width, (treeHeight > 40) ? treeHeight : 40);
     m_status.MoveWindow(margin, statusY, width, statusHeight);
-    m_foreground.MoveWindow(margin, foregroundY, width, checkHeight);
     m_refresh.MoveWindow(margin, refreshY, width, buttonHeight);
     m_save.MoveWindow(margin, saveY, width, buttonHeight);
 }
@@ -2275,7 +2401,81 @@ void CCamTabWnd::OnRefresh()
 void CCamTabWnd::OnForeground()
 {
     if (m_pTab != nullptr)
-        m_pTab->SetForeground(m_foreground.GetCheck() == BST_CHECKED);
+        m_pTab->SetForeground(m_toolbar.IsButtonChecked(IDC_CAM_FOREGROUND) != FALSE);
+}
+
+void CCamTabWnd::OnSettings()
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    CSettingsDlg dialog(m_settings, this);
+    if (dialog.DoModal() != IDOK)
+        return;
+
+    m_settings = dialog.GetSettings();
+    ApplyViewSize();
+
+    // A damaged settings file, or one from a newer add-on, isn't overwritten.
+    if (!m_settingsWritable)
+    {
+        MessageBoxW(L"The settings file couldn't be read, or is from a newer AlibreCAM, so these settings "
+                    L"apply until Alibre closes but aren't saved.",
+                    L"AlibreCAM", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    const camcore::SaveResult saved = camcore::SaveProgramSettings(m_settings, ProgramSettingsPath());
+    if (!saved.ok)
+        MessageBoxW(FromUtf8(saved.message).c_str(), L"AlibreCAM", MB_OK | MB_ICONWARNING);
+}
+
+void CCamTabWnd::ApplyViewSize()
+{
+    // The tab's text: Windows' default GUI font, bigger for Medium and Large.
+    LOGFONT logFont = {};
+    ::GetObject(::GetStockObject(DEFAULT_GUI_FONT), sizeof(logFont), &logFont);
+    logFont.lfHeight = static_cast<LONG>(logFont.lfHeight * camcore::ViewTextScale(m_settings.viewSize) +
+                                         (logFont.lfHeight < 0 ? -0.5 : 0.5));
+    m_font.DeleteObject();
+    m_font.CreateFontIndirect(&logFont);
+    for (CWnd* pControl : { static_cast<CWnd*>(&m_tree), static_cast<CWnd*>(&m_status), static_cast<CWnd*>(&m_refresh),
+                            static_cast<CWnd*>(&m_save) })
+        pControl->SetFont(&m_font);
+
+    // The icons, drawn at each size rather than stretched.
+    const int icon = camcore::ViewIconSize(m_settings.viewSize);
+    const UINT strip = (icon == 32) ? IDB_CAM_TOOLBAR_32 : (icon == 24) ? IDB_CAM_TOOLBAR_24 : IDB_CAM_TOOLBAR_16;
+    m_toolbarImages.DeleteImageList();
+    if (!m_toolbarImages.Create(strip, icon, 0, RGB(255, 0, 255)))
+        Log(L"[tab] could not load the %d pixel toolbar images", icon);
+    for (CToolBarCtrl* pBar : { &m_toolbar, &m_settingsBar })
+    {
+        pBar->SetImageList(&m_toolbarImages);
+        pBar->SetBitmapSize(CSize(icon, icon));
+        pBar->SetButtonSize(CSize(icon + 8, icon + 6));
+        pBar->Invalidate();
+    }
+
+    CRect client;
+    GetClientRect(&client);
+    LayoutControls(client.Width(), client.Height());
+}
+
+void CCamTabWnd::OnShowToolpaths()
+{
+    if (m_pTab != nullptr)
+        m_pTab->SetToolpathsShown(m_toolbar.IsButtonChecked(IDC_CAM_SHOW_TOOLPATHS) != FALSE);
+}
+
+void CCamTabWnd::OnToolbarTip(NMHDR* pNotify, LRESULT* pResult)
+{
+    NMTBGETINFOTIP* pTip = reinterpret_cast<NMTBGETINFOTIP*>(pNotify);
+    const wchar_t* text = (pTip->iItem == IDC_CAM_FOREGROUND)       ? L"Draw over model"
+                          : (pTip->iItem == IDC_CAM_SHOW_TOOLPATHS) ? L"Show toolpaths"
+                          : (pTip->iItem == IDC_CAM_SETTINGS)       ? L"Settings"
+                                                                    : L"";
+    if (pTip->pszText != nullptr && pTip->cchTextMax > 0)
+        wcsncpy_s(pTip->pszText, pTip->cchTextMax, text, _TRUNCATE);
+    *pResult = 0;
 }
 
 bool CCamTabWnd::IsStepItem(HTREEITEM hItem) const

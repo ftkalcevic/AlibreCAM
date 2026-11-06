@@ -12,6 +12,7 @@
 #include "CamJob.h"
 #include "FileIO.h"
 #include "Origin.h"
+#include "ProgramSettings.h"
 #include "ToolLibrary.h"
 
 namespace fs = std::filesystem;
@@ -478,6 +479,39 @@ TEST_CASE("suppressed steps load back suppressed, and suppressed origins are ski
     CHECK(loaded.job.sequence[1].children[1].suppressed);
     CHECK_FALSE(loaded.job.sequence[2].suppressed);
     CHECK(loaded.job.sequence[3].suppressed);
+}
+
+TEST_CASE("program settings save and load, and keep their defaults when missing")
+{
+    TempFolder folder;
+    const fs::path path = folder / "settings.json";
+
+    // No file yet: the defaults.
+    ProgramSettingsLoadResult loaded = LoadProgramSettings(path);
+    CHECK(loaded.status == LoadStatus::NotFound);
+    CHECK(loaded.settings.viewSize == ViewSize::Small);
+
+    ProgramSettings settings;
+    settings.viewSize = ViewSize::Large;
+    REQUIRE(SaveProgramSettings(settings, path).ok);
+    loaded = LoadProgramSettings(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    CHECK(loaded.settings.viewSize == ViewSize::Large);
+
+    // A file without the view size keeps the default; a newer one isn't to be overwritten.
+    WriteText(path, R"({"format":"AlibreCAM settings","formatVersion":1})");
+    loaded = LoadProgramSettings(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    CHECK(loaded.settings.viewSize == ViewSize::Small);
+    WriteText(path, R"({"format":"AlibreCAM settings","formatVersion":9,"viewSize":"huge"})");
+    CHECK(LoadProgramSettings(path).status == LoadStatus::NewerVersion);
+    WriteText(path, R"({"format":"AlibreCAM settings","formatVersion":1,"viewSize":"huge"})");
+    CHECK(LoadProgramSettings(path).status == LoadStatus::NotACamFile);
+
+    CHECK(ViewIconSize(ViewSize::Small) == 16);
+    CHECK(ViewIconSize(ViewSize::Medium) == 24);
+    CHECK(ViewIconSize(ViewSize::Large) == 32);
+    CHECK(ViewTextScale(ViewSize::Large) == 1.5);
 }
 
 TEST_CASE("non-ASCII names and paths survive a save and load")

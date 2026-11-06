@@ -29,6 +29,7 @@
     <ClCompile Include="OperationDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="OriginDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="PostDialog.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SettingsDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ToolDialogs.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AlibreCAM.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="stdafx.cpp"><Filter>Source Files</Filter></ClCompile>
@@ -46,6 +47,7 @@
     <ClInclude Include="OperationDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="OriginDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="PostDialog.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="SettingsDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ToolDialogs.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AlibreCAM.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="resource.h"><Filter>Header Files</Filter></ClInclude>
@@ -56,6 +58,9 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="res\AlibreCAM.ico"><Filter>Resource Files</Filter></Image>
+    <Image Include="res\CamToolbar16.bmp"><Filter>Resource Files</Filter></Image>
+    <Image Include="res\CamToolbar24.bmp"><Filter>Resource Files</Filter></Image>
+    <Image Include="res\CamToolbar32.bmp"><Filter>Resource Files</Filter></Image>
   </ItemGroup>
   <ItemGroup>
     <None Include="AlibreCAM.def"><Filter>Source Files</Filter></None>

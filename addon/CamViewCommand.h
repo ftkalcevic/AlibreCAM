@@ -36,7 +36,9 @@ struct CamScene
     };
     std::vector<Toolpath> toolpaths;
     std::vector<std::vector<camcore::Vec3>> boundaries;     // facing areas, closed
-    bool showToolpaths = true;      // the boundaries too
+    std::vector<std::vector<camcore::Vec3>> highlights;     // the chosen operation's features
+    bool showToolpaths = true;      // the boundaries too. Off while picking.
+    bool toolpathsShown = true;     // the toolbar's Show Toolpaths, for the toolpaths alone
 
     bool foreground = true;     // drawn over the model, rather than hidden by it
     double millimetresPerUnit = 10.0;

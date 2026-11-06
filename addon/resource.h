@@ -206,6 +206,13 @@
 #define IDC_POCK_STEP_DISTANCE_RADIO    13264
 #define IDC_POCK_STEP_DISTANCE          13265
 #define IDD_OP_HOLE_POCKETING           13026
+#define IDB_CAM_TOOLBAR_16              13027
+#define IDB_CAM_TOOLBAR_24              13028
+#define IDB_CAM_TOOLBAR_32              13029
+#define IDD_SETTINGS                    13030
+#define IDC_VIEW_SMALL                  13296
+#define IDC_VIEW_MEDIUM                 13297
+#define IDC_VIEW_LARGE                  13298
 #define IDC_HP_AT_TOP                   13266
 #define IDC_HP_AT_BOTTOM                13267
 #define IDC_HP_PICK_TOP                 13268
@@ -241,9 +248,9 @@
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13027
+#define _APS_NEXT_RESOURCE_VALUE        13031
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13296
+#define _APS_NEXT_CONTROL_VALUE         13299
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

@@ -192,6 +192,21 @@ void CCamViewCommand::DrawScene(IADAddOnCanvasDisplay* pCanvas, const CamScene& 
 {
     const double unit = scene.millimetresPerUnit;
 
+    // Hidden while picking, like the toolpaths, as graphics take part in it.
+    if (scene.showToolpaths && !scene.highlights.empty())
+    {
+        const __int64 segment = AddSegment(pCanvas, L"Operation features", kFeatureHighlightColour,
+                                           kFeatureHighlightLineWeight, scene.foreground);
+        for (const std::vector<Vec3>& outline : scene.highlights)
+        {
+            std::vector<float> points;
+            points.reserve(outline.size() * 3);
+            for (const Vec3& point : outline)
+                AddPoint(points, point, unit);
+            DrawPolyline(pCanvas, segment, points);
+        }
+    }
+
     if (scene.showToolpaths && !scene.boundaries.empty())
     {
         const __int64 segment = AddSegment(pCanvas, L"Facing boundaries", kBoundaryColour, kBoundaryLineWeight,
@@ -206,7 +221,7 @@ void CCamViewCommand::DrawScene(IADAddOnCanvasDisplay* pCanvas, const CamScene& 
         }
     }
 
-    if (scene.showToolpaths)
+    if (scene.showToolpaths && scene.toolpathsShown)
     {
         for (const CamScene::Toolpath& toolpath : scene.toolpaths)
         {
