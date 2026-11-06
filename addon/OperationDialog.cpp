@@ -754,9 +754,9 @@ void CFeaturesPage::EndDrag()
 
 namespace
 {
-    const wchar_t* ToolTypeName(ToolType type)
+    std::wstring ToolTypeName(ToolType type)
     {
-        return (type == ToolType::Drill) ? L"Drill" : L"Flat end mill";
+        return FromUtf8(ToolTypeTitle(type));
     }
 
     std::wstring Length(double value, ToolUnit unit)
@@ -804,7 +804,7 @@ void CToolPage::Load(const SequenceStep& step)
         const Tool& tool = m_library.tools[i];
         const int row = m_tools.InsertItem(static_cast<int>(i), std::to_wstring(tool.number).c_str());
         m_tools.SetItemText(row, 1, FromUtf8(tool.name).c_str());
-        m_tools.SetItemText(row, 2, ToolTypeName(tool.type));
+        m_tools.SetItemText(row, 2, ToolTypeName(tool.type).c_str());
         m_tools.SetItemData(row, static_cast<DWORD_PTR>(i));
         if (tool.id == m_toolId)
             chosen = row;
@@ -873,10 +873,24 @@ void CToolPage::ShowDetails(const Tool* pTool)
     add(L"Diameter", Length(pTool->diameter, pTool->unit));
     add(L"Flute length", Length(pTool->fluteLength, pTool->unit));
     add(L"Overall length", Length(pTool->overallLength, pTool->unit));
-    if (pTool->type == ToolType::Drill)
-        add(L"Point angle", FormatNumber(pTool->pointAngle) + L"\u00B0");
-    else
+    const ToolFields fields = FieldsOf(pTool->type);
+    const std::wstring degrees = L"\u00B0";
+    if (fields.pointAngle)
+        add(L"Point angle", FormatNumber(pTool->pointAngle) + degrees);
+    if (fields.fluteCount)
         add(L"Flute count", std::to_wstring(pTool->fluteCount));
+    if (fields.cornerRadius)
+        add(L"Corner radius", Length(pTool->cornerRadius, pTool->unit));
+    if (fields.includedAngle)
+        add(L"Included angle", FormatNumber(pTool->includedAngle) + degrees);
+    if (fields.tipDiameter)
+        add(L"Tip diameter", Length(pTool->tipDiameter, pTool->unit));
+    if (fields.taperAngle)
+        add(L"Taper angle", FormatNumber(pTool->taperAngle) + degrees);
+    if (fields.pitch)
+        add(L"Pitch", Length(pTool->pitch, pTool->unit));
+    if (fields.threadAngle)
+        add(L"Thread angle", FormatNumber(pTool->threadAngle) + degrees);
 }
 
 void CToolPage::OnToolChanged(NMHDR* pNotify, LRESULT* pResult)

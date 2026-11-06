@@ -13,14 +13,40 @@
 
 namespace camcore
 {
-    // Version 2 added each tool's feeds per material.
-    constexpr int kToolLibraryFormatVersion = 2;
+    // Version 2 added each tool's feeds per material, and version 3 more tool types.
+    constexpr int kToolLibraryFormatVersion = 3;
 
     enum class ToolType
     {
         FlatEndMill,
-        Drill
+        Drill,
+        BallMill,
+        CornerRadiusMill,
+        VMill,
+        ChamferMill,
+        TaperMill,
+        ThreadMill
     };
+
+    // As the Tool dialog lists them: "Flat end mill", "Ball mill" and so on.
+    std::string ToolTypeTitle(ToolType type);
+
+    // Every type, in the order the Tool dialog lists them.
+    const std::vector<ToolType>& ToolTypes();
+
+    // The size fields a type has besides diameter, flute length and overall length.
+    struct ToolFields
+    {
+        bool fluteCount = false;
+        bool pointAngle = false;
+        bool cornerRadius = false;
+        bool includedAngle = false;
+        bool tipDiameter = false;
+        bool taperAngle = false;
+        bool pitch = false;
+        bool threadAngle = false;
+    };
+    ToolFields FieldsOf(ToolType type);
 
     enum class ToolUnit
     {
@@ -50,11 +76,26 @@ namespace camcore
         double fluteLength = 0.0;
         double overallLength = 0.0;
 
-        // Flat end mills only
+        // Every type but drills
         int fluteCount = 2;
 
         // Drills only
         double pointAngle = 118.0;      // degrees
+
+        // Corner radius mills only
+        double cornerRadius = 1.0;
+
+        // V-mills and chamfer mills: the angle across the point. With taper
+        // mills, the diameter at the tip (0 is a sharp point).
+        double includedAngle = 90.0;    // degrees
+        double tipDiameter = 0.0;
+
+        // Taper mills only: each side's angle from the axis.
+        double taperAngle = 5.0;        // degrees
+
+        // Thread mills only
+        double pitch = 1.0;
+        double threadAngle = 60.0;      // degrees
 
         // At most one for each material.
         std::vector<ToolFeeds> feeds;

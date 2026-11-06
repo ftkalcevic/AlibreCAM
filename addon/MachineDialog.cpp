@@ -38,9 +38,9 @@ namespace
         return text;
     }
 
-    const wchar_t* TypeName(ToolType type)
+    std::wstring TypeName(ToolType type)
     {
-        return (type == ToolType::Drill) ? L"Drill" : L"Flat end mill";
+        return FromUtf8(ToolTypeTitle(type));
     }
 
     const wchar_t* UnitName(ToolUnit unit)
@@ -527,7 +527,7 @@ void CMachineDlg::FillTools()
         const Tool& tool = m_machine.tools.tools[i];
         const int row = m_tools.InsertItem(static_cast<int>(i), std::to_wstring(tool.number).c_str());
         m_tools.SetItemText(row, 1, FromUtf8(tool.name).c_str());
-        m_tools.SetItemText(row, 2, TypeName(tool.type));
+        m_tools.SetItemText(row, 2, TypeName(tool.type).c_str());
         m_tools.SetItemText(row, 3, FormatNumber(tool.diameter).c_str());
         m_tools.SetItemText(row, 4, UnitName(tool.unit));
         m_tools.SetItemText(row, 5, std::to_wstring(tool.feeds.size()).c_str());

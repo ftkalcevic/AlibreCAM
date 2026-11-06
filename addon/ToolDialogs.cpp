@@ -24,11 +24,6 @@ namespace
         return text;
     }
 
-    const wchar_t* TypeName(ToolType type)
-    {
-        return (type == ToolType::Drill) ? L"Drill" : L"Flat end mill";
-    }
-
     void AppendProblem(std::wstring& problems, const std::wstring& problem)
     {
         if (!problems.empty())
@@ -212,9 +207,13 @@ BOOL CToolEditDlg::OnInitDialog()
     CDialog::OnInitDialog();
 
     m_type.SubclassDlgItem(IDC_TOOL_TYPE, this);
-    m_type.AddString(TypeName(ToolType::FlatEndMill));
-    m_type.AddString(TypeName(ToolType::Drill));
-    m_type.SetCurSel(m_tool.type == ToolType::Drill ? 1 : 0);
+    for (ToolType type : ToolTypes())
+    {
+        const int index = m_type.AddString(FromUtf8(ToolTypeTitle(type)).c_str());
+        m_type.SetItemData(index, static_cast<DWORD_PTR>(type));
+        if (type == m_tool.type)
+            m_type.SetCurSel(index);
+    }
 
     m_unit.SubclassDlgItem(IDC_TOOL_UNIT, this);
     m_unit.AddString(L"Millimetres");
@@ -228,6 +227,12 @@ BOOL CToolEditDlg::OnInitDialog()
     SetNumber(IDC_TOOL_OVERALL_LENGTH, m_tool.overallLength);
     SetNumber(IDC_TOOL_FLUTE_COUNT, m_tool.fluteCount);
     SetNumber(IDC_TOOL_POINT_ANGLE, m_tool.pointAngle);
+    SetNumber(IDC_TOOL_CORNER_RADIUS, m_tool.cornerRadius);
+    SetNumber(IDC_TOOL_INCLUDED_ANGLE, m_tool.includedAngle);
+    SetNumber(IDC_TOOL_TIP_DIAMETER, m_tool.tipDiameter);
+    SetNumber(IDC_TOOL_TAPER_ANGLE, m_tool.taperAngle);
+    SetNumber(IDC_TOOL_PITCH, m_tool.pitch);
+    SetNumber(IDC_TOOL_THREAD_ANGLE, m_tool.threadAngle);
 
     m_feedsList.SubclassDlgItem(IDC_TOOL_FEEDS_LIST, this);
     m_feedsList.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
@@ -321,17 +326,24 @@ void CToolEditDlg::OnFeedsSelectionChanged(NMHDR* /*pNotify*/, LRESULT* pResult)
     GetDlgItem(IDC_TOOL_FEEDS_REMOVE)->EnableWindow(chosen);
 }
 
-bool CToolEditDlg::IsDrillSelected() const
+ToolType CToolEditDlg::SelectedType() const
 {
-    return m_type.GetCurSel() == 1;
+    const int index = m_type.GetCurSel();
+    return (index >= 0) ? static_cast<ToolType>(m_type.GetItemData(index)) : ToolType::FlatEndMill;
 }
 
 void CToolEditDlg::UpdateFieldsForType()
 {
-    const BOOL drill = IsDrillSelected() ? TRUE : FALSE;
-
-    GetDlgItem(IDC_TOOL_FLUTE_COUNT)->EnableWindow(drill ? FALSE : TRUE);
-    GetDlgItem(IDC_TOOL_POINT_ANGLE)->EnableWindow(drill);
+    // Only the type's own size fields can be changed.
+    const ToolFields fields = FieldsOf(SelectedType());
+    GetDlgItem(IDC_TOOL_FLUTE_COUNT)->EnableWindow(fields.fluteCount);
+    GetDlgItem(IDC_TOOL_POINT_ANGLE)->EnableWindow(fields.pointAngle);
+    GetDlgItem(IDC_TOOL_CORNER_RADIUS)->EnableWindow(fields.cornerRadius);
+    GetDlgItem(IDC_TOOL_INCLUDED_ANGLE)->EnableWindow(fields.includedAngle);
+    GetDlgItem(IDC_TOOL_TIP_DIAMETER)->EnableWindow(fields.tipDiameter);
+    GetDlgItem(IDC_TOOL_TAPER_ANGLE)->EnableWindow(fields.taperAngle);
+    GetDlgItem(IDC_TOOL_PITCH)->EnableWindow(fields.pitch);
+    GetDlgItem(IDC_TOOL_THREAD_ANGLE)->EnableWindow(fields.threadAngle);
 }
 
 void CToolEditDlg::OnTypeChanged()
@@ -378,7 +390,7 @@ void CToolEditDlg::OnOK()
     Tool tool = m_tool;
     std::wstring problems;
 
-    tool.type = IsDrillSelected() ? ToolType::Drill : ToolType::FlatEndMill;
+    tool.type = SelectedType();
     tool.unit = (m_unit.GetCurSel() == 1) ? ToolUnit::Inches : ToolUnit::Millimetres;
     tool.feeds = m_feeds;
 
@@ -392,10 +404,24 @@ void CToolEditDlg::OnOK()
     ReadNumber(IDC_TOOL_FLUTE_LENGTH, L"The flute length", tool.fluteLength, problems);
     ReadNumber(IDC_TOOL_OVERALL_LENGTH, L"The overall length", tool.overallLength, problems);
 
-    if (tool.type == ToolType::Drill)
+    // Only the type's own fields are read.
+    const ToolFields fields = FieldsOf(tool.type);
+    if (fields.pointAngle)
         ReadNumber(IDC_TOOL_POINT_ANGLE, L"The point angle", tool.pointAngle, problems);
-    else
+    if (fields.fluteCount)
         ReadInteger(IDC_TOOL_FLUTE_COUNT, L"The flute count", tool.fluteCount, problems);
+    if (fields.cornerRadius)
+        ReadNumber(IDC_TOOL_CORNER_RADIUS, L"The corner radius", tool.cornerRadius, problems);
+    if (fields.includedAngle)
+        ReadNumber(IDC_TOOL_INCLUDED_ANGLE, L"The included angle", tool.includedAngle, problems);
+    if (fields.tipDiameter)
+        ReadNumber(IDC_TOOL_TIP_DIAMETER, L"The tip diameter", tool.tipDiameter, problems);
+    if (fields.taperAngle)
+        ReadNumber(IDC_TOOL_TAPER_ANGLE, L"The taper angle", tool.taperAngle, problems);
+    if (fields.pitch)
+        ReadNumber(IDC_TOOL_PITCH, L"The pitch", tool.pitch, problems);
+    if (fields.threadAngle)
+        ReadNumber(IDC_TOOL_THREAD_ANGLE, L"The thread angle", tool.threadAngle, problems);
 
     // Only check the values themselves once they've all been read as numbers.
     if (problems.empty())

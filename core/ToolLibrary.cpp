@@ -32,7 +32,17 @@ namespace camcore
 
         std::string TypeText(ToolType type)
         {
-            return (type == ToolType::Drill) ? "drill" : "flatEndMill";
+            switch (type)
+            {
+            case ToolType::Drill:            return "drill";
+            case ToolType::BallMill:         return "ballMill";
+            case ToolType::CornerRadiusMill: return "cornerRadiusMill";
+            case ToolType::VMill:            return "vMill";
+            case ToolType::ChamferMill:      return "chamferMill";
+            case ToolType::TaperMill:        return "taperMill";
+            case ToolType::ThreadMill:       return "threadMill";
+            default:                         return "flatEndMill";
+            }
         }
 
         std::string UnitText(ToolUnit unit)
@@ -87,10 +97,24 @@ namespace camcore
                 { "overallLength", tool.overallLength }
             };
 
-            if (tool.type == ToolType::Drill)
-                item["pointAngle"] = tool.pointAngle;
-            else
+            // Only the fields the type has.
+            const ToolFields fields = FieldsOf(tool.type);
+            if (fields.fluteCount)
                 item["fluteCount"] = tool.fluteCount;
+            if (fields.pointAngle)
+                item["pointAngle"] = tool.pointAngle;
+            if (fields.cornerRadius)
+                item["cornerRadius"] = tool.cornerRadius;
+            if (fields.includedAngle)
+                item["includedAngle"] = tool.includedAngle;
+            if (fields.tipDiameter)
+                item["tipDiameter"] = tool.tipDiameter;
+            if (fields.taperAngle)
+                item["taperAngle"] = tool.taperAngle;
+            if (fields.pitch)
+                item["pitch"] = tool.pitch;
+            if (fields.threadAngle)
+                item["threadAngle"] = tool.threadAngle;
 
             json feeds = json::array();
             for (const ToolFeeds& row : tool.feeds)
@@ -112,11 +136,16 @@ namespace camcore
             tool.name = item.at("name").get<std::string>();
 
             const std::string type = item.at("type").get<std::string>();
-            if (type == "drill")
-                tool.type = ToolType::Drill;
-            else if (type == "flatEndMill")
-                tool.type = ToolType::FlatEndMill;
-            else
+            bool known = false;
+            for (ToolType candidate : ToolTypes())
+            {
+                if (type == TypeText(candidate))
+                {
+                    tool.type = candidate;
+                    known = true;
+                }
+            }
+            if (!known)
                 throw std::runtime_error("unknown tool type '" + type + "'");
 
             const std::string unit = item.at("unit").get<std::string>();
@@ -131,10 +160,23 @@ namespace camcore
             tool.fluteLength = item.at("fluteLength").get<double>();
             tool.overallLength = item.at("overallLength").get<double>();
 
-            if (tool.type == ToolType::Drill)
-                tool.pointAngle = item.at("pointAngle").get<double>();
-            else
+            const ToolFields fields = FieldsOf(tool.type);
+            if (fields.fluteCount)
                 tool.fluteCount = item.at("fluteCount").get<int>();
+            if (fields.pointAngle)
+                tool.pointAngle = item.at("pointAngle").get<double>();
+            if (fields.cornerRadius)
+                tool.cornerRadius = item.at("cornerRadius").get<double>();
+            if (fields.includedAngle)
+                tool.includedAngle = item.at("includedAngle").get<double>();
+            if (fields.tipDiameter)
+                tool.tipDiameter = item.at("tipDiameter").get<double>();
+            if (fields.taperAngle)
+                tool.taperAngle = item.at("taperAngle").get<double>();
+            if (fields.pitch)
+                tool.pitch = item.at("pitch").get<double>();
+            if (fields.threadAngle)
+                tool.threadAngle = item.at("threadAngle").get<double>();
 
             // Version 1 libraries have no feeds.
             const auto feeds = item.find("feeds");
@@ -150,6 +192,44 @@ namespace camcore
             }
             return tool;
         }
+
+    std::string ToolTypeTitle(ToolType type)
+    {
+        switch (type)
+        {
+        case ToolType::Drill:            return "Drill";
+        case ToolType::BallMill:         return "Ball mill";
+        case ToolType::CornerRadiusMill: return "Corner radius mill";
+        case ToolType::VMill:            return "V-mill";
+        case ToolType::ChamferMill:      return "Chamfer mill";
+        case ToolType::TaperMill:        return "Taper mill";
+        case ToolType::ThreadMill:       return "Thread mill";
+        default:                         return "Flat end mill";
+        }
+    }
+
+    const std::vector<ToolType>& ToolTypes()
+    {
+        static const std::vector<ToolType> types = {
+            ToolType::FlatEndMill, ToolType::BallMill, ToolType::CornerRadiusMill, ToolType::VMill,
+            ToolType::ChamferMill, ToolType::TaperMill, ToolType::ThreadMill, ToolType::Drill,
+        };
+        return types;
+    }
+
+    ToolFields FieldsOf(ToolType type)
+    {
+        ToolFields fields;
+        fields.fluteCount = type != ToolType::Drill;
+        fields.pointAngle = type == ToolType::Drill;
+        fields.cornerRadius = type == ToolType::CornerRadiusMill;
+        fields.includedAngle = type == ToolType::VMill || type == ToolType::ChamferMill;
+        fields.tipDiameter = type == ToolType::VMill || type == ToolType::ChamferMill || type == ToolType::TaperMill;
+        fields.taperAngle = type == ToolType::TaperMill;
+        fields.pitch = type == ToolType::ThreadMill;
+        fields.threadAngle = type == ToolType::ThreadMill;
+        return fields;
+    }
 
     std::string NewToolId()
     {
@@ -173,16 +253,23 @@ namespace camcore
         if (!(tool.overallLength >= tool.fluteLength))
             problems.push_back("The overall length can't be less than the flute length.");
 
-        if (tool.type == ToolType::Drill)
-        {
-            if (!(tool.pointAngle > 0.0 && tool.pointAngle <= 180.0))
-                problems.push_back("The point angle must be more than 0 and no more than 180 degrees.");
-        }
-        else
-        {
-            if (tool.fluteCount < 1)
-                problems.push_back("The flute count must be 1 or more.");
-        }
+        const ToolFields fields = FieldsOf(tool.type);
+        if (fields.pointAngle && !(tool.pointAngle > 0.0 && tool.pointAngle <= 180.0))
+            problems.push_back("The point angle must be more than 0 and no more than 180 degrees.");
+        if (fields.fluteCount && tool.fluteCount < 1)
+            problems.push_back("The flute count must be 1 or more.");
+        if (fields.cornerRadius && !(tool.cornerRadius > 0.0 && tool.cornerRadius <= tool.diameter / 2.0))
+            problems.push_back("The corner radius must be more than 0 and no more than half the diameter.");
+        if (fields.includedAngle && !(tool.includedAngle > 0.0 && tool.includedAngle < 180.0))
+            problems.push_back("The included angle must be more than 0 and less than 180 degrees.");
+        if (fields.tipDiameter && !(tool.tipDiameter >= 0.0 && tool.tipDiameter < tool.diameter))
+            problems.push_back("The tip diameter can't be negative, and must be less than the diameter.");
+        if (fields.taperAngle && !(tool.taperAngle > 0.0 && tool.taperAngle < 90.0))
+            problems.push_back("The taper angle must be more than 0 and less than 90 degrees.");
+        if (fields.pitch && !(tool.pitch > 0.0))
+            problems.push_back("The pitch must be more than 0.");
+        if (fields.threadAngle && !(tool.threadAngle > 0.0 && tool.threadAngle < 180.0))
+            problems.push_back("The thread angle must be more than 0 and less than 180 degrees.");
 
         std::set<std::string> materials;
         for (const ToolFeeds& row : tool.feeds)
@@ -227,6 +314,9 @@ namespace camcore
         result.diameter *= kMillimetresPerInch;
         result.fluteLength *= kMillimetresPerInch;
         result.overallLength *= kMillimetresPerInch;
+        result.cornerRadius *= kMillimetresPerInch;
+        result.tipDiameter *= kMillimetresPerInch;
+        result.pitch *= kMillimetresPerInch;
         return result;
     }
 

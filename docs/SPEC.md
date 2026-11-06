@@ -1,4 +1,4 @@
-> Exported from the Claude doc "Alibre CAM Add-on: Version 1 Specification" on 4 November 2026 (rev 165).
+> Exported from the Claude doc "Alibre CAM Add-on: Version 1 Specification" on 4 November 2026 (rev 166).
 > The Claude doc is the master copy: https://claude.ai/artifact/JZEKmxczFdEn2eV32A5acB
 > The two diagrams are redrawn here in Mermaid, because they don't export from the doc.
 > Update this copy after spec changes, or note here if it becomes the master.
@@ -90,7 +90,7 @@ Tools belong to a machine and are stored in its machine file, and version 1 star
 | Flat end mill | Diameter, flute length, overall length, flute count |
 | Drill | Diameter, flute length, overall length, point angle |
 
-Both types also have a tool number and a name.
+Every type also has a tool number and a name. More types were added later (decided), each with diameter, flute length, overall length and flute count plus its own fields: Ball mill (none; its radius is half the diameter), Corner radius mill (corner radius, more than 0 and no more than half the diameter), V-mill and Chamfer mill (included angle, more than 0 and under 180 degrees, and tip diameter, 0 for a sharp point and less than the diameter), Taper mill (taper angle per side, more than 0 and under 90 degrees, and tip diameter), and Thread mill (pitch, more than 0, and thread angle, more than 0 and under 180 degrees). The Tool dialog enables only the chosen type's fields, and files keep only them. Tool library and machine files are format version 3. Toolpaths treat every mill as a cylinder of its diameter for now, and only Drill needs a drill.
 
 - **Machine files:** Each machine is a file in `%APPDATA%\AlibreCAM\machines\`, named by its stable ID, holding its name, axes, rotary axis and tools. The job stores its machine's ID. A job with none takes the machine used last (kept in settings.json), and if there are no machines a first one, Machine 1, is made with no tools. The old tools.json isn't loaded; its tools come in by Import (decided).
 - **Library changes:** Editing a tool marks the operations that use it as out of date.

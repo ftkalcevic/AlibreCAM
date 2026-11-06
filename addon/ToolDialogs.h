@@ -85,7 +85,7 @@ protected:
     DECLARE_MESSAGE_MAP()
 
 private:
-    bool IsDrillSelected() const;
+    camcore::ToolType SelectedType() const;
     void UpdateFieldsForType();
     void SetNumber(int id, double value);
     bool ReadNumber(int id, const wchar_t* label, double& value, std::wstring& problems);

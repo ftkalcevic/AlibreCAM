@@ -233,6 +233,105 @@ TEST_CASE("a version 1 tool library, without feeds, still loads")
     CHECK(loaded.library.tools[0].feeds.empty());
 }
 
+TEST_CASE("every tool type saves and loads with its own fields")
+{
+    Folder folder;
+    ToolLibrary library;
+    int number = 1;
+    for (ToolType type : ToolTypes())
+    {
+        Tool tool = Mill("id" + std::to_string(number), number);
+        tool.type = type;
+        tool.name = ToolTypeTitle(type);
+        tool.diameter = 10;
+        tool.cornerRadius = 2;
+        tool.includedAngle = 60;
+        tool.tipDiameter = 0.5;
+        tool.taperAngle = 3;
+        tool.pitch = 1.5;
+        tool.threadAngle = 55;
+        tool.pointAngle = 135;
+        library.tools.push_back(tool);
+        ++number;
+    }
+    CHECK(library.tools.size() == 8);
+    REQUIRE(ValidateLibrary(library).empty());
+
+    const fs::path path = folder.path / "tools.json";
+    REQUIRE(SaveToolLibrary(library, path).ok);
+    const ToolLibraryLoadResult loaded = LoadToolLibrary(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    REQUIRE(loaded.library.tools.size() == 8);
+    for (size_t i = 0; i < library.tools.size(); ++i)
+    {
+        const Tool& back = loaded.library.tools[i];
+        const ToolFields fields = FieldsOf(back.type);
+        CHECK(back.type == library.tools[i].type);
+        if (fields.cornerRadius)
+            CHECK(back.cornerRadius == 2);
+        if (fields.includedAngle)
+            CHECK(back.includedAngle == 60);
+        if (fields.tipDiameter)
+            CHECK(back.tipDiameter == 0.5);
+        if (fields.taperAngle)
+            CHECK(back.taperAngle == 3);
+        if (fields.pitch)
+        {
+            CHECK(back.pitch == 1.5);
+            CHECK(back.threadAngle == 55);
+        }
+        if (fields.pointAngle)
+            CHECK(back.pointAngle == 135);
+    }
+    CHECK(ToolTypeTitle(ToolType::VMill) == "V-mill");
+}
+
+TEST_CASE("each tool type's own fields are checked")
+{
+    Tool tool = Mill("a", 1);
+    tool.diameter = 6;
+
+    tool.type = ToolType::CornerRadiusMill;
+    tool.cornerRadius = 3;
+    CHECK(ValidateTool(tool).empty());
+    tool.cornerRadius = 3.5;            // more than half the diameter
+    CHECK_FALSE(ValidateTool(tool).empty());
+
+    tool.type = ToolType::VMill;
+    tool.includedAngle = 180;
+    CHECK_FALSE(ValidateTool(tool).empty());
+    tool.includedAngle = 90;
+    tool.tipDiameter = 6;               // as wide as the tool
+    CHECK_FALSE(ValidateTool(tool).empty());
+    tool.tipDiameter = 0;
+    CHECK(ValidateTool(tool).empty());
+
+    tool.type = ToolType::TaperMill;
+    tool.taperAngle = 90;
+    CHECK_FALSE(ValidateTool(tool).empty());
+
+    tool.type = ToolType::ThreadMill;
+    tool.pitch = 0;
+    CHECK_FALSE(ValidateTool(tool).empty());
+
+    // A ball mill has nothing extra to get wrong.
+    tool.type = ToolType::BallMill;
+    CHECK(ValidateTool(tool).empty());
+}
+
+TEST_CASE("inch tools' extra lengths become mm")
+{
+    Tool tool = Mill("a", 1);
+    tool.unit = ToolUnit::Inches;
+    tool.cornerRadius = 0.1;
+    tool.tipDiameter = 0.2;
+    tool.pitch = 0.05;
+    const Tool mm = ToolInMillimetres(tool);
+    CHECK(mm.cornerRadius == doctest::Approx(2.54));
+    CHECK(mm.tipDiameter == doctest::Approx(5.08));
+    CHECK(mm.pitch == doctest::Approx(1.27));
+}
+
 TEST_CASE("materials save, load and are checked")
 {
     Folder folder;

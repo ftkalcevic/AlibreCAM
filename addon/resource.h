@@ -279,6 +279,12 @@
 #define IDC_MACHINE_SPINDLE_LABEL       13357
 #define IDC_MACHINE_SPINDLE             13358
 #define IDC_MACHINE_SPINDLE_UNIT        13359
+#define IDC_TOOL_CORNER_RADIUS          13360
+#define IDC_TOOL_INCLUDED_ANGLE         13361
+#define IDC_TOOL_TIP_DIAMETER           13362
+#define IDC_TOOL_TAPER_ANGLE            13363
+#define IDC_TOOL_PITCH                  13364
+#define IDC_TOOL_THREAD_ANGLE           13365
 #define IDC_HP_AT_TOP                   13266
 #define IDC_HP_AT_BOTTOM                13267
 #define IDC_HP_PICK_TOP                 13268
@@ -316,7 +322,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        13036
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13360
+#define _APS_NEXT_CONTROL_VALUE         13366
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

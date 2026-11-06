@@ -14,8 +14,8 @@
 
 namespace camcore
 {
-    // Version 2 added the travel and the spindle's top speed.
-    constexpr int kMachineFormatVersion = 2;
+    // Version 2 added the travel and the spindle's top speed, and version 3 more tool types.
+    constexpr int kMachineFormatVersion = 3;
 
     // Which way the rotary (4th) axis runs.
     enum class RotaryAxis

@@ -316,7 +316,7 @@
   <dt>Number</dt>
   <dd>The tool number (T number) the machine knows the tool by. It's written at tool changes.</dd>
   <dt>Type</dt>
-  <dd>Flat end mill or Drill.</dd>
+  <dd>Flat end mill, Ball mill, Corner radius mill, V-mill, Chamfer mill, Taper mill, Thread mill or Drill. Only the chosen type's own size fields can be changed. Toolpaths treat every mill as a flat-ended cylinder of its diameter for now.</dd>
   <dt>Name</dt>
   <dd>A description of the tool, shown in lists and written in the program.</dd>
   <dt>Units</dt>
@@ -328,7 +328,19 @@
   <dt>Overall length</dt>
   <dd>The tool's length out of the holder.</dd>
   <dt>Flute count</dt>
-  <dd>The number of flutes (end mills).</dd>
+  <dd>The number of flutes. Every type but drills.</dd>
+  <dt>Corner radius</dt>
+  <dd>Corner radius mills: the radius at the end's corner, no more than half the diameter.</dd>
+  <dt>Tip diameter</dt>
+  <dd>V-mills, chamfer mills and taper mills: the diameter at the tip, 0 for a sharp point. It must be less than the diameter.</dd>
+  <dt>Included angle (deg)</dt>
+  <dd>V-mills and chamfer mills: the angle across the point, such as 90 or 60.</dd>
+  <dt>Pitch</dt>
+  <dd>Thread mills: the thread's pitch.</dd>
+  <dt>Taper angle (deg)</dt>
+  <dd>Taper mills: each side's angle from the tool's axis, such as 5.</dd>
+  <dt>Thread angle (deg)</dt>
+  <dd>Thread mills: the thread form's angle, such as 60.</dd>
   <dt>Point angle (deg)</dt>
   <dd>The drill's included point angle, such as 118. Used by the Drilling tab's Add drill tip to depth.</dd>
   <dt>Speeds &amp; Feeds</dt>
