@@ -19,13 +19,14 @@
 #include "HolePocketing.h"
 #include "Pocketing.h"
 #include "Profiling.h"
+#include "Stock.h"
 #include "Toolpath.h"
 
 namespace camcore
 {
     // The newest .cam format this build can read and the one it writes.
     // Version 2 added Set Origin steps and groups to the sequence.
-    constexpr int kCamFormatVersion = 3;
+    constexpr int kCamFormatVersion = 4;
 
     // Which assembly a job belongs to. The GUID comes from the assembly file,
     // and is empty if it couldn't be read.
@@ -101,10 +102,13 @@ namespace camcore
         std::vector<SequenceStep> children;
     };
 
-    // Machine and stock are added in later steps.
+    // The machine is added in a later step.
     struct Job
     {
         AssemblyIdentity assembly;
+
+        // At most one stock. Its kind is None until one is made.
+        Stock stock;
 
         // Empty uses the add-on's default tool library. Otherwise, as returned
         // by StoredLibraryPath.

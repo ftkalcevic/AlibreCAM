@@ -16,7 +16,7 @@ namespace camcore
     }
 
     bool ClearanceHeight(const ClearanceSettings& clearance, bool havePartMaxZ, double partMaxZ, double& height,
-                         std::string& problem)
+                         std::string& problem, bool haveStockMaxZ, double stockMaxZ)
     {
         switch (clearance.mode)
         {
@@ -25,20 +25,38 @@ namespace camcore
             return true;
 
         case ClearanceMode::StockMaxZ:
-            problem = "The clearance plane is set from the stock, and there's no stock yet.";
-            return false;
+            if (!haveStockMaxZ)
+            {
+                problem = "The clearance plane is set from the stock, and there's no stock.";
+                return false;
+            }
+            height = stockMaxZ + clearance.stockDistance;
+            return true;
 
         case ClearanceMode::PartMaxZ:
-        case ClearanceMode::Automatic:
-        default:
             if (!havePartMaxZ)
             {
                 problem = "The parts' height couldn't be read for the clearance plane.";
                 return false;
             }
-            height = partMaxZ + (clearance.mode == ClearanceMode::PartMaxZ ? clearance.partDistance
-                                                                            : kAutomaticClearanceAboveParts);
+            height = partMaxZ + clearance.partDistance;
             return true;
+
+        case ClearanceMode::Automatic:
+        default:
+        {
+            // Above the parts, or the stock where it's higher.
+            if (!havePartMaxZ && !haveStockMaxZ)
+            {
+                problem = "The parts' height couldn't be read for the clearance plane.";
+                return false;
+            }
+            double top = havePartMaxZ ? partMaxZ : stockMaxZ;
+            if (haveStockMaxZ && stockMaxZ > top)
+                top = stockMaxZ;
+            height = top + kAutomaticClearanceAboveParts;
+            return true;
+        }
         }
     }
 }

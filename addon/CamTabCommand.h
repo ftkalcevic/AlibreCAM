@@ -19,6 +19,7 @@
 
 class CAddOnInterface;
 class CCamTabWnd;
+class CPartBoxStockDlg;
 
 // A place in the sequence: a top-level step, or an operation in a group.
 struct StepRef
@@ -53,6 +54,19 @@ public:
     // The tool library
     void OpenToolLibrary();
     void SelectToolByIndex(size_t index);
+
+    // The stock. There's at most one.
+    bool HasStock() const { return m_job.stock.kind != camcore::StockKind::None; }
+    void MakeStock(camcore::StockKind kind);
+    void EditStock();
+    void DeleteStock();
+    void SetStockShown(bool shown);
+
+    // From the Part Box Stock dialog
+    void BeginPartSelect();
+    void EndPartSelect();
+    void OnStockPreviewChanged();
+    void OnPartBoxDialogDone(CPartBoxStockDlg* pDialog, bool apply);
 
     // The operation sequence
     void AddSetOrigin();
@@ -167,6 +181,14 @@ private:
     std::vector<StepRef> OperationsIn(const StepRef& scope, bool forPost) const;
     void RestoreSelectionFilter();
     void HandleLocate();
+    void OpenStockDialog(camcore::StockKind kind);
+    void ApplyStock(const camcore::Stock& stock);
+    void ClosePartBoxDialog(bool callAlibre);
+    // The stock's edges in assembly mm, and its box. False with a problem if it can't be read.
+    // pPoints, if given, gets points whose highest is the stock's top along any direction.
+    bool ReadStockShape(const camcore::Stock& stock, std::vector<camcore::LineSegment>& edges,
+                        camcore::StockBox& box, std::wstring& problem,
+                        std::vector<camcore::Vec3>* pPoints = nullptr);
 
     CAddOnInterface* m_pAddOn;
     std::wstring m_sessionId;
@@ -205,6 +227,16 @@ private:
     std::vector<camcore::PickedGeometry> m_highlighted;    // the features m_highlightOutlines were read for
     std::vector<std::vector<camcore::Vec3>> m_highlightOutlines;   // in assembly mm
 
+    // Only one dialog is open at a time, so this is set only when the others aren't.
+    CPartBoxStockDlg* m_pPartBoxDlg;
+
+    // The stock's shape, read again when the stock or the model changes.
+    bool m_stockShapeValid;
+    std::vector<camcore::LineSegment> m_stockEdges;
+    std::string m_stockFacetsPath;                  // the imported part m_stockPartEdges came from
+    std::vector<camcore::LineSegment> m_stockPartEdges;     // in the part's own coordinates, mm
+    std::vector<camcore::Vec3> m_stockPartPoints;
+
     std::filesystem::path m_lastPostPath;   // so the next post suggests the same folder
     std::wstring m_lastPostName;            // and the same post
 
@@ -229,6 +261,7 @@ public:
     void ShowTools(const camcore::ToolLibrary& library, const std::string& selectedToolId);
     void MarkSelectedTool(const camcore::ToolLibrary& library, const std::string& selectedToolId);
     void ShowSequence(const camcore::Job& job, const StepRef& selected);
+    void ShowStock(const camcore::Stock& stock);
 
     // Starts editing a step's name in place.
     void StartRename(const StepRef& ref);
@@ -245,6 +278,7 @@ protected:
     afx_msg void OnRefresh();
     afx_msg void OnForeground();
     afx_msg void OnShowToolpaths();
+    afx_msg void OnShowStock();
     afx_msg void OnToolbarTip(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnSettings();
     afx_msg void OnHelp();
@@ -298,6 +332,7 @@ private:
     bool m_settingsWritable;        // false if the file is damaged or newer, so it isn't overwritten
     CButton m_save;
     HTREEITEM m_hTools;
+    HTREEITEM m_hStock;
     HTREEITEM m_hOperations;
     bool m_fillingTree;
     std::set<HTREEITEM> m_greyItems;    // suppressed steps, and operations in suppressed folders

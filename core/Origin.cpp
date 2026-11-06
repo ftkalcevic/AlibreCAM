@@ -85,6 +85,10 @@ namespace camcore
             position = (Length(pick.clicked - pick.start) <= Length(pick.clicked - pick.end)) ? pick.start : pick.end;
             return true;
 
+        case PickKind::DesignPoint:
+            position = pick.point;
+            return true;
+
         default:
             return false;
         }
@@ -96,7 +100,7 @@ namespace camcore
         const OriginOptions& options = definition.options;
 
         if (plane.kind == PickKind::None)
-            return Failure("Pick a face or an edge for the plane.");
+            return Failure("Pick a face, an edge, or a design plane or axis for the plane.");
 
         Vec3 z;
         if (!Normalise(plane.direction, z))
@@ -108,23 +112,27 @@ namespace camcore
         if (definition.position.kind != PickKind::None)
         {
             if (!PositionFromPick(definition.position, position))
-                return Failure("The position must be an edge.");
+                return Failure("The position must be an edge or a design point.");
         }
         else if (!PositionFromPick(plane, position))
         {
-            return Failure("Pick an edge for the position.");
+            return Failure("Pick an edge or a design point for the position.");
         }
 
         Vec3 x;
         const PickedGeometry& xPick = definition.xDirection;
         if (xPick.kind != PickKind::None)
         {
-            if (xPick.kind != PickKind::LineEdge)
-                return Failure("The X direction must be a straight edge.");
+            if (xPick.kind != PickKind::LineEdge && xPick.kind != PickKind::DesignAxis)
+                return Failure("The X direction must be a straight edge or a design axis.");
 
-            // X runs along the edge, away from the end nearer the click.
-            const bool nearStart = Length(xPick.clicked - xPick.start) <= Length(xPick.clicked - xPick.end);
-            const Vec3 along = nearStart ? xPick.end - xPick.start : xPick.start - xPick.end;
+            // X runs along the edge, away from the end nearer the click, or along the axis's own direction.
+            Vec3 along = xPick.direction;
+            if (xPick.kind == PickKind::LineEdge)
+            {
+                const bool nearStart = Length(xPick.clicked - xPick.start) <= Length(xPick.clicked - xPick.end);
+                along = nearStart ? xPick.end - xPick.start : xPick.start - xPick.end;
+            }
 
             const double length = Length(along);
             const Vec3 projected = Perpendicular(along, z);

@@ -40,6 +40,11 @@ struct CamScene
     bool showToolpaths = true;      // the boundaries too. Off while picking.
     bool toolpathsShown = true;     // the toolbar's Show Toolpaths, for the toolpaths alone
 
+    // The stock's edges, in assembly mm. Left out while picking, like the plane.
+    std::vector<camcore::LineSegment> stockEdges;
+    bool showStock = true;          // off while picking
+    bool stockShown = true;         // the toolbar's Show Stock
+
     bool foreground = true;     // drawn over the model, rather than hidden by it
     double millimetresPerUnit = 10.0;
 };

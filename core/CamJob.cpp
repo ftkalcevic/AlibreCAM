@@ -108,6 +108,8 @@ namespace camcore
             case PickKind::CircleEdge:      return "circleEdge";
             case PickKind::DesignPoint:     return "designPoint";
             case PickKind::CurveEdge:       return "curveEdge";
+            case PickKind::DesignPlane:     return "designPlane";
+            case PickKind::DesignAxis:      return "designAxis";
             default:                        return "none";
             }
         }
@@ -117,7 +119,7 @@ namespace camcore
             static const PickKind kinds[] =
             {
                 PickKind::PlanarFace, PickKind::CylindricalFace, PickKind::LineEdge, PickKind::CircleEdge,
-                PickKind::DesignPoint, PickKind::CurveEdge
+                PickKind::DesignPoint, PickKind::CurveEdge, PickKind::DesignPlane, PickKind::DesignAxis
             };
             for (PickKind candidate : kinds)
             {
@@ -140,6 +142,108 @@ namespace camcore
             const auto item = parent.find(name);
             return item != parent.end() && item->is_object() && ReadInt(*item, "type", key.elementType) &&
                    ReadString(*item, "bytes", key.hex);
+        }
+
+        const char* StockKindName(StockKind kind)
+        {
+            switch (kind)
+            {
+            case StockKind::Box: return "box";
+            case StockKind::PartBox: return "partBox";
+            case StockKind::Imported: return "imported";
+            default: return "none";
+            }
+        }
+
+        // No stock is written as null.
+        json WriteStock(const Stock& stock)
+        {
+            if (stock.kind == StockKind::None)
+                return nullptr;
+
+            json item = { { "kind", StockKindName(stock.kind) } };
+            switch (stock.kind)
+            {
+            case StockKind::Box:
+                item["corner"] = WriteVec3(stock.boxCorner);
+                item["size"] = WriteVec3(stock.boxSize);
+                break;
+
+            case StockKind::PartBox:
+            {
+                json parts = json::array();
+                for (const StockPart& part : stock.parts)
+                    parts.push_back({ { "occurrence", WriteKey(part.occurrenceKey) }, { "name", part.name } });
+                item["parts"] = parts;
+                item["offsets"] = { { "plusX", stock.offsetPlusX }, { "minusX", stock.offsetMinusX },
+                                    { "plusY", stock.offsetPlusY }, { "minusY", stock.offsetMinusY },
+                                    { "plusZ", stock.offsetPlusZ }, { "minusZ", stock.offsetMinusZ } };
+                break;
+            }
+
+            case StockKind::Imported:
+                item["part"] = stock.partPath;
+                item["position"] = WriteVec3(stock.position);
+                item["rotation"] = WriteVec3(stock.rotation);
+                break;
+
+            default:
+                break;
+            }
+            return item;
+        }
+
+        bool ReadStock(const json& item, Stock& stock)
+        {
+            stock = Stock();
+            if (item.is_null())
+                return true;
+            if (!item.is_object())
+                return false;
+
+            std::string kind;
+            if (!ReadString(item, "kind", kind))
+                return false;
+
+            if (kind == "box")
+            {
+                stock.kind = StockKind::Box;
+                return ReadVec3(item, "corner", stock.boxCorner) && ReadVec3(item, "size", stock.boxSize);
+            }
+            if (kind == "partBox")
+            {
+                stock.kind = StockKind::PartBox;
+                const auto parts = item.find("parts");
+                const auto offsets = item.find("offsets");
+                if (parts == item.end() || !parts->is_array() || offsets == item.end() || !offsets->is_object())
+                    return false;
+                for (const json& entry : *parts)
+                {
+                    StockPart part;
+                    if (!entry.is_object() || !ReadKey(entry, "occurrence", part.occurrenceKey) ||
+                        !ReadString(entry, "name", part.name))
+                        return false;
+                    stock.parts.push_back(part);
+                }
+                auto number = [&](const char* name, double& value)
+                {
+                    const auto found = offsets->find(name);
+                    if (found == offsets->end() || !found->is_number())
+                        return false;
+                    value = found->get<double>();
+                    return true;
+                };
+                return number("plusX", stock.offsetPlusX) && number("minusX", stock.offsetMinusX) &&
+                       number("plusY", stock.offsetPlusY) && number("minusY", stock.offsetMinusY) &&
+                       number("plusZ", stock.offsetPlusZ) && number("minusZ", stock.offsetMinusZ);
+            }
+            if (kind == "imported")
+            {
+                stock.kind = StockKind::Imported;
+                return ReadString(item, "part", stock.partPath) && ReadVec3(item, "position", stock.position) &&
+                       ReadVec3(item, "rotation", stock.rotation);
+            }
+            return false;
         }
 
         // An empty pick is written as null.
@@ -166,7 +270,8 @@ namespace camcore
             }
             if (pick.kind == PickKind::CircleEdge || pick.kind == PickKind::CylindricalFace)
                 item["radius"] = pick.radius;
-            if (pick.kind == PickKind::DesignPoint)
+            if (pick.kind == PickKind::DesignPoint || pick.kind == PickKind::DesignPlane ||
+                pick.kind == PickKind::DesignAxis)
                 item["targetName"] = pick.targetName;
             return item;
         }
@@ -199,6 +304,8 @@ namespace camcore
                 break;
 
             case PickKind::DesignPoint:
+            case PickKind::DesignPlane:
+            case PickKind::DesignAxis:
                 return ReadString(item, "targetName", pick.targetName);
 
             default:
@@ -1440,7 +1547,8 @@ namespace camcore
         }
 
         // Version 3 added arcs to boundaries and toolpaths, which version 2 files
-        // simply don't have, so they read as they are.
+        // simply don't have, so they read as they are. Version 4 added the stock
+        // to the setup section; older files have none.
 
         const auto assembly = root.find("assembly");
         if (assembly == root.end() || !assembly->is_object())
@@ -1471,6 +1579,14 @@ namespace camcore
             const auto selected = tools->find("selected");
             if (selected != tools->end() && selected->is_string())
                 result.job.selectedToolId = selected->get<std::string>();
+        }
+
+        const auto setup = root.find("setup");
+        if (setup != root.end() && setup->is_object())
+        {
+            const auto stock = setup->find("stock");
+            if (stock != setup->end() && !ReadStock(*stock, result.job.stock))
+                return LoadFailure(LoadStatus::NotACamFile, "The stock is damaged: " + PathText(path), fileVersion);
         }
 
         // Version 1 files always have an empty sequence.
@@ -1533,7 +1649,7 @@ namespace camcore
                       { "library", job.toolLibraryPath },
                       { "selected", job.selectedToolId }
                   } },
-                { "setup", json::object() },
+                { "setup", { { "stock", WriteStock(job.stock) } } },
                 { "sequence", sequence }
             };
             text = root.dump(2) + "\n";

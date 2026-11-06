@@ -310,8 +310,13 @@ namespace
 
     const wchar_t* AllowedText(PickFilter filter)
     {
-        return (filter == PickFilter::Edges) ? L"Pick a straight or circular edge."
-                                             : L"Pick a flat or cylindrical face, or a straight or circular edge.";
+        switch (filter)
+        {
+        case PickFilter::OriginPosition: return L"Pick a straight or circular edge, or a design point.";
+        case PickFilter::OriginX:        return L"Pick a straight edge or a design axis.";
+        default:
+            return L"Pick a flat or cylindrical face, a straight or circular edge, or a design plane or axis.";
+        }
     }
 }
 
@@ -347,20 +352,67 @@ bool ReadSelectedPick(IADSession* pAssembly, PickFilter filter, PickedGeometry& 
         if (count == 0)
             return false;
 
-        IADTargetProxyPtr proxy = QI<IADTargetProxyPtr>(selected->GetItem(_variant_t(0L)));
+        // Part items come as proxies. The assembly's own planes, axes and points may not.
+        IDispatchPtr item = selected->GetItem(_variant_t(0L));
+        IADTargetProxyPtr proxy = QI<IADTargetProxyPtr>(item);
         IADOccurrencePtr occurrence = (proxy != nullptr) ? proxy->GetOccurrence() : nullptr;
-        IDispatchPtr target = (proxy != nullptr) ? proxy->GetTarget() : nullptr;
-        if (occurrence == nullptr || target == nullptr)
+        IDispatchPtr target = (proxy != nullptr) ? proxy->GetTarget() : item;
+        if (target == nullptr)
         {
             problem = AllowedText(filter);
             return false;
         }
 
         bool read = false;
-        if (IADEdgePtr edge = QI<IADEdgePtr>(target))
-            read = ReadEdge(edge, pick);
+        bool design = false;
+        if (IADDesignPlanePtr plane = QI<IADDesignPlanePtr>(target))
+        {
+            if (filter == PickFilter::OriginPlane)
+            {
+                IADPointPtr lower, upper, corner;
+                plane->GetGeometry(&lower, &upper, &corner);
+                pick.kind = PickKind::DesignPlane;
+                pick.point = ToVec3(lower);
+                pick.direction = ToVec3(plane->GetNormal());
+                pick.targetName = ToUtf8(static_cast<const wchar_t*>(plane->GetName()));
+                read = design = true;
+            }
+        }
+        else if (IADDesignAxisPtr axis = QI<IADDesignAxisPtr>(target))
+        {
+            if (filter == PickFilter::OriginPlane || filter == PickFilter::OriginX)
+            {
+                IADPointPtr first, second;
+                axis->GetGeometry(&first, &second);
+                pick.kind = PickKind::DesignAxis;
+                pick.point = (first != nullptr) ? ToVec3(first) : Vec3();
+                pick.direction = ToVec3(axis->GetDirection());
+                pick.targetName = ToUtf8(static_cast<const wchar_t*>(axis->GetName()));
+                read = design = true;
+            }
+        }
+        else if (IADDesignPointPtr point = QI<IADDesignPointPtr>(target))
+        {
+            if (filter == PickFilter::OriginPosition)
+            {
+                pick.kind = PickKind::DesignPoint;
+                pick.point = ToVec3(point->GetGeometry());
+                pick.targetName = ToUtf8(static_cast<const wchar_t*>(point->GetName()));
+                read = design = true;
+            }
+        }
+        else if (occurrence == nullptr)
+        {
+            read = false;       // a face or edge must be on a part
+        }
+        else if (IADEdgePtr edge = QI<IADEdgePtr>(target))
+        {
+            read = ReadEdge(edge, pick) && (filter != PickFilter::OriginX || pick.kind == PickKind::LineEdge);
+        }
         else if (IADFacePtr face = QI<IADFacePtr>(target))
-            read = (filter == PickFilter::FacesAndEdges) && ReadFace(face, pick);
+        {
+            read = (filter == PickFilter::OriginPlane) && ReadFace(face, pick);
+        }
 
         if (!read)
         {
@@ -379,13 +431,18 @@ bool ReadSelectedPick(IADSession* pAssembly, PickFilter filter, PickedGeometry& 
         pick.radius = transform.Length(pick.radius);
 
         // The clicked point is already in assembly coordinates.
-        pick.clicked = (clicked != nullptr) ? ToVec3(clicked) * assemblyMm : pick.point;
+        pick.clicked = (clicked != nullptr && !design) ? ToVec3(clicked) * assemblyMm : pick.point;
 
-        pick.occurrenceKey = TakeKey(occurrence->GetKey());
-        pick.occurrenceName = ToUtf8(static_cast<const wchar_t*>(occurrence->GetName()));
+        if (occurrence != nullptr)
+        {
+            pick.occurrenceKey = TakeKey(occurrence->GetKey());
+            pick.occurrenceName = ToUtf8(static_cast<const wchar_t*>(occurrence->GetName()));
+        }
+        if (design)
+            Log(L"[pick] design item %s", FromUtf8(pick.targetName).c_str());
 
         Log(L"[pick] on %s: point (%.4f, %.4f, %.4f) mm, direction (%.4f, %.4f, %.4f), clicked (%.4f, %.4f, %.4f) mm",
-            FromUtf8(pick.occurrenceName).c_str(), pick.point.x, pick.point.y, pick.point.z, pick.direction.x,
+            pick.occurrenceName.empty() ? L"the assembly" : FromUtf8(pick.occurrenceName).c_str(), pick.point.x, pick.point.y, pick.point.z, pick.direction.x,
             pick.direction.y, pick.direction.z, pick.clicked.x, pick.clicked.y, pick.clicked.z);
         return true;
     }
@@ -433,12 +490,15 @@ SelectionFilter SetSelectionFilter(IADSession* pAssembly, const SelectionFilter&
         IADDesignSelectionFilterPtr filter = QI<IADDesignSessionPtr>(pAssembly)->GetSelectionFilter();
         previous.solid = filter->GetSolid();
         previous.planes = filter->GetPlanes() != VARIANT_FALSE;
+        previous.axes = filter->GetAxes() != VARIANT_FALSE;
         previous.points = filter->GetPoints() != VARIANT_FALSE;
 
         if (previous.solid != wanted.solid)
             filter->PutSolid(wanted.solid);
         if (previous.planes != wanted.planes)
             filter->PutPlanes(wanted.planes ? VARIANT_TRUE : VARIANT_FALSE);
+        if (previous.axes != wanted.axes)
+            filter->PutAxes(wanted.axes ? VARIANT_TRUE : VARIANT_FALSE);
         if (previous.points != wanted.points)
             filter->PutPoints(wanted.points ? VARIANT_TRUE : VARIANT_FALSE);
     }
@@ -992,4 +1052,192 @@ void ClearSelection(IADSession* pAssembly)
     {
         Log(L"[pick] could not clear the selection: hr=0x%08X", static_cast<unsigned>(error.Error()));
     }
+}
+
+namespace
+{
+    // The part behind a selected item: an occurrence itself, or a face or edge's.
+    IADOccurrencePtr SelectedOccurrence(IDispatch* pItem)
+    {
+        if (IADOccurrencePtr occurrence = QI<IADOccurrencePtr>(pItem))
+            return occurrence;
+        IADTargetProxyPtr proxy = QI<IADTargetProxyPtr>(pItem);
+        if (proxy == nullptr)
+            return nullptr;
+        if (IADOccurrencePtr occurrence = proxy->GetOccurrence())
+            return occurrence;
+        return QI<IADOccurrencePtr>(proxy->GetTarget());
+    }
+}
+
+bool ReadSelectedParts(IADSession* pAssembly, std::vector<camcore::StockPart>& parts)
+{
+    parts.clear();
+    try
+    {
+        IADPointPtr clicked;
+        IObjectCollectorPtr selected = pAssembly->SelectedObjectsEx(&clicked);
+        const long count = (selected != nullptr) ? selected->GetCount() : 0;
+        for (long i = 0; i < count; ++i)
+        {
+            IADOccurrencePtr occurrence = SelectedOccurrence(selected->GetItem(_variant_t(i)));
+            if (occurrence == nullptr)
+            {
+                Log(L"[stock] selected item %ld has no part", i);
+                continue;
+            }
+
+            camcore::StockPart part;
+            part.occurrenceKey = TakeKey(occurrence->GetKey());
+            part.name = ToUtf8(static_cast<const wchar_t*>(occurrence->GetName()));
+            const bool listed = std::any_of(parts.begin(), parts.end(), [&](const camcore::StockPart& other)
+                                            { return other.occurrenceKey.hex == part.occurrenceKey.hex; });
+            if (!listed && !part.occurrenceKey.IsEmpty())
+                parts.push_back(part);
+        }
+        Log(L"[stock] %ld selected items give %zu parts", count, parts.size());
+        return true;
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[stock] could not read the selected parts: hr=0x%08X", static_cast<unsigned>(error.Error()));
+        return false;
+    }
+}
+
+bool ReadPartsBounds(IADSession* pAssembly, const std::vector<camcore::StockPart>& parts, Vec3& lower, Vec3& upper,
+                     std::wstring& problem)
+{
+    problem.clear();
+    if (parts.empty())
+    {
+        if (ReadAssemblyBounds(pAssembly, lower, upper))
+            return true;
+        problem = L"The assembly's size couldn't be read.";
+        return false;
+    }
+
+    try
+    {
+        const double mm = MillimetresPerModelUnit(QI<IADDesignSessionPtr>(pAssembly));
+        bool first = true;
+        for (const camcore::StockPart& part : parts)
+        {
+            IADOccurrencePtr occurrence =
+                QI<IADOccurrencePtr>(BindKey(pAssembly, part.occurrenceKey, ADObjectType_AD_OCCURRENCE));
+            if (occurrence == nullptr)
+            {
+                problem = L"The part " + FromUtf8(part.name) + L" can't be found. It may have been deleted.";
+                return false;
+            }
+
+            // Read in the assembly's coordinates, as the whole assembly's extents are.
+            IADPointPtr low, high;
+            occurrence->GetExtents(&low, &high);
+            if (low == nullptr || high == nullptr)
+            {
+                problem = L"The size of " + FromUtf8(part.name) + L" couldn't be read.";
+                return false;
+            }
+            const Vec3 a = ToVec3(low) * mm;
+            const Vec3 b = ToVec3(high) * mm;
+            Log(L"[stock] %s extents (%.3f, %.3f, %.3f) to (%.3f, %.3f, %.3f) mm", FromUtf8(part.name).c_str(), a.x,
+                a.y, a.z, b.x, b.y, b.z);
+            if (first)
+            {
+                lower = a;
+                upper = b;
+                first = false;
+            }
+            else
+            {
+                lower = { (std::min)(lower.x, a.x), (std::min)(lower.y, a.y), (std::min)(lower.z, a.z) };
+                upper = { (std::max)(upper.x, b.x), (std::max)(upper.y, b.y), (std::max)(upper.z, b.z) };
+            }
+        }
+        return true;
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[stock] could not read the parts' extents: hr=0x%08X", static_cast<unsigned>(error.Error()));
+        problem = L"The parts' size couldn't be read.";
+        return false;
+    }
+}
+
+bool ReadPartFacets(const std::wstring& path, std::vector<Vec3>& triangles, std::wstring& problem)
+{
+    triangles.clear();
+    problem.clear();
+    if (theApp.m_pRoot == nullptr)
+    {
+        problem = L"Alibre isn't available.";
+        return false;
+    }
+
+    IADSessionPtr session;
+    try
+    {
+        const ULONGLONG start = GetTickCount64();
+        session = theApp.m_pRoot->OpenFileEx(_bstr_t(path.c_str()), VARIANT_FALSE);
+        if (session == nullptr)
+        {
+            problem = L"The stock part " + path + L" couldn't be opened.";
+            return false;
+        }
+
+        IADPartSessionPtr part = QI<IADPartSessionPtr>(session);
+        if (part == nullptr)
+        {
+            problem = L"The stock file " + path + L" isn't a part.";
+        }
+        else
+        {
+            const double mm = MillimetresPerModelUnit(QI<IADDesignSessionPtr>(session));
+            SAFEARRAY* pFacets = part->GetFacetData();
+            if (pFacets != nullptr)
+            {
+                VARTYPE vt = VT_EMPTY;
+                SafeArrayGetVartype(pFacets, &vt);
+                LONG lower = 0, upper = -1;
+                SafeArrayGetLBound(pFacets, 1, &lower);
+                SafeArrayGetUBound(pFacets, 1, &upper);
+                const LONG count = upper - lower + 1;
+                double* pData = nullptr;
+                if (vt == VT_R8 && count >= 9 &&
+                    SUCCEEDED(SafeArrayAccessData(pFacets, reinterpret_cast<void**>(&pData))))
+                {
+                    triangles.reserve(static_cast<size_t>(count / 3));
+                    for (LONG i = 0; i + 8 < count; i += 9)
+                    {
+                        for (int k = 0; k < 9; k += 3)
+                            triangles.push_back(Vec3{ pData[i + k], pData[i + k + 1], pData[i + k + 2] } * mm);
+                    }
+                    SafeArrayUnaccessData(pFacets);
+                }
+                SafeArrayDestroy(pFacets);
+            }
+            if (triangles.empty())
+                problem = L"The stock part " + path + L" has no solid to read.";
+            Log(L"[stock] read %zu triangles from %s in %llu ms", triangles.size() / 3, path.c_str(),
+                GetTickCount64() - start);
+        }
+        session->Close(VARIANT_FALSE);
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[stock] could not read %s: hr=0x%08X", path.c_str(), static_cast<unsigned>(error.Error()));
+        problem = L"The stock part " + path + L" couldn't be read.";
+        try
+        {
+            if (session != nullptr)
+                session->Close(VARIANT_FALSE);
+        }
+        catch (const _com_error&)
+        {
+        }
+        triangles.clear();
+        return false;
+    }
+    return problem.empty();
 }

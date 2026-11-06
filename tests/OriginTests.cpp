@@ -66,6 +66,17 @@ namespace
         return pick;
     }
 
+    PickedGeometry Design(PickKind kind, const Vec3& point, const Vec3& direction, const std::string& name)
+    {
+        PickedGeometry pick;
+        pick.kind = kind;
+        pick.point = point;
+        pick.direction = direction;
+        pick.clicked = point;
+        pick.targetName = name;
+        return pick;
+    }
+
     SequenceStep NamedStepForDrill(StepType type, const std::string& name)
     {
         SequenceStep step;
@@ -149,6 +160,64 @@ TEST_CASE("a face alone has no position")
     const FrameResult result = BuildFrame(definition);
     CHECK_FALSE(result.ok);
     CHECK_FALSE(result.message.empty());
+}
+
+TEST_CASE("a design plane, axis and point can set the origin")
+{
+    // Alibre's XY plane gives Z along its normal; the origin point gives the position.
+    OriginDefinition definition;
+    definition.plane = Design(PickKind::DesignPlane, { 0, 0, 0 }, { 0, 0, 1 }, "XY-Plane");
+    definition.position = Design(PickKind::DesignPoint, { 5, 6, 7 }, {}, "Origin");
+    FrameResult result = BuildFrame(definition);
+    REQUIRE(result.ok);
+    CHECK(Near(result.frame.zAxis, { 0, 0, 1 }));
+    CHECK(Near(result.frame.origin, { 5, 6, 7 }));
+    CHECK(Near(result.frame.xAxis, { 1, 0, 0 }));
+
+    // A design axis gives X along its own direction, projected onto the plane.
+    definition.xDirection = Design(PickKind::DesignAxis, { 0, 0, 0 }, { 0, 1, 0.5 }, "Y-Axis");
+    result = BuildFrame(definition);
+    REQUIRE(result.ok);
+    CHECK(Near(result.frame.xAxis, { 0, 1, 0 }));
+    CheckRightHanded(result.frame);
+
+    // A design axis as the plane pick gives Z along it.
+    definition.plane = Design(PickKind::DesignAxis, { 0, 0, 0 }, { 1, 0, 0 }, "X-Axis");
+    definition.xDirection = PickedGeometry();
+    result = BuildFrame(definition);
+    REQUIRE(result.ok);
+    CHECK(Near(result.frame.zAxis, { 1, 0, 0 }));
+
+    // A design plane gives no position of its own.
+    definition.plane = Design(PickKind::DesignPlane, { 0, 0, 0 }, { 0, 0, 1 }, "XY-Plane");
+    definition.position = PickedGeometry();
+    CHECK_FALSE(BuildFrame(definition).ok);
+}
+
+TEST_CASE("design plane, axis and point picks load back by name")
+{
+    TempFile file;
+    Job job;
+    job.assembly.name = "Bracket";
+    job.assembly.guid = "guid";
+    SequenceStep step;
+    step.id = NewStableId();
+    step.name = "Set Origin 1";
+    step.origin.plane = Design(PickKind::DesignPlane, { 0, 0, 0 }, { 0, 0, 1 }, "XY-Plane");
+    step.origin.position = Design(PickKind::DesignPoint, { 1, 2, 3 }, {}, "Origin");
+    step.origin.xDirection = Design(PickKind::DesignAxis, { 0, 0, 0 }, { 1, 0, 0 }, "X-Axis");
+    job.sequence.push_back(step);
+    REQUIRE(SaveJob(job, file.Path()).ok);
+
+    const LoadResult loaded = LoadJob(file.Path());
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    const OriginDefinition& back = loaded.job.sequence[0].origin;
+    CHECK(back.plane.kind == PickKind::DesignPlane);
+    CHECK(back.plane.targetName == "XY-Plane");
+    CHECK(back.position.kind == PickKind::DesignPoint);
+    CHECK(back.position.targetName == "Origin");
+    CHECK(back.xDirection.kind == PickKind::DesignAxis);
+    CHECK(back.xDirection.targetName == "X-Axis");
 }
 
 TEST_CASE("missing or unsuitable picks are refused")

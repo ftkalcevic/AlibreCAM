@@ -63,6 +63,9 @@
   <a class="sub" href="#cam-buttons">Status and buttons</a>
   <h2>Dialogs</h2>
   <a href="#settings">Settings</a>
+  <a href="#stock-box">Box Stock</a>
+  <a href="#stock-part-box">Part Box Stock</a>
+  <a href="#stock-import">Imported Stock</a>
   <a href="#tool-library">Tool Library</a>
   <a href="#tool-edit">Tool</a>
   <a href="#set-origin">Set Origin</a>
@@ -100,6 +103,8 @@
   <dd>When pushed in, toolpaths and origins are drawn in front of the model, so you can always see them. When out, the model can hide them. On by default, and not saved.</dd>
   <dt>Show toolpaths</dt>
   <dd>Shows or hides every toolpath. Boundaries and picked feature outlines stay visible. On by default, and not saved.</dd>
+  <dt>Show stock</dt>
+  <dd>Shows or hides the stock's edges. On by default, and not saved.</dd>
   <dt>? (Help)</dt>
   <dd>Opens this page at the CAM tab section.</dd>
   <dt>Settings (gear)</dt>
@@ -114,7 +119,7 @@
   <dt>Setup ▸ Tools</dt>
   <dd>The tools in the job's tool library. Click a tool to select it: new operations start with the selected tool. Double-click Tools or a tool to open the <a href="#tool-library">Tool Library</a>.</dd>
   <dt>Setup ▸ Stock</dt>
-  <dd><span class="tbc">To be completed.</span> Stock isn't built yet.</dd>
+  <dd>The material the parts are cut from. A job has at most one stock, and the node shows its kind, such as <em>Stock - Box Stock</em>. Right-click it to make one: <a href="#stock-box">Box Stock</a>, <a href="#stock-part-box">Part Box Stock</a> or <a href="#stock-import">Import Stock</a>. Once there's a stock, those are greyed, and Edit (or double-clicking Stock) changes it and Delete removes it. The stock is drawn as its edges in teal, and it's measured along the assembly's axes.</dd>
   <dt>Operations</dt>
   <dd>The ordered sequence of Set Origin steps, folders and operations. Right-click it to add steps, generate all toolpaths, or post.</dd>
   <dt>Set Origin</dt>
@@ -183,6 +188,61 @@
 </dl>
 </section>
 
+<section id="stock-box">
+<h2>Box Stock</h2>
+<p>A box of material from entered dimensions, in millimetres along the assembly's axes. A new box starts round the parts.</p>
+<dl>
+  <dt>Corner X, Y, Z</dt>
+  <dd>The box's corner with the lowest X, Y and Z, from the assembly origin.</dd>
+  <dt>Size X, Y, Z</dt>
+  <dd>How long the box is along each axis. Each must be more than 0.</dd>
+  <dt>Fit to Parts</dt>
+  <dd>Sets the corner and size to the box round every part.</dd>
+  <dt>OK</dt>
+  <dd>Makes or changes the stock.</dd>
+  <dt>Cancel</dt>
+  <dd>Closes the dialog without changing the stock.</dd>
+</dl>
+</section>
+
+<section id="stock-part-box">
+<h2>Part Box Stock</h2>
+<p>A box round some or all of the parts, along the assembly's axes, with an offset added on each side. It follows the parts if they move or change. The dialog stays open while you click parts in the view, and the stock is drawn as you change it.</p>
+<dl>
+  <dt>Parts</dt>
+  <dd>The parts the box goes round, or All parts.</dd>
+  <dt>Select Parts</dt>
+  <dd>Click parts in the view to add them; clicking a listed part takes it off. Click Done when finished.</dd>
+  <dt>All Parts</dt>
+  <dd>Empties the list, so the box goes round every part.</dd>
+  <dt>Offsets +X, -X, +Y, -Y, +Z, -Z</dt>
+  <dd>How much material to add outside the parts on each side, in millimetres. They can't be negative. -Z is usually 0, so the stock sits on the parts' bottom.</dd>
+  <dt>Result</dt>
+  <dd>The stock's size, or why it can't be worked out.</dd>
+  <dt>OK</dt>
+  <dd>Makes or changes the stock.</dd>
+  <dt>Cancel</dt>
+  <dd>Closes the dialog without changing the stock.</dd>
+</dl>
+</section>
+
+<section id="stock-import">
+<h2>Imported Stock</h2>
+<p>Another Alibre part used as the stock, such as a casting or a part machined earlier. It stays linked to its file, and is placed by a position and rotation from the assembly origin.</p>
+<dl>
+  <dt>Part</dt>
+  <dd>The Alibre part file (<code>.AD_PRT</code>). Browse chooses it.</dd>
+  <dt>Position X, Y, Z</dt>
+  <dd>Where the part's own origin goes, in millimetres from the assembly origin.</dd>
+  <dt>Rotation X, Y, Z</dt>
+  <dd>How far the part is turned, in degrees: first about the assembly's X axis, then its Y axis, then its Z axis, before it's moved to the position.</dd>
+  <dt>OK</dt>
+  <dd>Makes or changes the stock.</dd>
+  <dt>Cancel</dt>
+  <dd>Closes the dialog without changing the stock.</dd>
+</dl>
+</section>
+
 <section id="tool-library">
 <h2>Tool Library</h2>
 <p>The tools a job can use. Tools are kept only in a library file, not in the job. The default library is <code>%APPDATA%\AlibreCAM\tools.json</code>, and a job can use another library instead. Changes are saved to the library file straight away.</p>
@@ -239,18 +299,18 @@
 
 <section id="set-origin">
 <h2>Set Origin</h2>
-<p>Defines an origin from picked geometry: its Z axis (the tool axis, pointing out of the material), its position, and its X direction. The steps below it, up to the next Set Origin, run in this origin. The origin is drawn with red, green and blue axes and its XY plane as an outline and grid.</p>
+<p>Defines an origin from picked geometry or Alibre's design planes, axes and points: its Z axis (the tool axis, pointing out of the material), its position, and its X direction. The steps below it, up to the next Set Origin, run in this origin. The origin is drawn with red, green and blue axes and its XY plane as an outline and grid.</p>
 <dl>
   <dt>Name</dt>
   <dd>The step's name in the tree.</dd>
   <dt>Plane (Z) Pick</dt>
-  <dd>Picks the geometry that gives Z. A flat face points Z out of the material, a cylindrical face gives its axis, a circular edge gives its axis and its centre, and a straight edge runs Z along it.</dd>
+  <dd>Picks the geometry that gives Z. A flat face points Z out of the material, a cylindrical face gives its axis, a circular edge gives its axis and its centre, and a straight edge runs Z along it. A design plane, such as Alibre's XY plane, points Z along its normal, and a design axis runs Z along it; use Flip Z if it points the wrong way.</dd>
   <dt>Position Pick</dt>
-  <dd>Picks an edge for the origin's position: the nearer end of a straight edge, or a circle's centre. Without one, the plane pick gives the position when it's an edge.</dd>
+  <dd>Picks an edge or a design point for the origin's position: the nearer end of a straight edge, a circle's centre, or the point, such as Alibre's Origin. Without one, the plane pick gives the position when it's an edge.</dd>
   <dt>Position Clear</dt>
   <dd>Removes the position pick.</dd>
   <dt>X direction Pick</dt>
-  <dd>Picks a straight edge for X, projected onto the XY plane and pointing away from the end nearer where you clicked. Without one, X is the assembly's X projected onto the plane (or its Y, if X is too close to the tool axis).</dd>
+  <dd>Picks a straight edge for X, projected onto the XY plane and pointing away from the end nearer where you clicked, or a design axis, pointing along the axis. Without one, X is the assembly's X projected onto the plane (or its Y, if X is too close to the tool axis).</dd>
   <dt>X direction Clear</dt>
   <dd>Removes the X direction pick.</dd>
   <dt>Flip Z</dt>
@@ -370,11 +430,11 @@
 <p>The clearance plane: the height, along the origin's Z, that the tool moves across at between cuts. It must be above where cuts start.</p>
 <dl>
   <dt>Automatic</dt>
-  <dd>5 mm above the parts, for now.</dd>
+  <dd>5 mm above the highest point of the parts, or of the stock where that's higher.</dd>
   <dt>Part max Z + distance</dt>
   <dd>The distance above the highest point of the parts.</dd>
   <dt>Stock max Z + distance</dt>
-  <dd>The distance above the top of the stock. Stock isn't built yet, so this fails for now.</dd>
+  <dd>The distance above the highest point of the stock, along the operation's Z. It needs a stock.</dd>
   <dt>Absolute Z value</dt>
   <dd>A Z value in the operation's origin.</dd>
 </dl>

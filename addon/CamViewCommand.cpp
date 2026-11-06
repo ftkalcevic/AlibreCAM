@@ -192,6 +192,20 @@ void CCamViewCommand::DrawScene(IADAddOnCanvasDisplay* pCanvas, const CamScene& 
 {
     const double unit = scene.millimetresPerUnit;
 
+    // The stock's edges. Hidden while picking, as graphics take part in it.
+    if (scene.showStock && scene.stockShown && !scene.stockEdges.empty())
+    {
+        const __int64 segment = AddSegment(pCanvas, L"Stock", kStockColour, kStockLineWeight, scene.foreground);
+        for (const camcore::LineSegment& edge : scene.stockEdges)
+        {
+            std::vector<float> points;
+            points.reserve(6);
+            AddPoint(points, edge.from, unit);
+            AddPoint(points, edge.to, unit);
+            DrawPolyline(pCanvas, segment, points);
+        }
+    }
+
     // Hidden while picking, like the toolpaths, as graphics take part in it.
     if (scene.showToolpaths && !scene.highlights.empty())
     {

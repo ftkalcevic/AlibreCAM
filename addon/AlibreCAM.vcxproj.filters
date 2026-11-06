@@ -31,6 +31,7 @@
     <ClCompile Include="PostDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SettingsDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Help.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="StockDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ToolDialogs.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AlibreCAM.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="stdafx.cpp"><Filter>Source Files</Filter></ClCompile>
@@ -50,6 +51,7 @@
     <ClInclude Include="PostDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SettingsDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Help.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="StockDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ToolDialogs.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AlibreCAM.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="resource.h"><Filter>Header Files</Filter></ClInclude>

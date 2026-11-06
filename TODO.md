@@ -24,7 +24,6 @@ these belong in the spec (`docs\SPEC.md`) once they're made.
     - Spiral machining
     - Curve machining
     - Between 2 curves
-- 🔴 Implement stock properly
 - 🔴 Implement machine settings
 - Add simulate
 - More stock alignment options

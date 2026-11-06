@@ -42,7 +42,15 @@ namespace
         case PickKind::CylindricalFace: kind = L"Cylindrical face"; break;
         case PickKind::LineEdge:        kind = L"Straight edge"; break;
         case PickKind::CircleEdge:      kind = L"Circular edge"; break;
+        case PickKind::DesignPlane:     kind = L"Plane"; break;
+        case PickKind::DesignAxis:      kind = L"Axis"; break;
+        case PickKind::DesignPoint:     kind = L"Point"; break;
         default:                        return L"Not picked";
+        }
+        if (pick.kind == PickKind::DesignPlane || pick.kind == PickKind::DesignAxis || pick.kind == PickKind::DesignPoint)
+        {
+            const std::wstring text = std::wstring(kind) + L" " + FromUtf8(pick.targetName);
+            return pick.occurrenceName.empty() ? text : text + L" on " + FromUtf8(pick.occurrenceName);
         }
         return std::wstring(kind) + L" on " + FromUtf8(pick.occurrenceName);
     }
@@ -180,16 +188,16 @@ void COriginDlg::StartPicking(PickSlot slot)
     switch (slot)
     {
     case PickSlot::Plane:
-        SetDlgItemText(IDC_ORIGIN_PROMPT, L"Click a face or an edge in the view. A flat face sets the plane, "
-                                          L"a circular edge sets the plane and the centre.");
+        SetDlgItemText(IDC_ORIGIN_PROMPT, L"Click a face, an edge, or a design plane or axis. A flat face sets the "
+                                          L"plane, a circular edge the plane and the centre, a plane its normal.");
         break;
     case PickSlot::Position:
-        SetDlgItemText(IDC_ORIGIN_PROMPT, L"Click an edge in the view. A straight edge gives the end nearer "
-                                          L"the click, a circular edge gives its centre.");
+        SetDlgItemText(IDC_ORIGIN_PROMPT, L"Click an edge or a design point. A straight edge gives the end nearer "
+                                          L"the click, a circular edge its centre.");
         break;
     default:
-        SetDlgItemText(IDC_ORIGIN_PROMPT, L"Click a straight edge in the view. X points along it, away from "
-                                          L"the end nearer the click.");
+        SetDlgItemText(IDC_ORIGIN_PROMPT, L"Click a straight edge or a design axis. X points along an edge away "
+                                          L"from the end nearer the click, or along an axis.");
         break;
     }
 

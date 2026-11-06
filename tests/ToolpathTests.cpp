@@ -159,7 +159,7 @@ TEST_CASE("holes are drilled in the list's order, moving across at the clearance
     CHECK(result.toolpath.moves[5].feed == 2000);
 }
 
-TEST_CASE("the clearance plane comes from the parts, a fixed Z, or not yet from stock")
+TEST_CASE("the clearance plane comes from the parts, the stock, or a fixed Z")
 {
     double height = 0;
     std::string problem;
@@ -180,8 +180,20 @@ TEST_CASE("the clearance plane comes from the parts, a fixed Z, or not yet from 
     CHECK(height == -4);
 
     clearance.mode = ClearanceMode::StockMaxZ;
-    CHECK_FALSE(ClearanceHeight(clearance, true, 3, height, problem));
+    CHECK_FALSE(ClearanceHeight(clearance, true, 3, height, problem));      // no stock
     CHECK_FALSE(problem.empty());
+    clearance.stockDistance = 2;
+    CHECK(ClearanceHeight(clearance, true, 3, height, problem, true, 8));
+    CHECK(height == 10);
+
+    // Automatic clears whichever is higher, the parts or the stock.
+    clearance.mode = ClearanceMode::Automatic;
+    CHECK(ClearanceHeight(clearance, true, 3, height, problem, true, 8));
+    CHECK(height == 8 + kAutomaticClearanceAboveParts);
+    CHECK(ClearanceHeight(clearance, true, 3, height, problem, true, 1));
+    CHECK(height == 3 + kAutomaticClearanceAboveParts);
+    CHECK(ClearanceHeight(clearance, false, 0, height, problem, true, 1));
+    CHECK(height == 1 + kAutomaticClearanceAboveParts);
 }
 
 TEST_CASE("a drill toolpath needs a tool, features, valid settings and room above the holes")

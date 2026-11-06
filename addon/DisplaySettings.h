@@ -47,3 +47,7 @@ const float kBoundaryLineWeight = 2.0f;
 // The chosen operation's picked features.
 const DisplayColour kFeatureHighlightColour = { 255, 150, 0, 255 };
 const float kFeatureHighlightLineWeight = 3.0f;
+
+// The stock, drawn as its edges.
+const DisplayColour kStockColour = { 0, 160, 160, 255 };
+const float kStockLineWeight = 1.5f;

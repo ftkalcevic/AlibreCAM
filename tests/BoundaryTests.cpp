@@ -185,15 +185,16 @@ TEST_CASE("a version 2 file, with only points and straight moves, still loads")
     job.sequence.push_back(group);
     REQUIRE(SaveJob(job, path).ok);
 
-    // Version 3 writes these just as version 2 did, so only the number differs.
+    // Later versions write these just as version 2 did, so only the number differs.
     std::string text;
     {
         std::ifstream in(path, std::ios::binary);
         text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
     }
-    const size_t at = text.find("\"formatVersion\": 3");
+    const std::string current = "\"formatVersion\": " + std::to_string(kCamFormatVersion);
+    const size_t at = text.find(current);
     REQUIRE(at != std::string::npos);
-    text.replace(at, 18, "\"formatVersion\": 2");
+    text.replace(at, current.size(), "\"formatVersion\": 2");
 
     // Before several areas, the one boundary was saved on its own.
     nlohmann::json root = nlohmann::json::parse(text);

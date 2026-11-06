@@ -138,7 +138,8 @@ namespace camcore
 
         double clearance = 0.0;
         std::string problem;
-        if (!ClearanceHeight(pOperation->clearance, input.havePartMaxZ, input.partMaxZ, clearance, problem))
+        if (!ClearanceHeight(pOperation->clearance, input.havePartMaxZ, input.partMaxZ, clearance, problem,
+                             input.haveStockMaxZ, input.stockMaxZ))
             return Failure(problem);
 
         const double toolRadius = input.tool->diameter / 2.0;

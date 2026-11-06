@@ -82,6 +82,7 @@
     <ClCompile Include="Pocketing.cpp" />
     <ClCompile Include="Profiling.cpp" />
     <ClCompile Include="ProgramSettings.cpp" />
+    <ClCompile Include="Stock.cpp" />
     <ClCompile Include="ScriptedPost.cpp" />
     <ClCompile Include="ProfileToolpath.cpp" />
     <ClCompile Include="ToolLibrary.cpp" />
@@ -104,6 +105,7 @@
     <ClInclude Include="PocketToolpath.h" />
     <ClInclude Include="Profiling.h" />
     <ClInclude Include="ProgramSettings.h" />
+    <ClInclude Include="Stock.h" />
     <ClInclude Include="ScriptedPost.h" />
     <ClInclude Include="ProfileToolpath.h" />
     <ClInclude Include="Features.h" />

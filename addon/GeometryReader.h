@@ -8,12 +8,14 @@
 #include "Boundary.h"
 #include "Features.h"
 #include "Origin.h"
+#include "Stock.h"
 
-// What a pick may be.
+// What a Set Origin pick may be.
 enum class PickFilter
 {
-    FacesAndEdges,
-    Edges
+    OriginPlane,        // a flat or cylindrical face, a straight or circular edge, a design plane or axis
+    OriginPosition,     // a straight or circular edge, or a design point
+    OriginX             // a straight edge or a design axis
 };
 
 // Millimetres per model unit for a session, or 10 (centimetres) if it can't be read.
@@ -53,6 +55,7 @@ struct SelectionFilter
 {
     ADSelectionFilterOption solid = ADSelectionFilterOption_AD_FACES_EDGES;
     bool planes = false;
+    bool axes = false;
     bool points = false;
 };
 
@@ -61,3 +64,18 @@ struct SelectionFilter
 SelectionFilter SetSelectionFilter(IADSession* pAssembly, const SelectionFilter& wanted);
 
 void ClearSelection(IADSession* pAssembly);
+
+// The parts behind every selected item (a part, or a face or edge of one), in
+// selection order, each once. Returns false only if the selection can't be read.
+bool ReadSelectedParts(IADSession* pAssembly, std::vector<camcore::StockPart>& parts);
+
+// The box around some parts, found again by their keys, or around the whole
+// assembly when the list is empty. Returns false and sets problem if a part
+// can't be found or nothing can be measured.
+bool ReadPartsBounds(IADSession* pAssembly, const std::vector<camcore::StockPart>& parts, camcore::Vec3& lower,
+                     camcore::Vec3& upper, std::wstring& problem);
+
+// Opens an Alibre part without showing it, reads its facets (three points to a
+// triangle, in the part's own coordinates in mm), and closes it. Returns false
+// and sets problem if the file can't be opened or isn't a part.
+bool ReadPartFacets(const std::wstring& path, std::vector<camcore::Vec3>& triangles, std::wstring& problem);

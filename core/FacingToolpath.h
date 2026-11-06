@@ -33,6 +33,10 @@ namespace camcore
         // The parts' highest point along the frame's Z, for the clearance plane.
         bool havePartMaxZ = false;
         double partMaxZ = 0.0;
+
+        // The stock's highest point along the frame's Z, when there's a stock.
+        bool haveStockMaxZ = false;
+        double stockMaxZ = 0.0;
     };
 
     // The direction passes run in the frame's X and Y. 90 degrees is along X,

@@ -94,6 +94,7 @@ Visual Studio. The project launches `Alibre Design.exe` and breakpoints in
 | `OriginDialog.cpp/.h` | The modeless Set Origin dialog |
 | `PostDialog.cpp/.h` | Finds the post scripts and chooses the post and output file before posting |
 | `Help.cpp/.h` | Opens the help page in the default browser at a section |
+| `StockDialog.cpp/.h` | The Box Stock, Part Box Stock and Imported Stock dialogs |
 | `SettingsDialog.cpp/.h` | The Settings dialog (CAM view size), saved in `%APPDATA%\AlibreCAM\settings.json` |
 | `Log.cpp/.h` | The log file |
 | `ToolDialogs.cpp/.h` | The tool library and tool editing dialogs |

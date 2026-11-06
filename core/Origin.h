@@ -56,7 +56,9 @@ namespace camcore
         LineEdge,
         CircleEdge,     // a full circle or a circular arc
         DesignPoint,
-        CurveEdge       // any other edge, such as a spline: start and end, and point halfway along
+        CurveEdge,      // any other edge, such as a spline: start and end, and point halfway along
+        DesignPlane,    // Alibre's own planes, such as XY, or the user's
+        DesignAxis
     };
 
     // A face, edge or design point picked in the view.
@@ -66,12 +68,12 @@ namespace camcore
 
         // Which item was picked, so a later step can find it again. Face and edge
         // keys bind in the part, and parts can share them, so the occurrence is kept too.
-        // Design points have no key, so they're known by name instead. The
-        // occurrence key is empty for the assembly's own design points.
+        // Design points, planes and axes have no key, so they're known by name
+        // instead. The occurrence key is empty for the assembly's own.
         PersistentKey occurrenceKey;
         PersistentKey targetKey;
         std::string occurrenceName;
-        std::string targetName;     // design points only
+        std::string targetName;     // design points, planes and axes only
 
         Vec3 clicked;       // where the user clicked
 
@@ -80,6 +82,8 @@ namespace camcore
         // Circle edge: its centre, and its axis, out of the material where the add-on could tell.
         // Line edge: its start, and the direction from start to end.
         // Design point: the point.
+        // Design plane: a point on it, and its normal.
+        // Design axis: a point on it, and its direction.
         Vec3 point;
         Vec3 direction;
 

@@ -283,7 +283,8 @@ namespace camcore
         const std::vector<CutLevel> levels = CutLevelHeights(pOperation->cutLevels, z);
         double clearance = 0.0;
         std::string clearanceProblem;
-        if (!ClearanceHeight(pOperation->clearance, input.havePartMaxZ, input.partMaxZ, clearance, clearanceProblem))
+        if (!ClearanceHeight(pOperation->clearance, input.havePartMaxZ, input.partMaxZ, clearance, clearanceProblem,
+                             input.haveStockMaxZ, input.stockMaxZ))
             return Failure(clearanceProblem);
         if (!(clearance > CutTopZ(pOperation->cutLevels, z)))
             return Failure("The clearance plane must be above the top of the cut.");

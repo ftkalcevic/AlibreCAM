@@ -14,6 +14,7 @@
 #include "PostDialog.h"
 #include "ScriptedPost.h"
 #include "SettingsDialog.h"
+#include "StockDialog.h"
 #include "PseudoPost.h"
 #include "GeometryReader.h"
 #include "Help.h"
@@ -50,6 +51,7 @@ namespace
         IDC_CAM_SETTINGS_BAR,
         IDC_CAM_SETTINGS,
         IDC_CAM_HELP,
+        IDC_CAM_SHOW_STOCK,
 
         // Tree menu commands
         ID_CAM_ADD_ORIGIN,
@@ -60,6 +62,11 @@ namespace
         ID_CAM_ADD_PROFILING,
         ID_CAM_ADD_POCKETING,
         ID_CAM_EDIT_STEP,
+        ID_CAM_STOCK_BOX,
+        ID_CAM_STOCK_PART_BOX,
+        ID_CAM_STOCK_IMPORT,
+        ID_CAM_STOCK_EDIT,
+        ID_CAM_STOCK_DELETE,
         ID_CAM_RENAME_STEP,
         ID_CAM_DUPLICATE_STEP,
         ID_CAM_SUPPRESS_STEP,
@@ -181,6 +188,8 @@ CCamTabCommand::CCamTabCommand(CAddOnInterface* pAddOn, const std::wstring& sess
     , m_pOperationDlg(nullptr)
     , m_showingFeatures(false)
     , m_operationTarget()
+    , m_pPartBoxDlg(nullptr)
+    , m_stockShapeValid(false)
     , m_filterChanged(false)
     , m_previousFilter()
 {
@@ -277,6 +286,7 @@ STDMETHODIMP CCamTabCommand::OnTerminate()
 
     CloseOriginDialog(true);
     CloseOperationDialog();
+    ClosePartBoxDialog(true);
     StopView(L"tab closing");
     WarnIfUnsaved();
     DestroyWindowIfOpen();
@@ -314,6 +324,7 @@ void CCamTabCommand::CloseFromAddOn()
     m_pAddOn = nullptr;
     CloseOriginDialog(true);
     CloseOperationDialog();
+    ClosePartBoxDialog(true);
     StopView(L"add-on unloading");
     WarnIfUnsaved();
     DestroyWindowIfOpen();
@@ -374,6 +385,7 @@ void CCamTabCommand::OnWindowGone()
     m_pWnd = nullptr;
     CloseOriginDialog(false);
     CloseOperationDialog();
+    ClosePartBoxDialog(false);
     LeaveAddOn();
 }
 
@@ -642,6 +654,238 @@ void CCamTabCommand::SaveJobFile()
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// The stock
+
+void CCamTabCommand::MakeStock(camcore::StockKind kind)
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    if (!CanEditSequence() || FocusOpenDialog() || HasStock())
+        return;
+    OpenStockDialog(kind);
+}
+
+void CCamTabCommand::EditStock()
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    if (!CanEditSequence() || FocusOpenDialog() || !HasStock())
+        return;
+    OpenStockDialog(m_job.stock.kind);
+}
+
+void CCamTabCommand::DeleteStock()
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    if (!CanEditSequence() || FocusOpenDialog() || !HasStock())
+        return;
+    const std::wstring question = L"Delete the " + FromUtf8(camcore::StockKindTitle(m_job.stock.kind)) + L"?";
+    if (AfxMessageBox(question.c_str(), MB_YESNO | MB_ICONQUESTION) != IDYES)
+        return;
+    ApplyStock(camcore::Stock());
+}
+
+void CCamTabCommand::OpenStockDialog(camcore::StockKind kind)
+{
+    CWnd* pParent = CWnd::FromHandle(theApp.m_hAlibreWnd);
+    switch (kind)
+    {
+    case camcore::StockKind::Box:
+    {
+        ReadModelSize();
+        CBoxStockDlg dialog(m_job.stock, m_haveBounds, m_boundsLower, m_boundsUpper, pParent);
+        if (dialog.DoModal() == IDOK)
+            ApplyStock(dialog.GetStock());
+        break;
+    }
+
+    case camcore::StockKind::Imported:
+    {
+        CImportStockDlg dialog(m_job.stock, pParent);
+        if (dialog.DoModal() == IDOK)
+            ApplyStock(dialog.GetStock());
+        break;
+    }
+
+    case camcore::StockKind::PartBox:
+    {
+        // Modeless, so parts can be clicked in the view.
+        StartView(L"part box stock");
+        m_pPartBoxDlg = new CPartBoxStockDlg(this, m_job.stock);
+        if (!m_pPartBoxDlg->CreateModeless(pParent))
+        {
+            Log(L"[stock] could not create the Part Box Stock dialog");
+            delete m_pPartBoxDlg;
+            m_pPartBoxDlg = nullptr;
+            return;
+        }
+        m_pPartBoxDlg->ShowWindow(SW_SHOW);
+        RebuildScene();
+        break;
+    }
+
+    default:
+        break;
+    }
+}
+
+void CCamTabCommand::ApplyStock(const camcore::Stock& stock)
+{
+    if (!CanEditSequence())
+        return;
+
+    m_job.stock = stock;
+    m_stockShapeValid = false;
+    MarkJobChanged();
+    if (m_pWnd != nullptr)
+        m_pWnd->ShowStock(m_job.stock);
+
+    // Say now if it can't be read, rather than only drawing nothing.
+    camcore::StockBox box;
+    std::wstring problem;
+    std::vector<camcore::LineSegment> edges;
+    if (HasStock() && !ReadStockShape(m_job.stock, edges, box, problem))
+        SetStatus(problem);
+    RebuildScene();
+}
+
+void CCamTabCommand::SetStockShown(bool shown)
+{
+    m_scene.stockShown = shown;
+    RebuildScene();
+}
+
+void CCamTabCommand::BeginPartSelect()
+{
+    SelectionFilter wanted;
+    wanted.solid = ADSelectionFilterOption_AD_PARTS;
+    if (!PrepareSelection(wanted) && m_pPartBoxDlg != nullptr)
+    {
+        m_pPartBoxDlg->StopSelectingParts();
+        m_pPartBoxDlg->ShowResult(L"Selecting couldn't start. Click the CAM tab, then click Select Parts again.");
+    }
+}
+
+void CCamTabCommand::EndPartSelect()
+{
+    RestoreSelectionFilter();
+}
+
+void CCamTabCommand::OnStockPreviewChanged()
+{
+    RebuildScene();
+}
+
+void CCamTabCommand::OnPartBoxDialogDone(CPartBoxStockDlg* pDialog, bool apply)
+{
+    if (pDialog != m_pPartBoxDlg)
+        return;
+
+    m_pPartBoxDlg = nullptr;
+    RestoreSelectionFilter();
+    if (apply)
+        ApplyStock(pDialog->GetStock());
+    else
+        RebuildScene();
+}
+
+void CCamTabCommand::ClosePartBoxDialog(bool callAlibre)
+{
+    if (m_pPartBoxDlg == nullptr)
+        return;
+
+    CPartBoxStockDlg* pDialog = m_pPartBoxDlg;
+    m_pPartBoxDlg = nullptr;
+    pDialog->DetachFromTab();
+    pDialog->DestroyWindow();
+
+    if (callAlibre)
+        RestoreSelectionFilter();
+    else
+        m_filterChanged = false;
+}
+
+bool CCamTabCommand::ReadStockShape(const camcore::Stock& stock, std::vector<camcore::LineSegment>& edges,
+                                    camcore::StockBox& box, std::wstring& problem,
+                                    std::vector<camcore::Vec3>* pPoints)
+{
+    edges.clear();
+    problem.clear();
+    if (pPoints != nullptr)
+        pPoints->clear();
+    switch (stock.kind)
+    {
+    case camcore::StockKind::Box:
+        box = camcore::BoxStockBox(stock);
+        edges = camcore::BoxEdges(box);
+        if (pPoints != nullptr)
+            *pPoints = camcore::BoxCorners(box);
+        return true;
+
+    case camcore::StockKind::PartBox:
+    {
+        camcore::Vec3 lower, upper;
+        bool read = false;
+        try
+        {
+            read = ReadPartsBounds(GetSession(), stock.parts, lower, upper, problem);
+        }
+        catch (const _com_error& error)
+        {
+            Log(L"[stock] could not find the session: hr=0x%08X", static_cast<unsigned>(error.Error()));
+            problem = L"The parts' size couldn't be read.";
+        }
+        if (!read)
+            return false;
+        box = camcore::PartBoxStockBox(stock, lower, upper);
+        edges = camcore::BoxEdges(box);
+        if (pPoints != nullptr)
+            *pPoints = camcore::BoxCorners(box);
+        return true;
+    }
+
+    case camcore::StockKind::Imported:
+    {
+        // The part's facets are read once, then kept until the file changes.
+        if (m_stockFacetsPath != stock.partPath)
+        {
+            m_stockFacetsPath.clear();
+            m_stockPartEdges.clear();
+            m_stockPartPoints.clear();
+            std::vector<camcore::Vec3> triangles;
+            if (!ReadPartFacets(FromUtf8(stock.partPath), triangles, problem))
+                return false;
+            m_stockPartEdges = camcore::MeshOutlineEdges(triangles, 20.0, 1e-4);
+            m_stockPartPoints = triangles;
+            m_stockFacetsPath = stock.partPath;
+            Log(L"[stock] %zu outline edges", m_stockPartEdges.size());
+        }
+
+        const camcore::Frame frame = camcore::ImportedStockFrame(stock);
+        for (const camcore::LineSegment& edge : m_stockPartEdges)
+            edges.push_back({ camcore::FramePointToWorld(frame, edge.from), camcore::FramePointToWorld(frame, edge.to) });
+        std::vector<camcore::Vec3> points;
+        points.reserve(m_stockPartPoints.size());
+        for (const camcore::Vec3& point : m_stockPartPoints)
+            points.push_back(camcore::FramePointToWorld(frame, point));
+        if (!camcore::PointsBox(points, box))
+        {
+            problem = L"The stock part has no solid to read.";
+            return false;
+        }
+        if (pPoints != nullptr)
+            *pPoints = std::move(points);
+        return true;
+    }
+
+    default:
+        problem = L"There's no stock.";
+        return false;
+    }
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // The operation sequence
 
 bool CCamTabCommand::CanEditSequence() const
@@ -651,7 +895,7 @@ bool CCamTabCommand::CanEditSequence() const
 
 bool CCamTabCommand::IsDialogOpen() const
 {
-    return m_pOriginDlg != nullptr || m_pOperationDlg != nullptr;
+    return m_pOriginDlg != nullptr || m_pOperationDlg != nullptr || m_pPartBoxDlg != nullptr;
 }
 
 camcore::SequenceStep* CCamTabCommand::FindStep(const StepRef& ref)
@@ -675,8 +919,13 @@ void CCamTabCommand::ShowSequence()
     m_sequenceStatus = m_job.sequence.empty() ? L"Right-click Operations to add a Set Origin." : L"";
     ShowStatus();
 
+    // The job may be a different one, so its stock is read again.
+    m_stockShapeValid = false;
     if (m_pWnd != nullptr)
+    {
         m_pWnd->ShowSequence(m_job, m_selected);
+        m_pWnd->ShowStock(m_job.stock);
+    }
 }
 
 bool CCamTabCommand::FocusOpenDialog()
@@ -685,6 +934,8 @@ bool CCamTabCommand::FocusOpenDialog()
         m_pOriginDlg->SetForegroundWindow();
     else if (m_pOperationDlg != nullptr)
         m_pOperationDlg->SetForegroundWindow();
+    else if (m_pPartBoxDlg != nullptr)
+        m_pPartBoxDlg->SetForegroundWindow();
     else
         return false;
     return true;
@@ -1244,6 +1495,24 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         }
     }
 
+    // The stock's highest point in the origin's frame. A stock that can't be read
+    // stops Generate, as clearing it can't be checked.
+    bool haveStockMaxZ = false;
+    double stockMaxZ = 0.0;
+    if (HasStock())
+    {
+        std::vector<camcore::LineSegment> edges;
+        camcore::StockBox box;
+        std::wstring stockProblem;
+        std::vector<camcore::Vec3> points;
+        if (!ReadStockShape(m_job.stock, edges, box, stockProblem, &points))
+        {
+            problem = ToUtf8(stockProblem);
+            return false;
+        }
+        haveStockMaxZ = camcore::HighestAlongZ(frame.frame, points, stockMaxZ);
+    }
+
     // Each feature's outline, read again from the model, in the origin's frame
     // with arcs' axes too, in the Features list's order.
     std::vector<std::vector<camcore::Path>> outlines;
@@ -1315,6 +1584,8 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         profileInput.tool = (pTool != nullptr) ? &tool : nullptr;
         profileInput.havePartMaxZ = havePartMaxZ;
         profileInput.partMaxZ = partMaxZ;
+        profileInput.haveStockMaxZ = haveStockMaxZ;
+        profileInput.stockMaxZ = stockMaxZ;
         for (size_t n = 0; n < areas.areas.size(); ++n)
         {
             camcore::ProfileChain chain = camcore::ChainProfile(areas.areas[n], areas.level);
@@ -1347,6 +1618,8 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         pocketInput.tool = (pTool != nullptr) ? &tool : nullptr;
         pocketInput.havePartMaxZ = havePartMaxZ;
         pocketInput.partMaxZ = partMaxZ;
+        pocketInput.haveStockMaxZ = haveStockMaxZ;
+        pocketInput.stockMaxZ = stockMaxZ;
         for (size_t n = 0; n < areas.areas.size(); ++n)
         {
             camcore::ProfileChain chain = camcore::ChainProfile(areas.areas[n], areas.level);
@@ -1397,6 +1670,8 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         facingInput.tool = (pTool != nullptr) ? &tool : nullptr;
         facingInput.havePartMaxZ = havePartMaxZ;
         facingInput.partMaxZ = partMaxZ;
+        facingInput.haveStockMaxZ = haveStockMaxZ;
+        facingInput.stockMaxZ = stockMaxZ;
         const camcore::ToolpathResult facingResult = camcore::GenerateFacingToolpath(facingInput);
         if (!facingResult.ok)
         {
@@ -1416,6 +1691,8 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         holeInput.tool = (pTool != nullptr) ? &tool : nullptr;
         holeInput.havePartMaxZ = havePartMaxZ;
         holeInput.partMaxZ = partMaxZ;
+        holeInput.haveStockMaxZ = haveStockMaxZ;
+        holeInput.stockMaxZ = stockMaxZ;
         const camcore::ToolpathResult holeResult = camcore::GenerateHolePocketToolpath(holeInput);
         if (!holeResult.ok)
         {
@@ -1432,6 +1709,8 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
     input.tool = (pTool != nullptr) ? &tool : nullptr;
     input.havePartMaxZ = havePartMaxZ;
     input.partMaxZ = partMaxZ;
+    input.haveStockMaxZ = haveStockMaxZ;
+    input.stockMaxZ = stockMaxZ;
 
     const camcore::ToolpathResult result = camcore::GenerateDrillToolpath(input);
     if (!result.ok)
@@ -1737,6 +2016,13 @@ void CCamTabCommand::OnViewTerminated(CCamViewCommand* pView)
     pView->Release();
 
     // A native command, or leaving the tab, ends picking too.
+    if (m_pPartBoxDlg != nullptr && m_pPartBoxDlg->IsSelectingParts())
+    {
+        m_pPartBoxDlg->StopSelectingParts();
+        m_pPartBoxDlg->ShowResult(L"Selecting stopped because another command started. Click Select Parts to "
+                                  L"carry on.");
+        RestoreSelectionFilter();
+    }
     if (m_pOriginDlg != nullptr && m_pOriginDlg->GetPickSlot() != PickSlot::None)
     {
         m_pOriginDlg->StopPicking();
@@ -1801,6 +2087,9 @@ void CCamTabCommand::ReadModelSize()
         session->QueryInterface(__uuidof(IADDesignSession), reinterpret_cast<void**>(&design));
         m_scene.millimetresPerUnit = MillimetresPerModelUnit(design);
         m_haveBounds = ReadAssemblyBounds(session, m_boundsLower, m_boundsUpper);
+
+        // Parts may have moved, which moves a part box stock.
+        m_stockShapeValid = false;
     }
     catch (const _com_error& error)
     {
@@ -1839,6 +2128,41 @@ void CCamTabCommand::RebuildScene()
             m_scene.plane = camcore::PlaneCoveringBox(result.frame, lower, upper, kOriginPlaneMargin);
             m_scene.hasOrigin = true;
         }
+    }
+
+    // The stock: the Part Box dialog's while it's open, otherwise the job's.
+    m_scene.showStock = !IsPicking();
+    if (m_pPartBoxDlg != nullptr)
+    {
+        camcore::StockBox box;
+        std::wstring problem;
+        std::vector<camcore::LineSegment> edges;
+        if (ReadStockShape(m_pPartBoxDlg->GetStock(), edges, box, problem))
+        {
+            wchar_t text[160];
+            swprintf_s(text, L"The stock is %.2f x %.2f x %.2f mm.", box.upper.x - box.lower.x,
+                       box.upper.y - box.lower.y, box.upper.z - box.lower.z);
+            m_pPartBoxDlg->ShowResult(text);
+        }
+        else
+        {
+            m_pPartBoxDlg->ShowResult(problem);
+        }
+        m_scene.stockEdges = edges;
+        m_stockShapeValid = false;      // the job's is read again once the dialog closes
+    }
+    else
+    {
+        if (!m_stockShapeValid)
+        {
+            camcore::StockBox box;
+            std::wstring problem;
+            m_stockEdges.clear();
+            if (HasStock() && !ReadStockShape(m_job.stock, m_stockEdges, box, problem))
+                Log(L"[stock] %s", problem.c_str());
+            m_stockShapeValid = true;
+        }
+        m_scene.stockEdges = m_stockEdges;
     }
 
     // The chosen operation's features, outlined in orange.
@@ -1947,14 +2271,20 @@ bool CCamTabCommand::PrepareSelection(const SelectionFilter& wanted)
 
 bool CCamTabCommand::IsPicking() const
 {
-    return (m_pOriginDlg != nullptr && m_pOriginDlg->GetPickSlot() != PickSlot::None) ||
+    return (m_pPartBoxDlg != nullptr && m_pPartBoxDlg->IsSelectingParts()) ||
+           (m_pOriginDlg != nullptr && m_pOriginDlg->GetPickSlot() != PickSlot::None) ||
            (m_pOperationDlg != nullptr && (m_pOperationDlg->IsLocating() || m_pOperationDlg->IsSelectingFeatures()));
 }
 
 void CCamTabCommand::BeginPick(PickSlot slot)
 {
+    // Each pick also takes Alibre's design items: planes and axes for the plane,
+    // points for the position, and axes for X.
     SelectionFilter wanted;
     wanted.solid = (slot == PickSlot::Plane) ? ADSelectionFilterOption_AD_FACES_EDGES : ADSelectionFilterOption_AD_EDGES;
+    wanted.planes = (slot == PickSlot::Plane);
+    wanted.axes = (slot == PickSlot::Plane || slot == PickSlot::XDirection);
+    wanted.points = (slot == PickSlot::Position);
     if (!PrepareSelection(wanted) && m_pOriginDlg != nullptr)
     {
         m_pOriginDlg->StopPicking();
@@ -2096,6 +2426,27 @@ void CCamTabCommand::RestoreSelectionFilter()
 
 void CCamTabCommand::HandleSelection()
 {
+    if (m_pPartBoxDlg != nullptr && m_pPartBoxDlg->IsSelectingParts())
+    {
+        // Each click adds a part, or takes a listed one off. The selection is then
+        // cleared, which comes back here with nothing selected.
+        std::vector<camcore::StockPart> parts;
+        try
+        {
+            if (ReadSelectedParts(GetSession(), parts) && !parts.empty())
+            {
+                m_pPartBoxDlg->ToggleParts(parts);
+                if (m_pWnd != nullptr)
+                    m_pWnd->PostClearSelection();
+            }
+        }
+        catch (const _com_error& error)
+        {
+            Log(L"[stock] could not find the session: hr=0x%08X", static_cast<unsigned>(error.Error()));
+        }
+        return;
+    }
+
     if (m_pOperationDlg != nullptr && m_pOperationDlg->IsLocating())
     {
         HandleLocate();
@@ -2131,7 +2482,9 @@ void CCamTabCommand::HandleSelection()
     bool read = false;
     try
     {
-        const PickFilter filter = (slot == PickSlot::Plane) ? PickFilter::FacesAndEdges : PickFilter::Edges;
+        const PickFilter filter = (slot == PickSlot::Plane)      ? PickFilter::OriginPlane
+                                  : (slot == PickSlot::Position) ? PickFilter::OriginPosition
+                                                                 : PickFilter::OriginX;
         read = ReadSelectedPick(GetSession(), filter, pick, problem);
     }
     catch (const _com_error& error)
@@ -2143,10 +2496,11 @@ void CCamTabCommand::HandleSelection()
     if (!read && problem.empty())
         return;
 
-    if (read && slot == PickSlot::XDirection && pick.kind != camcore::PickKind::LineEdge)
+    if (read && slot == PickSlot::XDirection && pick.kind != camcore::PickKind::LineEdge &&
+        pick.kind != camcore::PickKind::DesignAxis)
     {
         read = false;
-        problem = L"The X direction needs a straight edge.";
+        problem = L"The X direction needs a straight edge or a design axis.";
     }
 
     if (read)
@@ -2237,6 +2591,7 @@ BEGIN_MESSAGE_MAP(CCamTabWnd, CWnd)
     ON_BN_CLICKED(IDC_CAM_REFRESH, &CCamTabWnd::OnRefresh)
     ON_BN_CLICKED(IDC_CAM_FOREGROUND, &CCamTabWnd::OnForeground)
     ON_BN_CLICKED(IDC_CAM_SHOW_TOOLPATHS, &CCamTabWnd::OnShowToolpaths)
+    ON_BN_CLICKED(IDC_CAM_SHOW_STOCK, &CCamTabWnd::OnShowStock)
     ON_NOTIFY(TBN_GETINFOTIP, IDC_CAM_TOOLBAR, &CCamTabWnd::OnToolbarTip)
     ON_NOTIFY(TBN_GETINFOTIP, IDC_CAM_SETTINGS_BAR, &CCamTabWnd::OnToolbarTip)
     ON_BN_CLICKED(IDC_CAM_SETTINGS, &CCamTabWnd::OnSettings)
@@ -2259,6 +2614,7 @@ END_MESSAGE_MAP()
 CCamTabWnd::CCamTabWnd(CCamTabCommand* pTab)
     : m_pTab(pTab)
     , m_hTools(nullptr)
+    , m_hStock(nullptr)
     , m_hOperations(nullptr)
     , m_fillingTree(false)
     , m_visible(false)
@@ -2295,7 +2651,7 @@ int CCamTabWnd::OnCreate(LPCREATESTRUCT pCreate)
     HTREEITEM hSetup = m_tree.InsertItem(L"Setup");
     m_tree.InsertItem(L"Machine", hSetup);
     m_hTools = m_tree.InsertItem(L"Tools", hSetup);
-    m_tree.InsertItem(L"Stock", hSetup);
+    m_hStock = m_tree.InsertItem(L"Stock", hSetup);
     m_hOperations = m_tree.InsertItem(L"Operations");
     m_tree.Expand(hSetup, TVE_EXPAND);
 
@@ -2310,16 +2666,17 @@ int CCamTabWnd::OnCreate(LPCREATESTRUCT pCreate)
     m_toolbar.Create(WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_TOOLTIPS | CCS_NODIVIDER | CCS_NORESIZE |
                          CCS_NOPARENTALIGN,
                      CRect(0, 0, 10, 10), this, IDC_CAM_TOOLBAR);
-    TBBUTTON buttons[2] = {};
-    const int commands[2] = { IDC_CAM_FOREGROUND, IDC_CAM_SHOW_TOOLPATHS };
-    for (int i = 0; i < 2; ++i)
+    TBBUTTON buttons[3] = {};
+    const int commands[3] = { IDC_CAM_FOREGROUND, IDC_CAM_SHOW_TOOLPATHS, IDC_CAM_SHOW_STOCK };
+    const int images[3] = { 0, 1, 4 };
+    for (int i = 0; i < 3; ++i)
     {
-        buttons[i].iBitmap = i;
+        buttons[i].iBitmap = images[i];
         buttons[i].idCommand = commands[i];
-        buttons[i].fsState = TBSTATE_ENABLED | TBSTATE_CHECKED;     // both start on
+        buttons[i].fsState = TBSTATE_ENABLED | TBSTATE_CHECKED;     // all start on
         buttons[i].fsStyle = BTNS_CHECK;
     }
-    m_toolbar.AddButtons(2, buttons);
+    m_toolbar.AddButtons(3, buttons);
 
     // Help, and the gear that opens the Settings dialog, are a toolbar of their own, kept at the right.
     m_settingsBar.Create(WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_TOOLTIPS | CCS_NODIVIDER | CCS_NORESIZE |
@@ -2518,6 +2875,21 @@ void CCamTabWnd::OnHelp()
     ShowHelp(L"cam-tab");
 }
 
+void CCamTabWnd::OnShowStock()
+{
+    if (m_pTab != nullptr)
+        m_pTab->SetStockShown(m_toolbar.IsButtonChecked(IDC_CAM_SHOW_STOCK) != FALSE);
+}
+
+void CCamTabWnd::ShowStock(const camcore::Stock& stock)
+{
+    if (m_hStock == nullptr)
+        return;
+    const std::string title = camcore::StockKindTitle(stock.kind);
+    const std::wstring text = title.empty() ? L"Stock" : L"Stock - " + FromUtf8(title);
+    m_tree.SetItemText(m_hStock, text.c_str());
+}
+
 void CCamTabWnd::OnShowToolpaths()
 {
     if (m_pTab != nullptr)
@@ -2531,6 +2903,7 @@ void CCamTabWnd::OnToolbarTip(NMHDR* pNotify, LRESULT* pResult)
                           : (pTip->iItem == IDC_CAM_SHOW_TOOLPATHS) ? L"Show toolpaths"
                           : (pTip->iItem == IDC_CAM_SETTINGS)       ? L"Settings"
                           : (pTip->iItem == IDC_CAM_HELP)           ? L"Help"
+                          : (pTip->iItem == IDC_CAM_SHOW_STOCK)     ? L"Show stock"
                                                                     : L"";
     if (pTip->pszText != nullptr && pTip->cchTextMax > 0)
         wcsncpy_s(pTip->pszText, pTip->cchTextMax, text, _TRUNCATE);
@@ -2606,6 +2979,39 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         return;
 
     const HTREEITEM hItem = ItemUnderCursor(true);
+    if (hItem != nullptr && hItem == m_hStock)
+    {
+        // One stock: the kinds while there's none, then Edit and Delete.
+        const bool editable = m_pTab->CanEditSequence();
+        const UINT makeable = (editable && !m_pTab->HasStock()) ? MF_ENABLED : MF_GRAYED;
+        const UINT changeable = (editable && m_pTab->HasStock()) ? MF_ENABLED : MF_GRAYED;
+        CMenu stockMenu;
+        stockMenu.CreatePopupMenu();
+        stockMenu.AppendMenu(MF_STRING | makeable, ID_CAM_STOCK_BOX, L"Box Stock...");
+        stockMenu.AppendMenu(MF_STRING | makeable, ID_CAM_STOCK_PART_BOX, L"Part Box Stock...");
+        stockMenu.AppendMenu(MF_STRING | makeable, ID_CAM_STOCK_IMPORT, L"Import Stock...");
+        stockMenu.AppendMenu(MF_SEPARATOR);
+        stockMenu.AppendMenu(MF_STRING | changeable, ID_CAM_STOCK_EDIT, L"Edit...");
+        stockMenu.AppendMenu(MF_STRING | changeable, ID_CAM_STOCK_DELETE, L"Delete");
+
+        CPoint at;
+        ::GetCursorPos(&at);
+        const UINT chosen = stockMenu.TrackPopupMenu(TPM_LEFTALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY,
+                                                     at.x, at.y, this);
+        if (m_pTab == nullptr)
+            return;
+        switch (chosen)
+        {
+        case ID_CAM_STOCK_BOX:      m_pTab->MakeStock(camcore::StockKind::Box); break;
+        case ID_CAM_STOCK_PART_BOX: m_pTab->MakeStock(camcore::StockKind::PartBox); break;
+        case ID_CAM_STOCK_IMPORT:   m_pTab->MakeStock(camcore::StockKind::Imported); break;
+        case ID_CAM_STOCK_EDIT:     m_pTab->EditStock(); break;
+        case ID_CAM_STOCK_DELETE:   m_pTab->DeleteStock(); break;
+        default: break;
+        }
+        return;
+    }
+
     const bool onStep = IsStepItem(hItem);
     if (hItem != m_hOperations && !onStep)
         return;
@@ -2937,6 +3343,12 @@ void CCamTabWnd::OnTreeDoubleClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         // Handled, so the tree doesn't also expand or collapse the item.
         *pResult = 1;
         m_pTab->OpenToolLibrary();
+    }
+    else if (hItem != nullptr && hItem == m_hStock)
+    {
+        *pResult = 1;
+        if (m_pTab->HasStock())
+            m_pTab->EditStock();
     }
     else if (IsStepItem(hItem) && !m_pTab->IsFolder(ref))
     {

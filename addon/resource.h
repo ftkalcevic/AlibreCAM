@@ -210,10 +210,39 @@
 #define IDB_CAM_TOOLBAR_24              13028
 #define IDB_CAM_TOOLBAR_32              13029
 #define IDD_SETTINGS                    13030
+#define IDD_STOCK_BOX                   13031
+#define IDD_STOCK_PART_BOX              13032
+#define IDD_STOCK_IMPORT                13033
 #define IDC_VIEW_SMALL                  13296
 #define IDC_VIEW_MEDIUM                 13297
 #define IDC_VIEW_LARGE                  13298
 #define IDC_HELP_BUTTON                 13299
+#define IDC_STOCK_CORNER_X              13300
+#define IDC_STOCK_CORNER_Y              13301
+#define IDC_STOCK_CORNER_Z              13302
+#define IDC_STOCK_SIZE_X                13303
+#define IDC_STOCK_SIZE_Y                13304
+#define IDC_STOCK_SIZE_Z                13305
+#define IDC_STOCK_FIT                   13306
+#define IDC_STOCK_PARTS                 13307
+#define IDC_STOCK_SELECT_PARTS          13308
+#define IDC_STOCK_ALL_PARTS             13309
+#define IDC_STOCK_OFFSET_PX             13310
+#define IDC_STOCK_OFFSET_MX             13311
+#define IDC_STOCK_OFFSET_PY             13312
+#define IDC_STOCK_OFFSET_MY             13313
+#define IDC_STOCK_OFFSET_PZ             13314
+#define IDC_STOCK_OFFSET_MZ             13315
+#define IDC_STOCK_RESULT                13316
+#define IDC_STOCK_FILE                  13317
+#define IDC_STOCK_BROWSE                13318
+#define IDC_STOCK_POS_X                 13319
+#define IDC_STOCK_POS_Y                 13320
+#define IDC_STOCK_POS_Z                 13321
+#define IDC_STOCK_ROT_X                 13322
+#define IDC_STOCK_ROT_Y                 13323
+#define IDC_STOCK_ROT_Z                 13324
+#define IDC_STOCK_PROMPT                13325
 #define IDC_HP_AT_TOP                   13266
 #define IDC_HP_AT_BOTTOM                13267
 #define IDC_HP_PICK_TOP                 13268
@@ -249,9 +278,9 @@
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13031
+#define _APS_NEXT_RESOURCE_VALUE        13034
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13300
+#define _APS_NEXT_CONTROL_VALUE         13326
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif
