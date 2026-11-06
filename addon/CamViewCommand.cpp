@@ -7,6 +7,7 @@
 #include "DisplaySettings.h"
 #include "Log.h"
 
+#include <cmath>
 #include <vector>
 
 using camcore::Vec3;
@@ -63,6 +64,76 @@ namespace
         if (FAILED(hr))
             Log(L"[view] DrawPolyline failed hr=0x%08X", static_cast<unsigned>(hr));
         SafeArrayDestroy(pArray);
+    }
+
+    // A shaded mesh: three floats to a vertex and a normal, and each triangle as 3
+    // followed by its vertex numbers, as the canvas takes it.
+    void DrawMesh(IADAddOnCanvasDisplay* pCanvas, __int64 segment, const camcore::StockMesh& mesh,
+                  double millimetresPerUnit)
+    {
+        if (mesh.faces.empty())
+            return;
+        std::vector<float> vertices(mesh.vertices.size());
+        for (size_t i = 0; i < vertices.size(); ++i)
+            vertices[i] = static_cast<float>(mesh.vertices[i] / millimetresPerUnit);
+        SAFEARRAY* pVertices = MakeArray(VT_R4, vertices);
+        SAFEARRAY* pNormals = MakeArray(VT_R4, mesh.normals);
+        SAFEARRAY* pFaces = MakeArray(VT_I4, mesh.faces);
+        if (pVertices != nullptr && pNormals != nullptr && pFaces != nullptr)
+        {
+            __int64 result = 0;
+            const HRESULT hr = pCanvas->DrawMesh(segment, &pVertices, &pNormals, &pFaces, &result);
+            if (FAILED(hr))
+                Log(L"[view] DrawMesh failed hr=0x%08X", static_cast<unsigned>(hr));
+        }
+        for (SAFEARRAY* pArray : { pVertices, pNormals, pFaces })
+        {
+            if (pArray != nullptr)
+                SafeArrayDestroy(pArray);
+        }
+    }
+
+    // The tool as lines: its outline up four sides, and rings round it.
+    void DrawTool(IADAddOnCanvasDisplay* pCanvas, const CamScene& scene, double unit)
+    {
+        Vec3 w;
+        if (!camcore::Normalise(scene.simAxis, w))
+            return;
+        const Vec3 other = (std::fabs(w.x) < 0.9) ? Vec3{ 1.0, 0.0, 0.0 } : Vec3{ 0.0, 1.0, 0.0 };
+        Vec3 u;
+        camcore::Normalise(camcore::Cross(w, other), u);
+        const Vec3 v = camcore::Cross(w, u);
+
+        const camcore::ToolProfile& profile = scene.simProfile;
+        const double top = (std::min)(profile.length, 4.0 * profile.radius + 10.0);
+        const int samples = 12;
+        const __int64 segment = AddSegment(pCanvas, L"Simulated tool", kSimToolColour, kSimToolLineWeight, true);
+        for (int side = 0; side < 4; ++side)
+        {
+            const double angle = side * 3.14159265358979323846 / 2.0;
+            const Vec3 out = u * std::cos(angle) + v * std::sin(angle);
+            std::vector<float> points;
+            for (int i = 0; i <= samples; ++i)
+            {
+                const double h = top * i / samples;
+                const double r = (std::max)(0.0, profile.RadiusAt((std::min)(h, profile.length)));
+                AddPoint(points, scene.simTip + w * h + out * r, unit);
+            }
+            DrawPolyline(pCanvas, segment, points);
+        }
+        for (double h : { 0.0, profile.radius, top })
+        {
+            const double r = profile.RadiusAt((std::min)(h, profile.length));
+            if (!(r > 0.01))
+                continue;
+            std::vector<float> ring;
+            for (int i = 0; i <= 24; ++i)
+            {
+                const double angle = i * 2.0 * 3.14159265358979323846 / 24;
+                AddPoint(ring, scene.simTip + w * h + (u * std::cos(angle) + v * std::sin(angle)) * r, unit);
+            }
+            DrawPolyline(pCanvas, segment, ring);
+        }
     }
 
     void DrawLine(IADAddOnCanvasDisplay* pCanvas, __int64 segment, const Vec3& from, const Vec3& to,
@@ -192,8 +263,26 @@ void CCamViewCommand::DrawScene(IADAddOnCanvasDisplay* pCanvas, const CamScene& 
 {
     const double unit = scene.millimetresPerUnit;
 
+    // The simulated stock in place of the stock's edges, the tool, and a rapid that cut.
+    if (scene.simulating)
+    {
+        if (scene.simMesh != nullptr && scene.stockShown)
+        {
+            const __int64 segment = AddSegment(pCanvas, L"Simulated stock", kSimStockColour, 1.0f, scene.foreground);
+            DrawMesh(pCanvas, segment, *scene.simMesh, unit);
+        }
+        if (scene.simToolShown)
+            DrawTool(pCanvas, scene, unit);
+        if (scene.simWarning)
+        {
+            const __int64 segment =
+                AddSegment(pCanvas, L"Rapid into stock", kSimWarningColour, kSimWarningLineWeight, true);
+            DrawLine(pCanvas, segment, scene.simWarningFrom, scene.simWarningTo, unit);
+        }
+    }
+
     // The stock's edges. Hidden while picking, as graphics take part in it.
-    if (scene.showStock && scene.stockShown && !scene.stockEdges.empty())
+    if (!scene.simulating && scene.showStock && scene.stockShown && !scene.stockEdges.empty())
     {
         const __int64 segment = AddSegment(pCanvas, L"Stock", kStockColour, kStockLineWeight, scene.foreground);
         for (const camcore::LineSegment& edge : scene.stockEdges)

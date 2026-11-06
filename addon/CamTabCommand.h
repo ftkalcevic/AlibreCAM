@@ -22,6 +22,7 @@
 class CAddOnInterface;
 class CCamTabWnd;
 class CPartBoxStockDlg;
+class CSimulationDlg;
 
 // A place in the sequence: a top-level step, or an operation in a group.
 struct StepRef
@@ -105,6 +106,14 @@ public:
     // Throws away generated toolpaths (and Facing's boundaries). True if any of the operations has one.
     bool HasToolpaths(const std::vector<StepRef>& refs) const;
     void ClearToolpaths(const std::vector<StepRef>& refs);
+
+    // Plays the generated toolpaths of the operations in scope (or those chosen)
+    // against the stock, in the Simulation dialog.
+    void Simulate(const StepRef& scope);
+    void SimulateOperations(std::vector<StepRef> refs);
+    camcore::Simulation& GetSimulation() { return m_simulation; }
+    void OnSimulationChanged();             // the stock or tool moved: mesh again and redraw
+    void OnSimulationDialogDone(CSimulationDlg* pDialog);
 
     // Several operations chosen in the tree with Ctrl or Shift: drawn as chosen,
     // edited together, or generated together.
@@ -208,6 +217,8 @@ private:
     void OpenStockDialog(camcore::StockKind kind);
     void ApplyStock(const camcore::Stock& stock);
     void ClosePartBoxDialog(bool callAlibre);
+    void CloseSimulationDialog();
+    void UpdateSimulationScene();
     // The stock's edges in assembly mm, and its box. False with a problem if it can't be read.
     // pPoints, if given, gets points whose highest is the stock's top along any direction.
     bool ReadStockShape(const camcore::Stock& stock, std::vector<camcore::LineSegment>& edges,
@@ -257,6 +268,12 @@ private:
 
     // Only one dialog is open at a time, so this is set only when the others aren't.
     CPartBoxStockDlg* m_pPartBoxDlg;
+
+    // The simulation, while its dialog is open, and its stock's mesh, chunk by chunk and joined.
+    CSimulationDlg* m_pSimulationDlg;
+    camcore::Simulation m_simulation;
+    std::vector<camcore::StockMesh> m_simulationChunks;
+    camcore::StockMesh m_simulationMesh;
 
     // The stock's shape, read again when the stock or the model changes.
     bool m_stockShapeValid;

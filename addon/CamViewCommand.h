@@ -7,6 +7,7 @@
 
 #include "CommandBase.h"
 #include "Origin.h"
+#include "Simulation.h"
 
 #include <vector>
 
@@ -44,6 +45,19 @@ struct CamScene
     std::vector<camcore::LineSegment> stockEdges;
     bool showStock = true;          // off while picking
     bool stockShown = true;         // the toolbar's Show Stock
+
+    // The simulation, while its dialog is open: the cut stock as one mesh in
+    // assembly mm (in place of the stock's edges), the tool where it is, and a
+    // rapid that cut stock.
+    bool simulating = false;
+    const camcore::StockMesh* simMesh = nullptr;
+    bool simToolShown = false;
+    camcore::Vec3 simTip;
+    camcore::Vec3 simAxis{ 0.0, 0.0, 1.0 };
+    camcore::ToolProfile simProfile;
+    bool simWarning = false;
+    camcore::Vec3 simWarningFrom;
+    camcore::Vec3 simWarningTo;
 
     bool foreground = true;     // drawn over the model, rather than hidden by it
     double millimetresPerUnit = 10.0;

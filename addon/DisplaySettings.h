@@ -48,6 +48,13 @@ const float kBoundaryLineWeight = 2.0f;
 const DisplayColour kFeatureHighlightColour = { 255, 150, 0, 255 };
 const float kFeatureHighlightLineWeight = 3.0f;
 
+// The simulated stock, shaded, the tool, and a rapid into the stock.
+const DisplayColour kSimStockColour = { 120, 160, 200, 255 };
+const DisplayColour kSimToolColour = { 230, 190, 0, 255 };
+const float kSimToolLineWeight = 1.5f;
+const DisplayColour kSimWarningColour = { 230, 0, 0, 255 };
+const float kSimWarningLineWeight = 4.0f;
+
 // The stock, drawn as its edges.
 const DisplayColour kStockColour = { 0, 160, 160, 255 };
 const float kStockLineWeight = 1.5f;

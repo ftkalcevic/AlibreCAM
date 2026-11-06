@@ -16,6 +16,7 @@
 #include "ScriptedPost.h"
 #include "SettingsDialog.h"
 #include "StockDialog.h"
+#include "SimulationDialog.h"
 #include "PseudoPost.h"
 #include "GeometryReader.h"
 #include "Help.h"
@@ -83,6 +84,7 @@ namespace
         ID_CAM_SUPPRESS_STEP,
         ID_CAM_GENERATE,
         ID_CAM_CLEAR_TOOLPATHS,
+        ID_CAM_SIMULATE,
         ID_CAM_POST,
         ID_CAM_DELETE_STEP
     };
@@ -201,6 +203,7 @@ CCamTabCommand::CCamTabCommand(CAddOnInterface* pAddOn, const std::wstring& sess
     , m_showingFeatures(false)
     , m_operationTarget()
     , m_pPartBoxDlg(nullptr)
+    , m_pSimulationDlg(nullptr)
     , m_stockShapeValid(false)
     , m_stockUnreadable(false)
     , m_filterChanged(false)
@@ -300,6 +303,7 @@ STDMETHODIMP CCamTabCommand::OnTerminate()
     CloseOriginDialog(true);
     CloseOperationDialog();
     ClosePartBoxDialog(true);
+    CloseSimulationDialog();
     StopView(L"tab closing");
     WarnIfUnsaved();
     DestroyWindowIfOpen();
@@ -338,6 +342,7 @@ void CCamTabCommand::CloseFromAddOn()
     CloseOriginDialog(true);
     CloseOperationDialog();
     ClosePartBoxDialog(true);
+    CloseSimulationDialog();
     StopView(L"add-on unloading");
     WarnIfUnsaved();
     DestroyWindowIfOpen();
@@ -399,6 +404,7 @@ void CCamTabCommand::OnWindowGone()
     CloseOriginDialog(false);
     CloseOperationDialog();
     ClosePartBoxDialog(false);
+    CloseSimulationDialog();
     LeaveAddOn();
 }
 
@@ -923,7 +929,8 @@ bool CCamTabCommand::CanEditSequence() const
 
 bool CCamTabCommand::IsDialogOpen() const
 {
-    return m_pOriginDlg != nullptr || m_pOperationDlg != nullptr || m_pPartBoxDlg != nullptr;
+    return m_pOriginDlg != nullptr || m_pOperationDlg != nullptr || m_pPartBoxDlg != nullptr ||
+           m_pSimulationDlg != nullptr;
 }
 
 camcore::SequenceStep* CCamTabCommand::FindStep(const StepRef& ref)
@@ -968,6 +975,8 @@ bool CCamTabCommand::FocusOpenDialog()
         m_pOperationDlg->SetForegroundWindow();
     else if (m_pPartBoxDlg != nullptr)
         m_pPartBoxDlg->SetForegroundWindow();
+    else if (m_pSimulationDlg != nullptr)
+        m_pSimulationDlg->SetForegroundWindow();
     else
         return false;
     return true;
@@ -1355,6 +1364,188 @@ void CCamTabCommand::ClearToolpaths(const std::vector<StepRef>& refs)
     RebuildScene();
     m_sequenceStatus = L"Cleared " + std::to_wstring(cleared) + (cleared == 1 ? L" toolpath." : L" toolpaths.");
     ShowStatus();
+}
+
+void CCamTabCommand::Simulate(const StepRef& scope)
+{
+    SimulateOperations(OperationsIn(scope, false));
+}
+
+void CCamTabCommand::SimulateOperations(std::vector<StepRef> refs)
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    if (FocusOpenDialog())
+        return;
+    if (!HasStock())
+    {
+        ShowError(L"There's no stock to simulate. Make one first: right-click Stock on the CAM tab.");
+        return;
+    }
+
+    // The stock's box, and an imported part's triangles.
+    std::vector<camcore::LineSegment> edges;
+    camcore::StockBox box;
+    std::wstring stockProblem;
+    std::vector<camcore::Vec3> points;
+    ReadModelSize();
+    if (!ReadStockShape(m_job.stock, edges, box, stockProblem, &points))
+    {
+        ShowError(L"The stock can't be read. " + stockProblem);
+        return;
+    }
+    const std::vector<camcore::Vec3> triangles =
+        (m_job.stock.kind == camcore::StockKind::Imported) ? points : std::vector<camcore::Vec3>();
+
+    // The operations in the sequence's order, each in its origin's frame with its tool's shape.
+    std::sort(refs.begin(), refs.end(), [](const StepRef& x, const StepRef& y) {
+        return x.step < y.step || (x.step == y.step && x.child < y.child);
+    });
+    std::vector<camcore::SimOperation> operations;
+    std::wstring leftOut;
+    for (const StepRef& ref : refs)
+    {
+        const camcore::SequenceStep* pStep = FindStep(ref);
+        if (pStep == nullptr || !camcore::IsOperation(pStep->type))
+            continue;
+        const std::wstring name = FromUtf8(pStep->name);
+        const size_t active = camcore::ActiveOriginIndex(m_job, ref.step);
+        const camcore::FrameResult frame = (active != camcore::kNoStepIndex)
+                                               ? camcore::BuildFrame(m_job.sequence[active].origin)
+                                               : camcore::FrameResult();
+        const camcore::Tool* pTool = camcore::FindToolById(m_library, pStep->toolId);
+        if (pStep->toolpath.moves.empty() || !frame.ok || pTool == nullptr)
+        {
+            leftOut += (leftOut.empty() ? L"" : L", ") + name;
+            continue;
+        }
+        camcore::SimOperation operation;
+        operation.name = pStep->name;
+        operation.profile = camcore::ProfileOf(camcore::ToolInMillimetres(*pTool));
+        operation.frame = frame.frame;
+        operation.toolpath = pStep->toolpath;
+        operations.push_back(std::move(operation));
+    }
+    if (operations.empty())
+    {
+        ShowError(L"There's nothing to simulate. Generate the operations first.");
+        return;
+    }
+
+    {
+        CWaitCursor wait;
+        const ULONGLONG start = GetTickCount64();
+        m_simulation.Start(box, triangles, operations);
+        Log(L"[simulate] %zu operations, %zu moves, %d x %d x %d cells of %g mm, ready in %llu ms", operations.size(),
+            m_simulation.Moves().size(), m_simulation.Stock().SizeX(), m_simulation.Stock().SizeY(),
+            m_simulation.Stock().SizeZ(), m_simulation.Stock().Cell(), GetTickCount64() - start);
+    }
+    m_simulationChunks.assign(static_cast<size_t>(m_simulation.Stock().ChunkCount()), camcore::StockMesh());
+    m_simulationMesh = camcore::StockMesh();
+
+    StartView(L"simulation");
+    m_pSimulationDlg = new CSimulationDlg(this);
+    if (!leftOut.empty())
+        m_pSimulationDlg->SetNote(L"Not generated, left out: " + leftOut + L".");
+    if (!m_pSimulationDlg->CreateModeless(CWnd::FromHandle(theApp.m_hAlibreWnd)))
+    {
+        Log(L"[simulate] could not create the Simulation dialog");
+        delete m_pSimulationDlg;
+        m_pSimulationDlg = nullptr;
+        m_simulation = camcore::Simulation();
+        return;
+    }
+    m_pSimulationDlg->ShowWindow(SW_SHOW);
+    OnSimulationChanged();
+}
+
+void CCamTabCommand::UpdateSimulationScene()
+{
+    // Each chunk that changed is meshed again, and the chunks joined into one mesh.
+    camcore::VoxelStock& stock = m_simulation.Stock();
+    bool changed = false;
+    const ULONGLONG start = GetTickCount64();
+    for (int c = 0; c < stock.ChunkCount() && static_cast<size_t>(c) < m_simulationChunks.size(); ++c)
+    {
+        if (!stock.ChunkDirty(c))
+            continue;
+        m_simulationChunks[static_cast<size_t>(c)] = camcore::MeshChunk(stock, c);
+        stock.SetChunkClean(c);
+        changed = true;
+    }
+    if (changed)
+    {
+        m_simulationMesh = camcore::StockMesh();
+        for (const camcore::StockMesh& chunk : m_simulationChunks)
+        {
+            const int base = static_cast<int>(m_simulationMesh.vertices.size() / 3);
+            m_simulationMesh.vertices.insert(m_simulationMesh.vertices.end(), chunk.vertices.begin(),
+                                             chunk.vertices.end());
+            m_simulationMesh.normals.insert(m_simulationMesh.normals.end(), chunk.normals.begin(),
+                                            chunk.normals.end());
+            for (size_t f = 0; f + 3 < chunk.faces.size(); f += 4)
+            {
+                m_simulationMesh.faces.insert(m_simulationMesh.faces.end(), { 3, chunk.faces[f + 1] + base,
+                                                                             chunk.faces[f + 2] + base,
+                                                                             chunk.faces[f + 3] + base });
+            }
+        }
+        const ULONGLONG took = GetTickCount64() - start;
+        if (took > 200)
+            Log(L"[simulate] meshed %zu triangles in %llu ms", m_simulationMesh.TriangleCount(), took);
+    }
+
+    m_scene.simMesh = &m_simulationMesh;
+    const camcore::SimOperation* pOperation = m_simulation.CurrentOperation();
+    m_scene.simToolShown = pOperation != nullptr;
+    if (pOperation != nullptr)
+    {
+        m_scene.simTip = m_simulation.ToolTip();
+        m_scene.simAxis = pOperation->frame.zAxis;
+        m_scene.simProfile = pOperation->profile;
+    }
+    m_scene.simWarning = m_simulation.HasWarning();
+    if (m_scene.simWarning)
+    {
+        const camcore::SimMove& move = m_simulation.Moves()[m_simulation.WarningMove()];
+        m_scene.simWarningFrom = move.from;
+        m_scene.simWarningTo = move.to;
+    }
+}
+
+void CCamTabCommand::OnSimulationChanged()
+{
+    UpdateSimulationScene();
+    RebuildScene();
+}
+
+void CCamTabCommand::OnSimulationDialogDone(CSimulationDlg* pDialog)
+{
+    if (pDialog != m_pSimulationDlg)
+        return;
+    m_pSimulationDlg = nullptr;
+
+    // The memory goes, and the stock is drawn as its edges again.
+    m_simulation = camcore::Simulation();
+    m_simulationChunks.clear();
+    m_simulationMesh = camcore::StockMesh();
+    m_scene.simMesh = nullptr;
+    RebuildScene();
+}
+
+void CCamTabCommand::CloseSimulationDialog()
+{
+    if (m_pSimulationDlg == nullptr)
+        return;
+    CSimulationDlg* pDialog = m_pSimulationDlg;
+    m_pSimulationDlg = nullptr;
+    pDialog->DetachFromTab();
+    pDialog->DestroyWindow();
+    m_simulation = camcore::Simulation();
+    m_simulationChunks.clear();
+    m_simulationMesh = camcore::StockMesh();
+    m_scene.simMesh = nullptr;
+    m_scene.simulating = false;
 }
 
 void CCamTabCommand::GenerateOperations(const std::vector<StepRef>& refs)
@@ -2390,6 +2581,9 @@ void CCamTabCommand::RebuildScene()
             m_scene.hasOrigin = true;
         }
     }
+
+    // The simulation's stock in place of the job's while its dialog is open.
+    m_scene.simulating = m_pSimulationDlg != nullptr;
 
     // The stock: the Part Box dialog's while it's open, otherwise the job's.
     m_scene.showStock = !IsPicking();
@@ -3441,6 +3635,8 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         bulkMenu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
         bulkMenu.AppendMenu(MF_STRING | ((editable == MF_ENABLED && m_pTab->HasToolpaths(chosen)) ? MF_ENABLED : MF_GRAYED),
                             ID_CAM_CLEAR_TOOLPATHS, L"Clear Toolpaths");
+        bulkMenu.AppendMenu(MF_STRING | (m_pTab->HasToolpaths(chosen) ? MF_ENABLED : MF_GRAYED), ID_CAM_SIMULATE,
+                            L"Simulate...");
 
         CPoint at;
         ::GetCursorPos(&at);
@@ -3455,6 +3651,8 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
             m_pTab->GenerateOperations(chosen);
         else if (chosenCommand == ID_CAM_CLEAR_TOOLPATHS)
             m_pTab->ClearToolpaths(chosen);
+        else if (chosenCommand == ID_CAM_SIMULATE)
+            m_pTab->SimulateOperations(chosen);
         return;
     }
 
@@ -3554,6 +3752,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     const UINT suppressible = (onStep && m_pTab->CanSuppress(ref)) ? MF_ENABLED : MF_GRAYED;
     const UINT clearable =
         (m_pTab->CanEditSequence() && m_pTab->HasToolpaths(m_pTab->AllOperationsIn(ref))) ? MF_ENABLED : MF_GRAYED;
+    const UINT simulatable = m_pTab->HasToolpaths(m_pTab->AllOperationsIn(ref)) ? MF_ENABLED : MF_GRAYED;
     const UINT suppressedCheck = (onStep && m_pTab->IsSuppressed(ref)) ? MF_CHECKED : MF_UNCHECKED;
 
     CMenu menu;
@@ -3584,6 +3783,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         menu.AppendMenu(MF_SEPARATOR);
         menu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
         menu.AppendMenu(MF_STRING | clearable, ID_CAM_CLEAR_TOOLPATHS, L"Clear Toolpaths");
+        menu.AppendMenu(MF_STRING | simulatable, ID_CAM_SIMULATE, L"Simulate...");
         menu.AppendMenu(MF_STRING | generatable, ID_CAM_POST, L"Post...");
     }
     else if (onStep && m_pTab->IsOperation(ref))
@@ -3596,6 +3796,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         menu.AppendMenu(MF_SEPARATOR);
         menu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
         menu.AppendMenu(MF_STRING | clearable, ID_CAM_CLEAR_TOOLPATHS, L"Clear Toolpath");
+        menu.AppendMenu(MF_STRING | simulatable, ID_CAM_SIMULATE, L"Simulate...");
     }
     else
     {
@@ -3615,6 +3816,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
             menu.AppendMenu(MF_SEPARATOR);
             menu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
             menu.AppendMenu(MF_STRING | clearable, ID_CAM_CLEAR_TOOLPATHS, L"Clear Toolpaths");
+            menu.AppendMenu(MF_STRING | simulatable, ID_CAM_SIMULATE, L"Simulate...");
             menu.AppendMenu(MF_STRING | generatable, ID_CAM_POST, L"Post...");
         }
     }
@@ -3646,6 +3848,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     case ID_CAM_SUPPRESS_STEP: m_pTab->ToggleSuppressed(ref); break;
     case ID_CAM_GENERATE:    m_pTab->Generate(ref); break;
     case ID_CAM_CLEAR_TOOLPATHS: m_pTab->ClearToolpaths(m_pTab->AllOperationsIn(ref)); break;
+    case ID_CAM_SIMULATE:    m_pTab->Simulate(ref); break;
     case ID_CAM_POST:        m_pTab->Post(ref); break;
     default:                 break;
     }

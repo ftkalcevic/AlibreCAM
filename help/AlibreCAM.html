@@ -74,6 +74,7 @@
   <a href="#set-origin">Set Origin</a>
   <a href="#post">Post</a>
   <a href="#operation">Operation dialog</a>
+  <a href="#simulation">Simulation</a>
   <h2>Operation tabs</h2>
   <a href="#tab-features">Features</a>
   <a href="#tab-tool">Tool</a>
@@ -136,7 +137,7 @@
   <dt>Operation</dt>
   <dd>A machining operation: Drill, Hole Pocketing, Facing, Profiling or Pocketing. Double-click it, or use Edit, to open the <a href="#operation">Operation dialog</a>. Selecting an operation draws its toolpath in bold and its picked geometry in orange.</dd>
   <dt>Choosing several operations</dt>
-  <dd>Ctrl+click operations to choose several, even in different folders; Ctrl+click a chosen one again to take it off. Shift+click chooses every operation between the last one clicked and this one. A plain click goes back to one. Right-click a chosen operation for <strong>Edit N Operations</strong>, which edits them together (see the <a href="#operation">Operation dialog</a>), <strong>Generate</strong>, which generates them all, or <strong>Clear Toolpaths</strong>. Double-clicking a chosen one edits them together too.</dd>
+  <dd>Ctrl+click operations to choose several, even in different folders; Ctrl+click a chosen one again to take it off. Shift+click chooses every operation between the last one clicked and this one. A plain click goes back to one. Right-click a chosen operation for <strong>Edit N Operations</strong>, which edits them together (see the <a href="#operation">Operation dialog</a>), <strong>Generate</strong>, which generates them all, <strong>Clear Toolpaths</strong>, or <strong>Simulate</strong>. Double-clicking a chosen one edits them together too.</dd>
   <dt>Suppressed items</dt>
   <dd>Shown grey, with their toolpaths drawn thin and grey. A suppressed Set Origin is skipped, and suppressed operations are left out of Generate and Post.</dd>
 </dl>
@@ -175,6 +176,8 @@
   <dd>Calculates the toolpaths of the chosen operation, folder, or every operation. Problems are reported in the status area.</dd>
   <dt>Clear Toolpath / Clear Toolpaths</dt>
   <dd>Throws away the generated toolpaths of the chosen operation, folder, or every operation (suppressed ones too), and Facing's boundaries, so nothing is drawn until Generate runs again. Greyed when there's nothing to clear. The job then has unsaved changes.</dd>
+  <dt>Simulate</dt>
+  <dd>Plays the generated toolpaths of the chosen operation, folder, or every operation against the stock, in the <a href="#simulation">Simulation</a> dialog. It needs a stock. Greyed when nothing in scope has a toolpath.</dd>
   <dt>Post</dt>
   <dd>Writes the toolpaths of a folder or every operation as a program for the machine, through the <a href="#post">Post</a> dialog. Every operation must have been generated first.</dd>
 </dl>
@@ -187,6 +190,35 @@
   <dd>Draws the toolpaths and origin again. Use it after a native Alibre command, such as Measure, has ended the CAM display.</dd>
   <dt>Save</dt>
   <dd>Saves the job to its <code>.cam</code> file beside the assembly.</dd>
+</dl>
+</section>
+
+<section id="simulation">
+<h2>Simulation</h2>
+<p>Plays the generated toolpaths against the stock in Alibre's view, cutting it a move at a time. The stock is a grid of small cubes (cells) over its box, shown shaded in place of its outline; a cell is cut away when its centre falls inside the tool. Each tool cuts with its own shape: flat, ball, corner radius, V, chamfer, taper and drill ends (a thread mill as a plain cylinder). The tool is drawn in yellow where it is. Operations run in the sequence's order, each in its own Set Origin's direction, so tilted origins cut along their tool axis. The holder isn't modelled, and nothing is checked against the parts yet. Open it with Simulate on the CAM tab's right-click menus; it needs a stock, and operations with no toolpath, origin or tool are left out (the dialog says which).</p>
+<dl>
+  <dt>Position</dt>
+  <dd>The operation being cut, and the move of all the moves. Arcs are split into short straight moves.</dd>
+  <dt>Scrub bar</dt>
+  <dd>Drag to any point in the program. When you let go, the stock is cut to there (going back starts again from the whole stock, which can take a moment).</dd>
+  <dt>Rewind</dt>
+  <dd>Back to the start, with the stock whole again.</dd>
+  <dt>Step</dt>
+  <dd>Cuts one move.</dd>
+  <dt>Play / Pause</dt>
+  <dd>Cuts moves continuously at the speed set, redrawing as it goes, until the end or a warning.</dd>
+  <dt>To Op End</dt>
+  <dd>Cuts to the end of the current operation.</dd>
+  <dt>To End</dt>
+  <dd>Cuts everything that's left.</dd>
+  <dt>Speed</dt>
+  <dd>How many moves are cut at each step while playing, from 1 to 500.</dd>
+  <dt>Cells</dt>
+  <dd>The cell size and the grid's size. Smaller stock gets smaller cells; the grid is kept to about 200 million cells.</dd>
+  <dt>Warning</dt>
+  <dd>A rapid move that would cut stock stops the simulation and is drawn in thick red, naming the operation and its toolpath move. Play, Step or the other buttons carry on from there.</dd>
+  <dt>Close</dt>
+  <dd>Ends the simulation. The stock is drawn as its outline again.</dd>
 </dl>
 </section>
 

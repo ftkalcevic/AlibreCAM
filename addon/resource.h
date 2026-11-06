@@ -212,6 +212,7 @@
 #define IDB_CAM_TREE_16                 13038
 #define IDB_CAM_TREE_24                 13039
 #define IDB_CAM_TREE_32                 13040
+#define IDD_SIMULATION                  13041
 #define IDD_SETTINGS                    13030
 #define IDD_STOCK_BOX                   13031
 #define IDD_STOCK_PART_BOX              13032
@@ -295,6 +296,17 @@
 #define IDC_CHAMFER_MAX_DEPTH           13368
 #define IDC_ENGRAVE_RETURN              13369
 #define IDC_ENGRAVE_STAY_DOWN           13370
+#define IDC_SIM_STATUS                  13371
+#define IDC_SIM_POSITION                13372
+#define IDC_SIM_REWIND                  13373
+#define IDC_SIM_STEP                    13374
+#define IDC_SIM_PLAY                    13375
+#define IDC_SIM_OPERATION_END           13376
+#define IDC_SIM_END                     13377
+#define IDC_SIM_SPEED                   13378
+#define IDC_SIM_SPEED_TEXT              13379
+#define IDC_SIM_INFO                    13380
+#define IDC_SIM_WARNING                 13381
 #define IDC_HP_AT_TOP                   13266
 #define IDC_HP_AT_BOTTOM                13267
 #define IDC_HP_PICK_TOP                 13268
@@ -330,9 +342,9 @@
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13041
+#define _APS_NEXT_RESOURCE_VALUE        13042
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13371
+#define _APS_NEXT_CONTROL_VALUE         13382
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif
