@@ -34,6 +34,7 @@ these belong in the spec (`docs\SPEC.md`) once they're made.
 - More details in tool
 - Add material page
 - Add default settings for tool + material.
+    - spindle speed will vary from machine to machine - do tools belong with the machine?
 - Allow selection of the default speeds/feeds from tool
 - New dialogs should inherit speed/feeds for the last (?)  copy/paste(?)
 - Bulk edit - select multiple operations and edit common features - tool, speeds/feeds, etc
