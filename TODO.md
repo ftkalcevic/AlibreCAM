@@ -5,8 +5,6 @@ these belong in the spec (`docs\SPEC.md`) once they're made.
 
 - Operations
   - Thread milling
-  - 🔴 Chamfer
-  - 🔴 Engrave
   - 🔴 V-carve
   - 4th axis rotate(?), or do we just set the origin
   - 3D
