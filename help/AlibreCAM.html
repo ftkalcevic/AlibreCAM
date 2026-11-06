@@ -85,6 +85,7 @@
   <a href="#tab-facing">Facing</a>
   <a href="#tab-profiling">Profiling</a>
   <a href="#tab-chamfering">Chamfering</a>
+  <a href="#tab-engraving">Engraving</a>
   <a href="#tab-pocketing">Pocketing</a>
   <a href="#tab-hole-pocketing">Hole Pocketing</a>
   <a href="#tab-drilling">Drilling</a>
@@ -135,7 +136,7 @@
   <dt>Operation</dt>
   <dd>A machining operation: Drill, Hole Pocketing, Facing, Profiling or Pocketing. Double-click it, or use Edit, to open the <a href="#operation">Operation dialog</a>. Selecting an operation draws its toolpath in bold and its picked geometry in orange.</dd>
   <dt>Choosing several operations</dt>
-  <dd>Ctrl+click operations to choose several, even in different folders; Ctrl+click a chosen one again to take it off. Shift+click chooses every operation between the last one clicked and this one. A plain click goes back to one. Right-click a chosen operation for <strong>Edit N Operations</strong>, which edits them together (see the <a href="#operation">Operation dialog</a>), or <strong>Generate</strong>, which generates them all. Double-clicking a chosen one edits them together too.</dd>
+  <dd>Ctrl+click operations to choose several, even in different folders; Ctrl+click a chosen one again to take it off. Shift+click chooses every operation between the last one clicked and this one. A plain click goes back to one. Right-click a chosen operation for <strong>Edit N Operations</strong>, which edits them together (see the <a href="#operation">Operation dialog</a>), <strong>Generate</strong>, which generates them all, or <strong>Clear Toolpaths</strong>. Double-clicking a chosen one edits them together too.</dd>
   <dt>Suppressed items</dt>
   <dd>Shown grey, with their toolpaths drawn thin and grey. A suppressed Set Origin is skipped, and suppressed operations are left out of Generate and Post.</dd>
 </dl>
@@ -158,6 +159,8 @@
   <dd>Adds a Pocketing operation: clears the area inside closed loops.</dd>
   <dt>Add 2 1/2 Axis ▸ Chamfer</dt>
   <dd>Adds a Chamfer operation: cuts a chamfer along edges with a V-mill or chamfer mill.</dd>
+  <dt>Add 2 1/2 Axis ▸ Engrave</dt>
+  <dd>Adds an Engrave operation: the tool's centre follows lines, such as text or a scribed outline.</dd>
   <dt>Edit</dt>
   <dd>Opens the step's dialog.</dd>
   <dt>Rename</dt>
@@ -170,6 +173,8 @@
   <dd>Removes the step (a folder with its operations).</dd>
   <dt>Generate</dt>
   <dd>Calculates the toolpaths of the chosen operation, folder, or every operation. Problems are reported in the status area.</dd>
+  <dt>Clear Toolpath / Clear Toolpaths</dt>
+  <dd>Throws away the generated toolpaths of the chosen operation, folder, or every operation (suppressed ones too), and Facing's boundaries, so nothing is drawn until Generate runs again. Greyed when there's nothing to clear. The job then has unsaved changes.</dd>
   <dt>Post</dt>
   <dd>Writes the toolpaths of a folder or every operation as a program for the machine, through the <a href="#post">Post</a> dialog. Every operation must have been generated first.</dd>
 </dl>
@@ -432,6 +437,7 @@
   <li><strong>Profiling</strong>: Cut Levels, Entry/Exit, Profiling.</li>
   <li><strong>Pocketing</strong>: Cut Levels, Entry/Exit, Pocketing.</li>
   <li><strong>Chamfer</strong>: Entry/Exit, Chamfering. It has no Cut Levels tab: its depth comes from the chamfer.</li>
+  <li><strong>Engrave</strong>: Cut Levels, Entry/Exit, Engraving.</li>
 </ul>
 <p>Pressing <strong>?</strong> opens the help for the tab that's showing.</p>
 <p><strong>Editing several operations together.</strong> With several operations chosen in the tree, the dialog shows only the tabs they all have: Tool, Feeds &amp; Speeds and Clearance; Cut Levels and Entry/Exit when they're all Facing, Profiling or Pocketing; and their own tab when they're all the same kind. Features aren't shown, as each operation's geometry is its own. A box that's empty, a group with no choice, or a check box neither on nor off means the operations differ there. Only the fields you change are written to every operation; everything else keeps each operation's own value. If a change doesn't suit an operation, OK names it and nothing is changed. Name and Generate aren't available, and Pick and Locate work only when the operations all run under the same Set Origin.</p>
@@ -658,6 +664,17 @@
   <dd><span class="tbc">To be completed.</span> Not used yet.</dd>
   <dt>Total Cut Width and Step/Cut</dt>
   <dd>Several passes side by side at each depth: they start the width further out and step in, no more than Step/Cut apart. A width of 0 is one pass.</dd>
+</dl>
+</section>
+
+<section id="tab-engraving">
+<h2>Engraving tab</h2>
+<p>How Engrave cuts. The tool's centre follows the lines exactly, with no offset, at each level from the Cut Levels tab. The lines come from the Features tab: an edge is itself, and a face gives every one of its edges, holes included. The lines needn't close. Edges whose ends meet are joined into one line, turned round where needed, so the tool stays down along them; where more than two meet, the line carries on along the earliest in the Features list and the rest start lines of their own. Lines are cut in turn, each to its full depth, unless Cut Levels says Level First.</p>
+<dl>
+  <dt>Cut traversal between Cut levels: Lift and return to the start</dt>
+  <dd>Every level runs each line the same way: at the end the tool lifts to the clearance plane, goes back to the line's start, and comes down to the next level. Each level has its entry and exit, or only the first and last, as the Entry/Exit tab says.</dd>
+  <dt>Cut traversal between Cut levels: Stay down and run back</dt>
+  <dd>At the end of a line the tool goes straight down to the next level where it is, at the plunge feed, and runs back the other way. A closed loop carries on round the same way, going down at its start. The entry is before the first level and the exit after the last. With Level First on the Cut Levels tab, every cut lifts and returns to the start instead.</dd>
 </dl>
 </section>
 

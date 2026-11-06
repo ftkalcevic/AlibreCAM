@@ -920,7 +920,7 @@ namespace
 }
 
 bool ReadFeatureOutline(IADSession* pAssembly, const PickedGeometry& feature, std::vector<camcore::Path>& pieces,
-                        std::wstring& problem)
+                        std::wstring& problem, bool allLoops)
 {
     pieces.clear();
     problem.clear();
@@ -935,7 +935,7 @@ bool ReadFeatureOutline(IADSession* pAssembly, const PickedGeometry& feature, st
             return false;
         }
 
-        // A face's outline is its outer loop's edges. An edge is itself.
+        // A face's outline is its outer loop's edges, or every loop's. An edge is itself.
         std::vector<IADEdgePtr> edges;
         if (IADFacePtr face = QI<IADFacePtr>(target))
         {
@@ -944,7 +944,7 @@ bool ReadFeatureOutline(IADSession* pAssembly, const PickedGeometry& feature, st
             for (long i = 0; i < loopCount; ++i)
             {
                 IADLoopPtr loop = loops->GetItem(i);
-                if (loop->GetIsOuter() == VARIANT_FALSE)
+                if (!allLoops && loop->GetIsOuter() == VARIANT_FALSE)
                     continue;
                 IADEdgesPtr loopEdges = loop->GetEdges();
                 const long edgeCount = (loopEdges != nullptr) ? loopEdges->GetCount() : 0;

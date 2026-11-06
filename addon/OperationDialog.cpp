@@ -31,6 +31,7 @@ namespace
         case StepType::Profiling: return L"Profiling";
         case StepType::Pocketing: return L"Pocketing";
         case StepType::Chamfer: return L"Chamfer";
+        case StepType::Engrave: return L"Engrave";
         case StepType::HolePocketing: return L"Hole Pocketing";
         default:               return L"Operation";
         }
@@ -1733,6 +1734,31 @@ CProfilingPage::CProfilingPage(UINT templateId, COperationDlg* pOwner)
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// CEngravingPage
+
+CEngravingPage::CEngravingPage(COperationDlg* pOwner)
+    : COperationPage(IDD_OP_ENGRAVING, pOwner)
+{
+}
+
+void CEngravingPage::Load(const SequenceStep& step)
+{
+    CheckRadioButton(IDC_ENGRAVE_RETURN, IDC_ENGRAVE_STAY_DOWN,
+                     step.engraving.traversal == EngraveTraversal::StayDown ? IDC_ENGRAVE_STAY_DOWN
+                                                                             : IDC_ENGRAVE_RETURN);
+}
+
+bool CEngravingPage::Save(SequenceStep& step, std::wstring& /*problems*/)
+{
+    // In a bulk edit neither may be chosen, which keeps the operation's own.
+    if (IsDlgButtonChecked(IDC_ENGRAVE_STAY_DOWN) == BST_CHECKED)
+        step.engraving.traversal = EngraveTraversal::StayDown;
+    else if (IsDlgButtonChecked(IDC_ENGRAVE_RETURN) == BST_CHECKED)
+        step.engraving.traversal = EngraveTraversal::ReturnToStart;
+    return true;
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // CChamferingPage
 
 CChamferingPage::CChamferingPage(COperationDlg* pOwner)
@@ -2519,6 +2545,7 @@ void COperationDlg::OnHelpButton()
                              : (page == IDD_OP_FACING)         ? L"tab-facing"
                              : (page == IDD_OP_PROFILING)      ? L"tab-profiling"
                              : (page == IDD_OP_CHAMFERING)     ? L"tab-chamfering"
+                             : (page == IDD_OP_ENGRAVING)      ? L"tab-engraving"
                              : (page == IDD_OP_POCKETING)      ? L"tab-pocketing"
                              : (page == IDD_OP_HOLE_POCKETING) ? L"tab-hole-pocketing"
                              : (page == IDD_OP_DRILLING)       ? L"tab-drilling"
@@ -2560,6 +2587,7 @@ std::unique_ptr<COperationPage> COperationDlg::MakePage(UINT templateId)
     case IDD_OP_FACING:         return std::make_unique<CFacingPage>(this);
     case IDD_OP_PROFILING:      return std::make_unique<CProfilingPage>(this);
     case IDD_OP_CHAMFERING:     return std::make_unique<CChamferingPage>(this);
+    case IDD_OP_ENGRAVING:      return std::make_unique<CEngravingPage>(this);
     case IDD_OP_POCKETING:      return std::make_unique<CPocketingPage>(this);
     case IDD_OP_DRILLING:       return std::make_unique<CDrillingPage>(this);
     case IDD_OP_HOLE_POCKETING: return std::make_unique<CHolePocketingPage>(this);
@@ -2595,11 +2623,12 @@ BOOL COperationDlg::OnInitDialog()
     // The tabs every chosen operation has. One operation has all of its own.
     const auto isArea = [](StepType type) {
         return type == StepType::Facing || type == StepType::Profiling || type == StepType::Pocketing ||
-               type == StepType::Chamfer;
+               type == StepType::Chamfer || type == StepType::Engrave;
     };
     // Chamfer has no Cut Levels tab: its depth comes from the chamfer.
     const auto hasLevels = [](StepType type) {
-        return type == StepType::Facing || type == StepType::Profiling || type == StepType::Pocketing;
+        return type == StepType::Facing || type == StepType::Profiling || type == StepType::Pocketing ||
+               type == StepType::Engrave;
     };
     bool sameType = true;
     bool allArea = isArea(m_step.type);
@@ -2637,6 +2666,7 @@ BOOL COperationDlg::OnInitDialog()
     // Drill, Hole Pocketing, Facing, Profiling and Pocketing have no Sorting tab.
     if (!bulk && m_step.type != StepType::Drill && m_step.type != StepType::Facing &&
         m_step.type != StepType::Profiling && m_step.type != StepType::Pocketing && m_step.type != StepType::Chamfer &&
+        m_step.type != StepType::Engrave &&
         m_step.type != StepType::HolePocketing)
         AddPage(L"Sorting", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
 
@@ -2665,6 +2695,8 @@ BOOL COperationDlg::OnInitDialog()
             AddPage(L"Chamfering", std::make_unique<CChamferingPage>(this));
         else if (sameType && m_step.type == StepType::Pocketing)
             AddPage(L"Pocketing", std::make_unique<CPocketingPage>(this));
+        else if (sameType && m_step.type == StepType::Engrave)
+            AddPage(L"Engraving", std::make_unique<CEngravingPage>(this));
     }
     else if (!sameType)
     {
@@ -2860,7 +2892,8 @@ FeatureFilter COperationDlg::GetFeatureFilter() const
     // Each operation type has its own filter. Drill needs points, and Facing faces and edges.
     // Profiling and Pocketing borrow Facing's until their own are decided.
     const bool area = m_step.type == StepType::Facing || m_step.type == StepType::Profiling ||
-                      m_step.type == StepType::Pocketing || m_step.type == StepType::Chamfer;
+                      m_step.type == StepType::Pocketing || m_step.type == StepType::Chamfer ||
+                      m_step.type == StepType::Engrave;
     return area ? FeatureFilter::FacingArea : FeatureFilter::Points;
 }
 

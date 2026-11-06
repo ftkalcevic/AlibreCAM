@@ -884,6 +884,28 @@ namespace camcore
         }
 
         // Profiling saved before the Profiling tab existed has the defaults.
+        json WriteEngraving(const EngravingSettings& engraving)
+        {
+            return { { "traversal",
+                       engraving.traversal == EngraveTraversal::StayDown ? "stayDown" : "returnToStart" } };
+        }
+
+        bool ReadEngraving(const json& step, EngravingSettings& engraving)
+        {
+            engraving = EngravingSettings();
+            const auto item = step.find("engraving");
+            if (item == step.end())
+                return true;
+            std::string traversal;
+            if (!item->is_object() || !ReadString(*item, "traversal", traversal))
+                return false;
+            if (traversal == "stayDown")
+                engraving.traversal = EngraveTraversal::StayDown;
+            else if (traversal != "returnToStart")
+                return false;
+            return true;
+        }
+
         json WriteChamfer(const ChamferSettings& chamfer)
         {
             return { { "width", chamfer.width }, { "tipClearance", chamfer.tipClearance },
@@ -1353,6 +1375,13 @@ namespace camcore
                          { "cutLevels", WriteCutLevels(step.cutLevels) }, { "entryExit", WriteEntryExit(step.entryExit) },
                          { "profiling", WriteProfiling(step.profiling) } };
 
+            if (step.type == StepType::Engrave)
+                return { { "type", "engrave" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
+                         { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
+                         { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
+                         { "cutLevels", WriteCutLevels(step.cutLevels) }, { "entryExit", WriteEntryExit(step.entryExit) },
+                         { "engraving", WriteEngraving(step.engraving) } };
+
             if (step.type == StepType::Chamfer)
                 return { { "type", "chamfer" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
                          { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
@@ -1445,6 +1474,15 @@ namespace camcore
                        ReadClearance(item, step.clearance);
             }
 
+            if (type == "engrave")
+            {
+                step.type = StepType::Engrave;
+                return ReadTool(item, step.toolId) && ReadFeeds(item, step.feeds) && ReadToolpath(item, step.toolpath) &&
+                       ReadFeatures(item, step.features) && ReadCutLevels(item, step.cutLevels) &&
+                       ReadEntryExit(item, step.entryExit) && ReadEngraving(item, step.engraving) &&
+                       ReadClearance(item, step.clearance);
+            }
+
             if (type == "chamfer")
             {
                 step.type = StepType::Chamfer;
@@ -1526,7 +1564,8 @@ namespace camcore
     bool IsOperation(StepType type)
     {
         return type == StepType::Drill || type == StepType::Facing || type == StepType::Profiling ||
-               type == StepType::Pocketing || type == StepType::HolePocketing || type == StepType::Chamfer;
+               type == StepType::Pocketing || type == StepType::HolePocketing || type == StepType::Chamfer ||
+               type == StepType::Engrave;
     }
 
     std::string NewStableId()
@@ -1583,7 +1622,7 @@ namespace camcore
         // simply don't have, so they read as they are. Version 4 added the stock
         // to the setup section; older files have none. Version 5 added the
         // machine and material, and stopped saving the tool library. Version 6
-        // added Chamfer operations.
+        // added Chamfer operations, and version 7 Engrave.
 
         const auto assembly = root.find("assembly");
         if (assembly == root.end() || !assembly->is_object())

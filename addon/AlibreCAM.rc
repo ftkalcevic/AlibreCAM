@@ -575,6 +575,16 @@ BEGIN
 
 END
 
+// The Engrave operation's Engraving tab.
+IDD_OP_ENGRAVING DIALOGEX 0, 0, 300, 176
+STYLE DS_SETFONT | DS_FIXEDSYS | DS_CONTROL | WS_CHILD
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    GROUPBOX        "Cut traversal between Cut levels",IDC_STATIC,4,2,220,44
+    CONTROL         "Lift and return to the start",IDC_ENGRAVE_RETURN,"Button",BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,12,16,200,10
+    CONTROL         "Stay down and run back",IDC_ENGRAVE_STAY_DOWN,"Button",BS_AUTORADIOBUTTON,12,30,200,10
+END
+
 // The Pocketing operation's Pocketing tab. The start point's two buttons are
 // renamed for Linear Cuts.
 IDD_OP_POCKETING DIALOGEX 0, 0, 300, 176

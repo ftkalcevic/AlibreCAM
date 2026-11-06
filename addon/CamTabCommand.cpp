@@ -9,6 +9,7 @@
 #include "FacingToolpath.h"
 #include "HolePocketToolpath.h"
 #include "PocketToolpath.h"
+#include "EngraveToolpath.h"
 #include "ProfileToolpath.h"
 #include "FileIO.h"
 #include "PostDialog.h"
@@ -63,6 +64,7 @@ namespace
         ID_CAM_ADD_PROFILING,
         ID_CAM_ADD_POCKETING,
         ID_CAM_ADD_CHAMFER,
+        ID_CAM_ADD_ENGRAVE,
         ID_CAM_EDIT_STEP,
         ID_CAM_STOCK_BOX,
         ID_CAM_STOCK_PART_BOX,
@@ -80,6 +82,7 @@ namespace
         ID_CAM_DUPLICATE_STEP,
         ID_CAM_SUPPRESS_STEP,
         ID_CAM_GENERATE,
+        ID_CAM_CLEAR_TOOLPATHS,
         ID_CAM_POST,
         ID_CAM_DELETE_STEP
     };
@@ -1046,6 +1049,7 @@ void CCamTabCommand::AddOperation(size_t folder, camcore::StepType type)
                                              : type == camcore::StepType::Profiling ? "Profiling"
                                              : type == camcore::StepType::Pocketing ? "Pocketing"
                                              : type == camcore::StepType::Chamfer ? "Chamfer"
+                                             : type == camcore::StepType::Engrave ? "Engrave"
                                              : type == camcore::StepType::HolePocketing ? "Hole Pocketing"
                                                                                     : "Drill");
 
@@ -1296,6 +1300,59 @@ void CCamTabCommand::Generate(const StepRef& scope)
     GenerateTargets(targets);
 }
 
+std::vector<StepRef> CCamTabCommand::AllOperationsIn(const StepRef& scope) const
+{
+    std::vector<StepRef> refs;
+    for (size_t i = 0; i < m_job.sequence.size(); ++i)
+    {
+        if (scope.step != StepRef::kNone && scope.step != i)
+            continue;
+        for (size_t c = 0; c < m_job.sequence[i].children.size(); ++c)
+        {
+            if (!scope.IsOperation() || scope.child == c)
+                refs.push_back(StepRef{ i, c });
+        }
+    }
+    return refs;
+}
+
+bool CCamTabCommand::HasToolpaths(const std::vector<StepRef>& refs) const
+{
+    for (const StepRef& ref : refs)
+    {
+        const camcore::SequenceStep* pStep = FindStep(ref);
+        if (pStep != nullptr && (!pStep->toolpath.moves.empty() || !pStep->boundaries.empty()))
+            return true;
+    }
+    return false;
+}
+
+void CCamTabCommand::ClearToolpaths(const std::vector<StepRef>& refs)
+{
+    if (!CanEditSequence())
+        return;
+
+    size_t cleared = 0;
+    for (const StepRef& ref : refs)
+    {
+        camcore::SequenceStep* pStep = FindStep(ref);
+        if (pStep == nullptr || !camcore::IsOperation(pStep->type) ||
+            (pStep->toolpath.moves.empty() && pStep->boundaries.empty()))
+            continue;
+        pStep->toolpath = camcore::Toolpath();
+        pStep->boundaries.clear();
+        ++cleared;
+    }
+    if (cleared == 0)
+        return;
+
+    Log(L"[generate] cleared %zu toolpaths", cleared);
+    MarkJobChanged();
+    RebuildScene();
+    m_sequenceStatus = L"Cleared " + std::to_wstring(cleared) + (cleared == 1 ? L" toolpath." : L" toolpaths.");
+    ShowStatus();
+}
+
 void CCamTabCommand::GenerateOperations(const std::vector<StepRef>& refs)
 {
     AFX_MANAGE_STATE(AfxGetStaticModuleState());
@@ -1525,7 +1582,7 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
     camcore::SequenceStep& operation = m_job.sequence[target.step].children[target.child];
     if (operation.type != camcore::StepType::Drill && operation.type != camcore::StepType::Facing &&
         operation.type != camcore::StepType::Profiling && operation.type != camcore::StepType::Pocketing &&
-        operation.type != camcore::StepType::Chamfer &&
+        operation.type != camcore::StepType::Chamfer && operation.type != camcore::StepType::Engrave &&
         operation.type != camcore::StepType::HolePocketing)
     {
         problem = "Toolpaths for this operation aren't built yet.";
@@ -1584,12 +1641,14 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
     // Each feature's outline, read again from the model, in the origin's frame
     // with arcs' axes too, in the Features list's order.
     std::vector<std::vector<camcore::Path>> outlines;
+    // Engrave follows every edge of a face, holes too.
+    const bool allLoops = operation.type == camcore::StepType::Engrave;
     auto readOutlines = [&]() {
         for (const camcore::PickedGeometry& feature : operation.features)
         {
             std::vector<camcore::Path> outline;
             std::wstring outlineProblem;
-            if (!ReadFeatureOutline(GetSession(), feature, outline, outlineProblem))
+            if (!ReadFeatureOutline(GetSession(), feature, outline, outlineProblem, allLoops))
             {
                 problem = ToUtf8(outlineProblem);
                 return false;
@@ -1640,6 +1699,39 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
     auto areaName = [&](size_t n, const char* kind) {
         return (areas.areas.size() > 1) ? std::string(kind) + " " + std::to_string(n + 1) + ": " : std::string();
     };
+
+    // Engrave joins every piece it can into lines, faces and edges alike, and
+    // the tool's centre follows them.
+    if (operation.type == camcore::StepType::Engrave)
+    {
+        if (!gatherAreas("Engrave"))
+            return false;
+        std::vector<camcore::Path> pieces;
+        for (const auto& area : areas.areas)
+        {
+            for (const std::vector<camcore::Path>& featurePieces : area)
+                pieces.insert(pieces.end(), featurePieces.begin(), featurePieces.end());
+        }
+
+        camcore::EngraveToolpathInput engraveInput;
+        engraveInput.operation = &operation;
+        engraveInput.tool = (pTool != nullptr) ? &tool : nullptr;
+        engraveInput.havePartMaxZ = havePartMaxZ;
+        engraveInput.partMaxZ = partMaxZ;
+        engraveInput.haveStockMaxZ = haveStockMaxZ;
+        engraveInput.stockMaxZ = stockMaxZ;
+        engraveInput.lines = camcore::JoinEngraveLines(pieces, areas.level);
+        Log(L"[generate] %zu pieces joined into %zu lines", pieces.size(), engraveInput.lines.size());
+
+        const camcore::ToolpathResult engraveResult = camcore::GenerateEngraveToolpath(engraveInput);
+        if (!engraveResult.ok)
+        {
+            problem = engraveResult.problem;
+            return false;
+        }
+        operation.toolpath = engraveResult.toolpath;
+        return true;
+    }
 
     // Profiling joins each area's pieces end to end into a profile, then follows
     // it. A chamfer does the same with a V-mill or chamfer mill.
@@ -3252,6 +3344,8 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         bulkMenu.AppendMenu(MF_STRING | editable, ID_CAM_EDIT_STEP, editText.c_str());
         bulkMenu.AppendMenu(MF_SEPARATOR);
         bulkMenu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
+        bulkMenu.AppendMenu(MF_STRING | ((editable == MF_ENABLED && m_pTab->HasToolpaths(chosen)) ? MF_ENABLED : MF_GRAYED),
+                            ID_CAM_CLEAR_TOOLPATHS, L"Clear Toolpaths");
 
         CPoint at;
         ::GetCursorPos(&at);
@@ -3264,6 +3358,8 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
             m_pTab->EditOperations(chosen);
         else if (chosenCommand == ID_CAM_GENERATE)
             m_pTab->GenerateOperations(chosen);
+        else if (chosenCommand == ID_CAM_CLEAR_TOOLPATHS)
+            m_pTab->ClearToolpaths(chosen);
         return;
     }
 
@@ -3361,6 +3457,8 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     const UINT duplicable = m_pTab->CanDrag(ref) ? MF_ENABLED : MF_GRAYED;
     const UINT generatable = m_pTab->CanGenerate() ? MF_ENABLED : MF_GRAYED;
     const UINT suppressible = (onStep && m_pTab->CanSuppress(ref)) ? MF_ENABLED : MF_GRAYED;
+    const UINT clearable =
+        (m_pTab->CanEditSequence() && m_pTab->HasToolpaths(m_pTab->AllOperationsIn(ref))) ? MF_ENABLED : MF_GRAYED;
     const UINT suppressedCheck = (onStep && m_pTab->IsSuppressed(ref)) ? MF_CHECKED : MF_UNCHECKED;
 
     CMenu menu;
@@ -3385,10 +3483,12 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         twoAndAHalfAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_PROFILING, L"Profiling...");
         twoAndAHalfAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_POCKETING, L"Pocketing...");
         twoAndAHalfAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_CHAMFER, L"Chamfer...");
+        twoAndAHalfAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_ENGRAVE, L"Engrave...");
         menu.AppendMenu(MF_POPUP | editable, reinterpret_cast<UINT_PTR>(twoAndAHalfAxis.GetSafeHmenu()),
                         L"Add 2 1/2 Axis");
         menu.AppendMenu(MF_SEPARATOR);
         menu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
+        menu.AppendMenu(MF_STRING | clearable, ID_CAM_CLEAR_TOOLPATHS, L"Clear Toolpaths");
         menu.AppendMenu(MF_STRING | generatable, ID_CAM_POST, L"Post...");
     }
     else if (onStep && m_pTab->IsOperation(ref))
@@ -3400,6 +3500,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         menu.AppendMenu(MF_STRING | suppressible | suppressedCheck, ID_CAM_SUPPRESS_STEP, L"Suppress");
         menu.AppendMenu(MF_SEPARATOR);
         menu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
+        menu.AppendMenu(MF_STRING | clearable, ID_CAM_CLEAR_TOOLPATHS, L"Clear Toolpath");
     }
     else
     {
@@ -3418,6 +3519,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         {
             menu.AppendMenu(MF_SEPARATOR);
             menu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
+            menu.AppendMenu(MF_STRING | clearable, ID_CAM_CLEAR_TOOLPATHS, L"Clear Toolpaths");
             menu.AppendMenu(MF_STRING | generatable, ID_CAM_POST, L"Post...");
         }
     }
@@ -3441,12 +3543,14 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     case ID_CAM_ADD_PROFILING: m_pTab->AddOperation(ref.step, camcore::StepType::Profiling); break;
     case ID_CAM_ADD_POCKETING: m_pTab->AddOperation(ref.step, camcore::StepType::Pocketing); break;
     case ID_CAM_ADD_CHAMFER: m_pTab->AddOperation(ref.step, camcore::StepType::Chamfer); break;
+    case ID_CAM_ADD_ENGRAVE: m_pTab->AddOperation(ref.step, camcore::StepType::Engrave); break;
     case ID_CAM_EDIT_STEP:   m_pTab->EditStep(ref); break;
     case ID_CAM_RENAME_STEP: m_tree.EditLabel(hItem); break;
     case ID_CAM_DELETE_STEP: m_pTab->DeleteStep(ref); break;
     case ID_CAM_DUPLICATE_STEP: m_pTab->DuplicateStep(ref); break;
     case ID_CAM_SUPPRESS_STEP: m_pTab->ToggleSuppressed(ref); break;
     case ID_CAM_GENERATE:    m_pTab->Generate(ref); break;
+    case ID_CAM_CLEAR_TOOLPATHS: m_pTab->ClearToolpaths(m_pTab->AllOperationsIn(ref)); break;
     case ID_CAM_POST:        m_pTab->Post(ref); break;
     default:                 break;
     }

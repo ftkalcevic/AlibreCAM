@@ -12,6 +12,7 @@
 #include "Clearance.h"
 #include "CutLevels.h"
 #include "Drill.h"
+#include "Engraving.h"
 #include "EntryExit.h"
 #include "Facing.h"
 #include "Feeds.h"
@@ -26,7 +27,7 @@ namespace camcore
 {
     // The newest .cam format this build can read and the one it writes.
     // Version 2 added Set Origin steps and groups to the sequence.
-    constexpr int kCamFormatVersion = 6;
+    constexpr int kCamFormatVersion = 7;
 
     // Which assembly a job belongs to. The GUID comes from the assembly file,
     // and is empty if it couldn't be read.
@@ -45,7 +46,8 @@ namespace camcore
         Profiling,      // an operation, 2 1/2 axis profiling
         Pocketing,      // an operation, 2 1/2 axis pocketing
         HolePocketing,  // an operation: round holes cut with an end mill on a spiral
-        Chamfer         // an operation: a chamfer along edges, with Profiling's settings too
+        Chamfer,        // an operation: a chamfer along edges, with Profiling's settings too
+        Engrave         // an operation: the tool's centre follows lines
     };
 
     bool IsOperation(StepType type);
@@ -93,6 +95,9 @@ namespace camcore
 
         // Chamfer operations only.
         ChamferSettings chamfer;
+
+        // Engrave operations only.
+        EngravingSettings engraving;
 
         // Pocketing operations only.
         PocketingSettings pocketing;

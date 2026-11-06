@@ -377,6 +377,18 @@ public:
     enum { IDD = IDD_OP_CHAMFERING };
 };
 
+// The Engrave operation's own tab: how the tool gets between cut levels.
+class CEngravingPage : public COperationPage
+{
+public:
+    explicit CEngravingPage(COperationDlg* pOwner);
+
+    void Load(const camcore::SequenceStep& step) override;
+    bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
+
+    enum { IDD = IDD_OP_ENGRAVING };
+};
+
 // The Pocketing operation's own tab.
 class CPocketingPage : public COperationPage
 {

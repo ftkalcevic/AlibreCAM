@@ -83,6 +83,7 @@
     <ClCompile Include="Profiling.cpp" />
     <ClCompile Include="ProgramSettings.cpp" />
     <ClCompile Include="Stock.cpp" />
+    <ClCompile Include="EngraveToolpath.cpp" />
     <ClCompile Include="Machine.cpp" />
     <ClCompile Include="Materials.cpp" />
     <ClCompile Include="ScriptedPost.cpp" />
@@ -108,6 +109,8 @@
     <ClInclude Include="Profiling.h" />
     <ClInclude Include="ProgramSettings.h" />
     <ClInclude Include="Stock.h" />
+    <ClInclude Include="Engraving.h" />
+    <ClInclude Include="EngraveToolpath.h" />
     <ClInclude Include="Machine.h" />
     <ClInclude Include="Materials.h" />
     <ClInclude Include="ToolJson.h" />

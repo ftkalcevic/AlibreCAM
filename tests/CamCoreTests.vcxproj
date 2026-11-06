@@ -75,6 +75,7 @@
     <ClCompile Include="StockTests.cpp" />
     <ClCompile Include="MachineTests.cpp" />
     <ClCompile Include="ChamferToolpathTests.cpp" />
+    <ClCompile Include="EngraveToolpathTests.cpp" />
     <ClCompile Include="FeatureTests.cpp" />
     <ClCompile Include="OriginTests.cpp" />
     <ClCompile Include="PostTests.cpp" />

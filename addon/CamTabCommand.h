@@ -99,6 +99,13 @@ public:
     bool CanGenerate() const;
     void Generate(const StepRef& scope);
 
+    // Every operation in scope, suppressed or not: all with no step, a folder's, or one.
+    std::vector<StepRef> AllOperationsIn(const StepRef& scope) const;
+
+    // Throws away generated toolpaths (and Facing's boundaries). True if any of the operations has one.
+    bool HasToolpaths(const std::vector<StepRef>& refs) const;
+    void ClearToolpaths(const std::vector<StepRef>& refs);
+
     // Several operations chosen in the tree with Ctrl or Shift: drawn as chosen,
     // edited together, or generated together.
     void SetChosenOperations(const std::vector<StepRef>& refs);
