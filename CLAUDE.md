@@ -15,6 +15,7 @@ The specification is `docs\SPEC.md`, a copy of the Claude doc at https://claude.
 - Before calling something in Alibre, check it against the 27.0.1 headers (see below). Check the log before asking Frank what happened.
 - Ask before making a product decision that isn't recorded here or in the spec. Propose options when you do.
 - When a decision changes, update the spec too.
+- Keep the help page, `help\AlibreCAM.html`, up to date in the same change as the code. When a dialog, tab, field, menu item, toolbar button or tree node is added, removed, renamed or behaves differently, update its section. Give every field a description, and write "To be completed." only where its behaviour isn't decided. A new dialog gets its own section and a ? button that opens it (`ShowHelp`). Say in the test list that the help changed, and reinstall so the installed copy matches.
 
 ## Locations
 
@@ -49,6 +50,7 @@ Target Alibre 27.0.1.27039. The API docs describe v29, so a documented call may 
 ## Conventions
 
 - Source files use CRLF line endings, except in `third_party\`.
+- Source files have no byte-order mark, so the compiler reads them as Windows-1252. Write non-ASCII characters in string literals as escapes, such as `L"°"` for a degree sign, never typed directly. Comments can use any character.
 - New add-on files go in both `addon\AlibreCAM.vcxproj` and its `.filters` file. New core files go in `core\CamCore.vcxproj`.
 - In `addon\resource.h`, resources and dialog controls use 13xxx IDs. Tab window controls use an enum from 14001 in `CamTabCommand.cpp`.
 - Entry points called from Alibre start with `AFX_MANAGE_STATE(AfxGetStaticModuleState())`, as do functions that open dialogs.

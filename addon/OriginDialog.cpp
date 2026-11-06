@@ -115,10 +115,10 @@ BOOL COriginDlg::OnInitDialog()
     SetDlgItemText(IDC_ORIGIN_NAME, FromUtf8(m_step.name).c_str());
 
     m_rotation.SubclassDlgItem(IDC_ORIGIN_X_ROTATION, this);
-    m_rotation.AddString(L"0°");
-    m_rotation.AddString(L"90°");
-    m_rotation.AddString(L"180°");
-    m_rotation.AddString(L"270°");
+    m_rotation.AddString(L"0\u00B0");
+    m_rotation.AddString(L"90\u00B0");
+    m_rotation.AddString(L"180\u00B0");
+    m_rotation.AddString(L"270\u00B0");
     m_rotation.SetCurSel(m_step.origin.options.xQuarterTurns);
 
     CheckDlgButton(IDC_ORIGIN_FLIP_Z, m_step.origin.options.flipZ ? BST_CHECKED : BST_UNCHECKED);
@@ -134,9 +134,9 @@ BOOL COriginDlg::OnInitDialog()
     ShowPicks();
     UpdatePreview();
 
-    // A new step starts by picking its plane.
+    // A new step waits for the user to click Pick, so nothing is picked by accident.
     if (m_step.origin.plane.kind == PickKind::None)
-        StartPicking(PickSlot::Plane);
+        SetDlgItemText(IDC_ORIGIN_PROMPT, L"Click Pick beside Plane (Z) to choose the plane.");
     return TRUE;
 }
 
