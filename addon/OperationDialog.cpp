@@ -3,6 +3,7 @@
 #include "stdafx.h"
 #include "AlibreCAM.h"
 #include "OperationDialog.h"
+#include "Help.h"
 #include "CamTabCommand.h"
 #include "ModelReader.h"
 #include "Log.h"
@@ -2193,10 +2194,34 @@ void CDrillingPage::ShowLocateNote(const std::wstring& text)
 // COperationDlg
 
 BEGIN_MESSAGE_MAP(COperationDlg, CDialog)
+    ON_BN_CLICKED(IDC_HELP_BUTTON, &COperationDlg::OnHelpButton)
     ON_NOTIFY(TCN_SELCHANGE, IDC_OP_TABS, &COperationDlg::OnTabChanged)
     ON_WM_CLOSE()
     ON_BN_CLICKED(IDC_OP_GENERATE, &COperationDlg::OnGenerate)
 END_MESSAGE_MAP()
+
+void COperationDlg::OnHelpButton()
+{
+    // The help for the tab that's showing.
+    const int index = m_tabs.GetCurSel();
+    const UINT page = (index >= 0 && static_cast<size_t>(index) < m_pages.size())
+                          ? m_pages[static_cast<size_t>(index)]->TemplateId()
+                          : 0;
+    const wchar_t* section = (page == IDD_OP_FEATURES)         ? L"tab-features"
+                             : (page == IDD_OP_TOOL)           ? L"tab-tool"
+                             : (page == IDD_OP_FEEDS)          ? L"tab-feeds"
+                             : (page == IDD_OP_CLEARANCE)      ? L"tab-clearance"
+                             : (page == IDD_OP_PAGE)           ? L"tab-sorting"
+                             : (page == IDD_OP_CUT_LEVELS)     ? L"tab-cut-levels"
+                             : (page == IDD_OP_ENTRY_EXIT)     ? L"tab-entry-exit"
+                             : (page == IDD_OP_FACING)         ? L"tab-facing"
+                             : (page == IDD_OP_PROFILING)      ? L"tab-profiling"
+                             : (page == IDD_OP_POCKETING)      ? L"tab-pocketing"
+                             : (page == IDD_OP_HOLE_POCKETING) ? L"tab-hole-pocketing"
+                             : (page == IDD_OP_DRILLING)       ? L"tab-drilling"
+                                                               : L"operation";
+    ShowHelp(section);
+}
 
 COperationDlg::COperationDlg(CCamTabCommand* pTab, const SequenceStep& step)
     : CDialog(IDD_OPERATION, nullptr)

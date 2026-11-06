@@ -3,6 +3,7 @@
 #include "stdafx.h"
 #include "AlibreCAM.h"
 #include "ToolDialogs.h"
+#include "Help.h"
 #include "ModelReader.h"
 #include "Log.h"
 
@@ -57,8 +58,14 @@ fs::path DefaultToolLibraryPath()
 // CToolEditDlg
 
 BEGIN_MESSAGE_MAP(CToolEditDlg, CDialog)
+    ON_BN_CLICKED(IDC_HELP_BUTTON, &CToolEditDlg::OnHelpButton)
     ON_CBN_SELCHANGE(IDC_TOOL_TYPE, &CToolEditDlg::OnTypeChanged)
 END_MESSAGE_MAP()
+
+void CToolEditDlg::OnHelpButton()
+{
+    ShowHelp(L"tool-edit");
+}
 
 CToolEditDlg::CToolEditDlg(const Tool& tool, const ToolLibrary& otherTools, CWnd* pParent)
     : CDialog(IDD_TOOL_EDIT, pParent)
@@ -201,6 +208,7 @@ void CToolEditDlg::OnOK()
 // CToolLibraryDlg
 
 BEGIN_MESSAGE_MAP(CToolLibraryDlg, CDialog)
+    ON_BN_CLICKED(IDC_HELP_BUTTON, &CToolLibraryDlg::OnHelpButton)
     ON_BN_CLICKED(IDC_LIB_ADD, &CToolLibraryDlg::OnAdd)
     ON_BN_CLICKED(IDC_LIB_EDIT, &CToolLibraryDlg::OnEdit)
     ON_BN_CLICKED(IDC_LIB_COPY, &CToolLibraryDlg::OnCopy)
@@ -210,6 +218,11 @@ BEGIN_MESSAGE_MAP(CToolLibraryDlg, CDialog)
     ON_NOTIFY(NM_DBLCLK, IDC_LIB_LIST, &CToolLibraryDlg::OnListDoubleClick)
     ON_NOTIFY(LVN_ITEMCHANGED, IDC_LIB_LIST, &CToolLibraryDlg::OnListSelectionChanged)
 END_MESSAGE_MAP()
+
+void CToolLibraryDlg::OnHelpButton()
+{
+    ShowHelp(L"tool-library");
+}
 
 CToolLibraryDlg::CToolLibraryDlg(const fs::path& libraryPath, const std::string& selectedToolId, CWnd* pParent)
     : CDialog(IDD_TOOL_LIBRARY, pParent)

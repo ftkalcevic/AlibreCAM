@@ -93,6 +93,7 @@ Visual Studio. The project launches `Alibre Design.exe` and breakpoints in
 | `OperationDialog.cpp/.h` | The modeless operation dialog and its tabs |
 | `OriginDialog.cpp/.h` | The modeless Set Origin dialog |
 | `PostDialog.cpp/.h` | Finds the post scripts and chooses the post and output file before posting |
+| `Help.cpp/.h` | Opens the help page in the default browser at a section |
 | `SettingsDialog.cpp/.h` | The Settings dialog (CAM view size), saved in `%APPDATA%\AlibreCAM\settings.json` |
 | `Log.cpp/.h` | The log file |
 | `ToolDialogs.cpp/.h` | The tool library and tool editing dialogs |
@@ -112,3 +113,7 @@ The add-on GUID `{D3A31918-AFE0-45F2-A080-B531E6894179}` appears in
 ## Posts
 
 Post scripts are plain text `.post` files in `posts\`. `deploy\install.ps1` copies them into the add-on's `posts\` folder. To change one for a machine, copy it to `%APPDATA%\AlibreCAM\posts\` and edit the copy; a post there replaces one of the same file name. The template format is described at the top of `core\ScriptedPost.h`, and `posts\LinuxCNC.post` is the first.
+
+## Help
+
+The help is a single page, `help\AlibreCAM.html`, with a section for the CAM tab and for each dialog and operation tab. `deploy\install.ps1` copies it into the add-on's `help\` folder, and the ? buttons open it at their section.

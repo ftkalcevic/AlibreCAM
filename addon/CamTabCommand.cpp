@@ -16,6 +16,7 @@
 #include "SettingsDialog.h"
 #include "PseudoPost.h"
 #include "GeometryReader.h"
+#include "Help.h"
 #include "ModelReader.h"
 #include "ToolDialogs.h"
 #include "Log.h"
@@ -48,6 +49,7 @@ namespace
         IDC_CAM_SHOW_TOOLPATHS,
         IDC_CAM_SETTINGS_BAR,
         IDC_CAM_SETTINGS,
+        IDC_CAM_HELP,
 
         // Tree menu commands
         ID_CAM_ADD_ORIGIN,
@@ -2238,6 +2240,7 @@ BEGIN_MESSAGE_MAP(CCamTabWnd, CWnd)
     ON_NOTIFY(TBN_GETINFOTIP, IDC_CAM_TOOLBAR, &CCamTabWnd::OnToolbarTip)
     ON_NOTIFY(TBN_GETINFOTIP, IDC_CAM_SETTINGS_BAR, &CCamTabWnd::OnToolbarTip)
     ON_BN_CLICKED(IDC_CAM_SETTINGS, &CCamTabWnd::OnSettings)
+    ON_BN_CLICKED(IDC_CAM_HELP, &CCamTabWnd::OnHelp)
     ON_NOTIFY(TVN_SELCHANGED, IDC_CAM_TREE, &CCamTabWnd::OnTreeSelectionChanged)
     ON_NOTIFY(NM_DBLCLK, IDC_CAM_TREE, &CCamTabWnd::OnTreeDoubleClick)
     ON_NOTIFY(NM_RCLICK, IDC_CAM_TREE, &CCamTabWnd::OnTreeRightClick)
@@ -2318,16 +2321,21 @@ int CCamTabWnd::OnCreate(LPCREATESTRUCT pCreate)
     }
     m_toolbar.AddButtons(2, buttons);
 
-    // The gear opens the Settings dialog. It's a toolbar of its own, kept at the right.
+    // Help, and the gear that opens the Settings dialog, are a toolbar of their own, kept at the right.
     m_settingsBar.Create(WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_TOOLTIPS | CCS_NODIVIDER | CCS_NORESIZE |
                              CCS_NOPARENTALIGN,
                          CRect(0, 0, 10, 10), this, IDC_CAM_SETTINGS_BAR);
-    TBBUTTON gear = {};
-    gear.iBitmap = 2;
-    gear.idCommand = IDC_CAM_SETTINGS;
-    gear.fsState = TBSTATE_ENABLED;
-    gear.fsStyle = BTNS_BUTTON;
-    m_settingsBar.AddButtons(1, &gear);
+    TBBUTTON right[2] = {};
+    const int rightCommands[2] = { IDC_CAM_HELP, IDC_CAM_SETTINGS };
+    const int rightImages[2] = { 3, 2 };
+    for (int i = 0; i < 2; ++i)
+    {
+        right[i].iBitmap = rightImages[i];
+        right[i].idCommand = rightCommands[i];
+        right[i].fsState = TBSTATE_ENABLED;
+        right[i].fsStyle = BTNS_BUTTON;
+    }
+    m_settingsBar.AddButtons(2, right);
 
 
     m_save.Create(L"Save", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, CRect(0, 0, 10, 10), this, IDC_CAM_SAVE);
@@ -2378,11 +2386,11 @@ void CCamTabWnd::LayoutControls(int cx, int cy)
     const int statusHeight = static_cast<int>(60 * scale + 0.5);
     const int width = (cx > margin * 2) ? cx - margin * 2 : 1;
 
-    // The toolbars across the top (the gear at the right), then the tree, the
+    // The toolbars across the top (help and the gear at the right), then the tree, the
     // status, and the buttons at the bottom.
     const int icon = camcore::ViewIconSize(m_settings.viewSize);
     const int toolbarHeight = icon + 8;
-    const int gearWidth = icon + 10;
+    const int gearWidth = (icon + 8) * 2 + 2;     // help and the gear
     const int treeY = margin + toolbarHeight + margin;
     const int saveY = cy - margin - buttonHeight;
     const int refreshY = saveY - margin - buttonHeight;
@@ -2505,6 +2513,11 @@ void CCamTabWnd::ApplyViewSize()
     LayoutControls(client.Width(), client.Height());
 }
 
+void CCamTabWnd::OnHelp()
+{
+    ShowHelp(L"cam-tab");
+}
+
 void CCamTabWnd::OnShowToolpaths()
 {
     if (m_pTab != nullptr)
@@ -2517,6 +2530,7 @@ void CCamTabWnd::OnToolbarTip(NMHDR* pNotify, LRESULT* pResult)
     const wchar_t* text = (pTip->iItem == IDC_CAM_FOREGROUND)       ? L"Draw over model"
                           : (pTip->iItem == IDC_CAM_SHOW_TOOLPATHS) ? L"Show toolpaths"
                           : (pTip->iItem == IDC_CAM_SETTINGS)       ? L"Settings"
+                          : (pTip->iItem == IDC_CAM_HELP)           ? L"Help"
                                                                     : L"";
     if (pTip->pszText != nullptr && pTip->cchTextMax > 0)
         wcsncpy_s(pTip->pszText, pTip->cchTextMax, text, _TRUNCATE);

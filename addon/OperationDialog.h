@@ -40,6 +40,9 @@ public:
     virtual void Load(const camcore::SequenceStep& /*step*/) {}
     virtual bool Save(camcore::SequenceStep& /*step*/, std::wstring& /*problems*/) { return true; }
 
+    // The tab's dialog template, which says which help section it has.
+    UINT TemplateId() const { return m_templateId; }
+
 protected:
     // Enter and Escape belong to the dialog, not the page.
     void OnOK() override {}
@@ -448,6 +451,7 @@ protected:
     afx_msg void OnTabChanged(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnClose();
     afx_msg void OnGenerate();
+    afx_msg void OnHelpButton();
 
     DECLARE_MESSAGE_MAP()
 

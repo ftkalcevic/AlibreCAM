@@ -22,6 +22,7 @@ protected:
     BOOL OnInitDialog() override;
     void OnOK() override;
     afx_msg void OnTypeChanged();
+    afx_msg void OnHelpButton();
 
     DECLARE_MESSAGE_MAP()
 
@@ -59,6 +60,7 @@ protected:
     afx_msg void OnDefaultLibrary();
     afx_msg void OnListDoubleClick(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnListSelectionChanged(NMHDR* pNotify, LRESULT* pResult);
+    afx_msg void OnHelpButton();
 
     DECLARE_MESSAGE_MAP()
 

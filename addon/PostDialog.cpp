@@ -3,6 +3,7 @@
 #include "stdafx.h"
 #include "AlibreCAM.h"
 #include "PostDialog.h"
+#include "Help.h"
 
 #include <algorithm>
 #include <map>
@@ -86,9 +87,15 @@ std::vector<PostChoice> FindPosts()
 }
 
 BEGIN_MESSAGE_MAP(CPostDlg, CDialog)
+    ON_BN_CLICKED(IDC_HELP_BUTTON, &CPostDlg::OnHelpButton)
     ON_BN_CLICKED(IDC_POST_BROWSE, &CPostDlg::OnBrowse)
     ON_CBN_SELCHANGE(IDC_POST_PROCESSOR, &CPostDlg::OnPostChanged)
 END_MESSAGE_MAP()
+
+void CPostDlg::OnHelpButton()
+{
+    ShowHelp(L"post");
+}
 
 CPostDlg::CPostDlg(const std::wstring& scope, const fs::path& outputPath, const std::vector<PostChoice>& posts,
                    size_t chosen, CWnd* pParent)

@@ -39,6 +39,7 @@ protected:
     void OnOK() override;
     afx_msg void OnBrowse();
     afx_msg void OnPostChanged();
+    afx_msg void OnHelpButton();
 
     DECLARE_MESSAGE_MAP()
 

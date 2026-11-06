@@ -115,6 +115,7 @@
     <ClCompile Include="OriginDialog.cpp" />
     <ClCompile Include="PostDialog.cpp" />
     <ClCompile Include="SettingsDialog.cpp" />
+    <ClCompile Include="Help.cpp" />
     <ClCompile Include="ToolDialogs.cpp" />
     <ClCompile Include="AlibreCAM.cpp" />
     <ClCompile Include="stdafx.cpp">
@@ -135,6 +136,7 @@
     <ClInclude Include="OriginDialog.h" />
     <ClInclude Include="PostDialog.h" />
     <ClInclude Include="SettingsDialog.h" />
+    <ClInclude Include="Help.h" />
     <ClInclude Include="ToolDialogs.h" />
     <ClInclude Include="AlibreCAM.h" />
     <ClInclude Include="resource.h" />

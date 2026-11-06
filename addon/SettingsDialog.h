@@ -24,6 +24,8 @@ protected:
     BOOL OnInitDialog() override;
     void OnOK() override;
 
+    afx_msg void OnHelpButton();
+
     DECLARE_MESSAGE_MAP()
 
 private:

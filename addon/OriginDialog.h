@@ -49,6 +49,7 @@ protected:
     afx_msg void OnClearX();
     afx_msg void OnOptionChanged();
     afx_msg void OnClose();
+    afx_msg void OnHelpButton();
 
     DECLARE_MESSAGE_MAP()
 

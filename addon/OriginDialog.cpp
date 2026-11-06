@@ -3,6 +3,7 @@
 #include "stdafx.h"
 #include "AlibreCAM.h"
 #include "OriginDialog.h"
+#include "Help.h"
 #include "CamTabCommand.h"
 #include "ModelReader.h"
 #include "Log.h"
@@ -63,6 +64,7 @@ namespace
 }
 
 BEGIN_MESSAGE_MAP(COriginDlg, CDialog)
+    ON_BN_CLICKED(IDC_HELP_BUTTON, &COriginDlg::OnHelpButton)
     ON_BN_CLICKED(IDC_ORIGIN_PLANE_PICK, &COriginDlg::OnPickPlane)
     ON_BN_CLICKED(IDC_ORIGIN_POSITION_PICK, &COriginDlg::OnPickPosition)
     ON_BN_CLICKED(IDC_ORIGIN_X_PICK, &COriginDlg::OnPickX)
@@ -75,6 +77,11 @@ BEGIN_MESSAGE_MAP(COriginDlg, CDialog)
     ON_EN_CHANGE(IDC_ORIGIN_OFFSET_Z, &COriginDlg::OnOptionChanged)
     ON_WM_CLOSE()
 END_MESSAGE_MAP()
+
+void COriginDlg::OnHelpButton()
+{
+    ShowHelp(L"set-origin");
+}
 
 COriginDlg::COriginDlg(CCamTabCommand* pTab, const SequenceStep& step)
     : CDialog(IDD_SET_ORIGIN, nullptr)

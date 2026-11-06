@@ -3,6 +3,7 @@
 #include "stdafx.h"
 #include "AlibreCAM.h"
 #include "SettingsDialog.h"
+#include "Help.h"
 
 namespace fs = std::filesystem;
 using camcore::ViewSize;
@@ -21,7 +22,13 @@ fs::path ProgramSettingsPath()
 }
 
 BEGIN_MESSAGE_MAP(CSettingsDlg, CDialog)
+    ON_BN_CLICKED(IDC_HELP_BUTTON, &CSettingsDlg::OnHelpButton)
 END_MESSAGE_MAP()
+
+void CSettingsDlg::OnHelpButton()
+{
+    ShowHelp(L"settings");
+}
 
 CSettingsDlg::CSettingsDlg(const camcore::ProgramSettings& settings, CWnd* pParent)
     : CDialog(IDD_SETTINGS, pParent)

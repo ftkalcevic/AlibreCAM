@@ -6,6 +6,7 @@
     1. Copies AlibreCAM.dll, AlibreCAM.adc and AlibreCAM.ico from the build output to
        %ProgramData%\Alibre AddOns\AlibreCAM\
        and the post scripts from posts\ into a posts\ folder there
+       and the help page from help\ into a help\ folder there
     2. Registers the add-on under HKLM\SOFTWARE\Alibre Design Add-Ons
        (value name = add-on GUID, data = install folder).
 
@@ -70,6 +71,13 @@ try {
     New-Item -ItemType Directory -Path $postsDir -Force | Out-Null
     Copy-Item -Path (Join-Path $projectDir 'posts\*.post') -Destination $postsDir -Force
     Write-Host "Copied post scripts to $postsDir"
+
+    # --- Help ----------------------------------------------------------------------
+    # The help page, opened from the ? buttons, goes in a help folder beside the add-on.
+    $helpDir = Join-Path $targetDir 'help'
+    New-Item -ItemType Directory -Path $helpDir -Force | Out-Null
+    Copy-Item -Path (Join-Path $projectDir 'help\*') -Destination $helpDir -Recurse -Force
+    Write-Host "Copied help to $helpDir"
 
     # --- Register --------------------------------------------------------------
     # Use the .NET API: New-Item -Force on HKLM:\SOFTWARE fails even when elevated.

@@ -247,6 +247,7 @@ protected:
     afx_msg void OnShowToolpaths();
     afx_msg void OnToolbarTip(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnSettings();
+    afx_msg void OnHelp();
     afx_msg void OnTreeSelectionChanged(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnTreeDoubleClick(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnTreeRightClick(NMHDR* pNotify, LRESULT* pResult);
