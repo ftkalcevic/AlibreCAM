@@ -32,6 +32,9 @@ struct StepRef
     size_t child = kNone;       // index in that group, for an operation
 
     bool IsOperation() const { return child != kNone; }
+
+    bool operator==(const StepRef& other) const { return step == other.step && child == other.child; }
+    bool operator!=(const StepRef& other) const { return !(*this == other); }
 };
 
 // Where a dragged step lands, next to the step it's dropped on. Into is for
@@ -95,6 +98,12 @@ public:
     // Calculates toolpaths: every operation with no step, a folder's, or one operation's.
     bool CanGenerate() const;
     void Generate(const StepRef& scope);
+
+    // Several operations chosen in the tree with Ctrl or Shift: drawn as chosen,
+    // edited together, or generated together.
+    void SetChosenOperations(const std::vector<StepRef>& refs);
+    void EditOperations(const std::vector<StepRef>& refs);
+    void GenerateOperations(const std::vector<StepRef>& refs);
 
     // Writes the generated toolpaths of every operation, or a folder's, to a file.
     void Post(const StepRef& scope);
@@ -180,6 +189,8 @@ private:
     bool PrepareSelection(const SelectionFilter& wanted);     // false if the view couldn't start
     bool IsPicking() const;
     bool GenerateOperation(const StepRef& target, std::string& problem);
+    void GenerateTargets(const std::vector<StepRef>& targets);
+    bool IsChosen(size_t step, size_t child) const;   // in the tree's chosen set, or the open dialog's
     bool ApplyOperationStep(camcore::SequenceStep step);
     // The operations in scope. Suppressed ones are left out, unless the scope is
     // the operation itself and it isn't for a post.
@@ -230,6 +241,8 @@ private:
     // Only one dialog is open at a time, so this and m_pOriginDlg aren't both set.
     COperationDlg* m_pOperationDlg;
     StepRef m_operationTarget;          // the folder, and the operation in it or kNewStep
+    std::vector<StepRef> m_bulkTargets; // the operations a bulk dialog edits, with m_operationTarget the first
+    std::vector<StepRef> m_chosen;      // the operations chosen together in the tree
     bool m_showingFeatures;             // Features list rows are selected in the view
     std::vector<camcore::PickedGeometry> m_highlighted;    // the features m_highlightOutlines were read for
     std::vector<std::vector<camcore::Vec3>> m_highlightOutlines;   // in assembly mm
@@ -292,6 +305,7 @@ protected:
     afx_msg void OnSettings();
     afx_msg void OnHelp();
     afx_msg void OnTreeSelectionChanged(NMHDR* pNotify, LRESULT* pResult);
+    afx_msg void OnTreeSelectionChanging(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnTreeDoubleClick(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnTreeRightClick(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnTreeBeginRename(NMHDR* pNotify, LRESULT* pResult);
@@ -316,6 +330,9 @@ private:
     bool IsStepItem(HTREEITEM hItem) const;
     StepRef StepOfItem(HTREEITEM hItem) const;
     HTREEITEM FindStepItem(const StepRef& ref) const;
+    bool IsChosen(const StepRef& ref) const;
+    std::vector<StepRef> OperationsBetween(const StepRef& from, const StepRef& to) const;
+    void SetChosen(const std::vector<StepRef>& chosen);
 
     // Dragging. The window holds the mouse capture while a step is dragged.
     struct DropPlace
@@ -347,6 +364,8 @@ private:
     HTREEITEM m_hOperations;
     bool m_fillingTree;
     std::set<HTREEITEM> m_greyItems;    // suppressed steps, and operations in suppressed folders
+    std::vector<StepRef> m_chosen;      // operations chosen with Ctrl or Shift, besides the selected one
+    StepRef m_anchor;                   // where Shift+click starts from
     bool m_visible;
 
     bool m_dragging;

@@ -133,6 +133,8 @@
   <dd>A group of operations, which can be generated or posted together. Folders don't nest. Use Rename to change a folder's name.</dd>
   <dt>Operation</dt>
   <dd>A machining operation: Drill, Hole Pocketing, Facing, Profiling or Pocketing. Double-click it, or use Edit, to open the <a href="#operation">Operation dialog</a>. Selecting an operation draws its toolpath in bold and its picked geometry in orange.</dd>
+  <dt>Choosing several operations</dt>
+  <dd>Ctrl+click operations to choose several, even in different folders; Ctrl+click a chosen one again to take it off. Shift+click chooses every operation between the last one clicked and this one. A plain click goes back to one. Right-click a chosen operation for <strong>Edit N Operations</strong>, which edits them together (see the <a href="#operation">Operation dialog</a>), or <strong>Generate</strong>, which generates them all. Double-clicking a chosen one edits them together too.</dd>
   <dt>Suppressed items</dt>
   <dd>Shown grey, with their toolpaths drawn thin and grey. A suppressed Set Origin is skipped, and suppressed operations are left out of Generate and Post.</dd>
 </dl>
@@ -416,6 +418,7 @@
   <li><strong>Pocketing</strong>: Cut Levels, Entry/Exit, Pocketing.</li>
 </ul>
 <p>Pressing <strong>?</strong> opens the help for the tab that's showing.</p>
+<p><strong>Editing several operations together.</strong> With several operations chosen in the tree, the dialog shows only the tabs they all have: Tool, Feeds &amp; Speeds and Clearance; Cut Levels and Entry/Exit when they're all Facing, Profiling or Pocketing; and their own tab when they're all the same kind. Features aren't shown, as each operation's geometry is its own. A box that's empty, a group with no choice, or a check box neither on nor off means the operations differ there. Only the fields you change are written to every operation; everything else keeps each operation's own value. If a change doesn't suit an operation, OK names it and nothing is changed. Name and Generate aren't available, and Pick and Locate work only when the operations all run under the same Set Origin.</p>
 <dl>
   <dt>Name</dt>
   <dd>The operation's name in the tree.</dd>

@@ -940,6 +940,9 @@ void CCamTabCommand::ShowSequence()
     m_sequenceStatus = m_job.sequence.empty() ? L"Right-click Operations to add a Set Origin." : L"";
     ShowStatus();
 
+    // The tree is filled again, so operations chosen together aren't any more.
+    m_chosen.clear();
+
     // The job may be a different one, so its stock is read again.
     m_stockShapeValid = false;
     if (m_pWnd != nullptr)
@@ -1144,11 +1147,32 @@ void CCamTabCommand::SelectStep(const StepRef& ref)
 
 std::vector<camcore::PickedGeometry> CCamTabCommand::HighlightedFeatures() const
 {
-    // The open dialog's list, as it's being edited.
-    if (m_pOperationDlg != nullptr)
+    // The open dialog's list, as it's being edited. A bulk dialog edits no
+    // features, so its operations' own are shown.
+    if (m_pOperationDlg != nullptr && !m_pOperationDlg->IsBulk())
         return m_pOperationDlg->GetFeatures();
+    if (m_pOperationDlg != nullptr)
+    {
+        std::vector<camcore::PickedGeometry> features;
+        for (const StepRef& ref : m_bulkTargets)
+        {
+            if (const camcore::SequenceStep* pStep = FindStep(ref))
+                features.insert(features.end(), pStep->features.begin(), pStep->features.end());
+        }
+        return features;
+    }
 
     std::vector<camcore::PickedGeometry> features;
+    if (!m_chosen.empty())
+    {
+        // Every operation chosen together.
+        for (const StepRef& ref : m_chosen)
+        {
+            if (const camcore::SequenceStep* pStep = FindStep(ref))
+                features.insert(features.end(), pStep->features.begin(), pStep->features.end());
+        }
+        return features;
+    }
     if (m_selected.step != StepRef::kNone && m_selected.step < m_job.sequence.size())
     {
         const camcore::SequenceStep& step = m_job.sequence[m_selected.step];
@@ -1267,7 +1291,27 @@ void CCamTabCommand::Generate(const StepRef& scope)
         ShowError(L"There are no operations to generate. Suppressed operations are only generated on their own.");
         return;
     }
+    GenerateTargets(targets);
+}
 
+void CCamTabCommand::GenerateOperations(const std::vector<StepRef>& refs)
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    if (!CanGenerate())
+        return;
+    std::vector<StepRef> targets;
+    for (const StepRef& ref : refs)
+    {
+        if (IsOperation(ref))
+            targets.push_back(ref);
+    }
+    if (!targets.empty())
+        GenerateTargets(targets);
+}
+
+void CCamTabCommand::GenerateTargets(const std::vector<StepRef>& targets)
+{
     // The clearance plane can depend on the parts' size, which may have changed.
     ReadModelSize();
 
@@ -1869,8 +1913,60 @@ void CCamTabCommand::CloseOperationDialog()
 
     COperationDlg* pDialog = m_pOperationDlg;
     m_pOperationDlg = nullptr;
+    m_bulkTargets.clear();
     pDialog->DetachFromTab();
     pDialog->DestroyWindow();
+}
+
+void CCamTabCommand::SetChosenOperations(const std::vector<StepRef>& refs)
+{
+    m_chosen = refs;
+    RebuildScene();
+}
+
+bool CCamTabCommand::IsChosen(size_t step, size_t child) const
+{
+    const StepRef ref{ step, child };
+    if (std::find(m_chosen.begin(), m_chosen.end(), ref) != m_chosen.end())
+        return true;
+    return m_pOperationDlg != nullptr && std::find(m_bulkTargets.begin(), m_bulkTargets.end(), ref) != m_bulkTargets.end();
+}
+
+void CCamTabCommand::EditOperations(const std::vector<StepRef>& refs)
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    if (refs.size() == 1)
+    {
+        EditStep(refs.front());
+        return;
+    }
+    if (!CanEditSequence() || refs.empty() || FocusOpenDialog())
+        return;
+
+    std::vector<camcore::SequenceStep> steps;
+    for (const StepRef& ref : refs)
+    {
+        const camcore::SequenceStep* pStep = FindStep(ref);
+        if (pStep == nullptr || !camcore::IsOperation(pStep->type))
+            return;
+        steps.push_back(*pStep);
+    }
+
+    m_bulkTargets = refs;
+    m_operationTarget = refs.front();
+    m_pOperationDlg = new COperationDlg(this, steps);
+    if (!m_pOperationDlg->CreateModeless(CWnd::FromHandle(theApp.m_hAlibreWnd)))
+    {
+        Log(L"[operation] could not create the bulk operation dialog");
+        delete m_pOperationDlg;
+        m_pOperationDlg = nullptr;
+        m_bulkTargets.clear();
+        return;
+    }
+    m_pOperationDlg->ShowWindow(SW_SHOW);
+    Log(L"[operation] editing %zu operations together", steps.size());
+    RebuildScene();
 }
 
 void CCamTabCommand::OnOperationDialogDone(COperationDlg* pDialog, bool apply)
@@ -1886,6 +1982,39 @@ void CCamTabCommand::OnOperationDialogDone(COperationDlg* pDialog, bool apply)
     {
         m_showingFeatures = false;
         ClearPickedSelection();
+    }
+
+    if (pDialog->IsBulk())
+    {
+        // Each operation gets its own edited copy. Only those whose settings
+        // changed lose their toolpaths.
+        const std::vector<StepRef> targets = m_bulkTargets;
+        m_bulkTargets.clear();
+        const std::vector<camcore::SequenceStep>& steps = pDialog->GetSteps();
+        size_t changed = 0;
+        if (apply && steps.size() == targets.size())
+        {
+            for (size_t i = 0; i < targets.size(); ++i)
+            {
+                const camcore::SequenceStep* pCurrent = FindStep(targets[i]);
+                if (pCurrent == nullptr || camcore::SameSettings(*pCurrent, steps[i]))
+                    continue;
+                m_operationTarget = targets[i];
+                if (ApplyOperationStep(steps[i]))
+                    ++changed;
+            }
+        }
+        if (changed > 0)
+        {
+            Log(L"[operation] bulk edit changed %zu of %zu operations", changed, targets.size());
+            MarkJobChanged();
+            ShowSequence();
+            m_sequenceStatus = L"Changed " + std::to_wstring(changed) + L" of " + std::to_wstring(targets.size()) +
+                               L" operations.";
+            ShowStatus();
+        }
+        RebuildScene();
+        return;
     }
 
     if (!apply || !ApplyOperationStep(pDialog->GetStep()))
@@ -2210,7 +2339,8 @@ void CCamTabCommand::RebuildScene()
             // Only the selected operation's, or its folder's, or the dialog's, like the bold toolpath.
             const bool chosen = (m_selected.step == i && (!m_selected.IsOperation() || m_selected.child == c)) ||
                                 (m_pOperationDlg != nullptr && m_operationTarget.step == i &&
-                                 m_operationTarget.child == c);
+                                 m_operationTarget.child == c) ||
+                                IsChosen(i, c);
             for (const camcore::Path& boundary : m_job.sequence[i].children[c].boundaries)
             {
                 if (boundary.empty() || !chosen)
@@ -2415,10 +2545,16 @@ void CCamTabCommand::ShowFeaturesInView(const std::vector<camcore::PickedGeometr
 
 bool CCamTabCommand::GetOperationFrame(camcore::Frame& frame) const
 {
-    // An operation runs under the origin its folder does.
+    // An operation runs under the origin its folder does. Operations edited
+    // together have one only if they all run under the same origin.
     const size_t active = camcore::ActiveOriginIndex(m_job, m_operationTarget.step);
     if (active == camcore::kNoStepIndex)
         return false;
+    for (const StepRef& ref : m_bulkTargets)
+    {
+        if (camcore::ActiveOriginIndex(m_job, ref.step) != active)
+            return false;
+    }
 
     const camcore::FrameResult result = camcore::BuildFrame(m_job.sequence[active].origin);
     if (result.ok)
@@ -2618,6 +2754,7 @@ BEGIN_MESSAGE_MAP(CCamTabWnd, CWnd)
     ON_BN_CLICKED(IDC_CAM_SETTINGS, &CCamTabWnd::OnSettings)
     ON_BN_CLICKED(IDC_CAM_HELP, &CCamTabWnd::OnHelp)
     ON_NOTIFY(TVN_SELCHANGED, IDC_CAM_TREE, &CCamTabWnd::OnTreeSelectionChanged)
+    ON_NOTIFY(TVN_SELCHANGING, IDC_CAM_TREE, &CCamTabWnd::OnTreeSelectionChanging)
     ON_NOTIFY(NM_DBLCLK, IDC_CAM_TREE, &CCamTabWnd::OnTreeDoubleClick)
     ON_NOTIFY(NM_RCLICK, IDC_CAM_TREE, &CCamTabWnd::OnTreeRightClick)
     ON_NOTIFY(TVN_BEGINLABELEDIT, IDC_CAM_TREE, &CCamTabWnd::OnTreeBeginRename)
@@ -2986,6 +3123,95 @@ HTREEITEM CCamTabWnd::ItemUnderCursor(bool select)
     return hItem;
 }
 
+bool CCamTabWnd::IsChosen(const StepRef& ref) const
+{
+    return ref.IsOperation() && std::find(m_chosen.begin(), m_chosen.end(), ref) != m_chosen.end();
+}
+
+void CCamTabWnd::SetChosen(const std::vector<StepRef>& chosen)
+{
+    m_chosen = chosen;
+    m_tree.Invalidate();
+    if (m_pTab != nullptr)
+        m_pTab->SetChosenOperations(m_chosen);
+}
+
+std::vector<StepRef> CCamTabWnd::OperationsBetween(const StepRef& from, const StepRef& to) const
+{
+    // Every step and operation in tree order, then the operations from one end to the other.
+    std::vector<StepRef> order;
+    for (HTREEITEM hItem = m_tree.GetChildItem(m_hOperations); hItem != nullptr; hItem = m_tree.GetNextSiblingItem(hItem))
+    {
+        order.push_back(StepOfItem(hItem));
+        for (HTREEITEM hChild = m_tree.GetChildItem(hItem); hChild != nullptr; hChild = m_tree.GetNextSiblingItem(hChild))
+            order.push_back(StepOfItem(hChild));
+    }
+    auto first = std::find(order.begin(), order.end(), from);
+    auto last = std::find(order.begin(), order.end(), to);
+    if (last == order.end())
+        return {};
+    if (first == order.end())
+        first = last;
+    if (first > last)
+        std::swap(first, last);
+
+    std::vector<StepRef> between;
+    for (auto it = first; it != last + 1; ++it)
+    {
+        if (it->IsOperation())
+            between.push_back(*it);
+    }
+    return between;
+}
+
+void CCamTabWnd::OnTreeSelectionChanging(NMHDR* pNotify, LRESULT* pResult)
+{
+    *pResult = 0;
+    if (m_fillingTree || m_pTab == nullptr)
+        return;
+
+    const NMTREEVIEW* pInfo = reinterpret_cast<NMTREEVIEW*>(pNotify);
+    const StepRef from = StepOfItem(pInfo->itemOld.hItem);
+    const StepRef to = StepOfItem(pInfo->itemNew.hItem);
+    const bool control = ::GetKeyState(VK_CONTROL) < 0;
+    const bool shift = ::GetKeyState(VK_SHIFT) < 0;
+
+    // Ctrl or Shift and a click on an operation choose several operations.
+    if (pInfo->action == TVC_BYMOUSE && (control || shift) && to.IsOperation())
+    {
+        std::vector<StepRef> chosen = m_chosen;
+        if (shift)
+        {
+            chosen = OperationsBetween(m_anchor.IsOperation() ? m_anchor : from, to);
+        }
+        else
+        {
+            if (chosen.empty() && from.IsOperation())
+                chosen.push_back(from);
+            const auto found = std::find(chosen.begin(), chosen.end(), to);
+            if (found != chosen.end())
+            {
+                // A second Ctrl+click takes it off, and the selection stays where it was.
+                chosen.erase(found);
+                *pResult = 1;
+            }
+            else
+            {
+                chosen.push_back(to);
+            }
+            m_anchor = to;
+        }
+        SetChosen(chosen.size() > 1 ? chosen : std::vector<StepRef>());
+        return;
+    }
+
+    // Anything else chooses just the one.
+    if (!m_chosen.empty())
+        SetChosen({});
+    if (to.IsOperation())
+        m_anchor = to;
+}
+
 void CCamTabWnd::OnTreeSelectionChanged(NMHDR* /*pNotify*/, LRESULT* pResult)
 {
     *pResult = 0;
@@ -3006,6 +3232,34 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
 
     if (m_pTab == nullptr)
         return;
+
+    // Operations chosen together keep their choice: Edit and Generate act on them all.
+    const HTREEITEM hUnder = ItemUnderCursor(false);
+    if (m_chosen.size() > 1 && IsChosen(StepOfItem(hUnder)))
+    {
+        const std::vector<StepRef> chosen = m_chosen;
+        const UINT editable = m_pTab->CanEditSequence() ? MF_ENABLED : MF_GRAYED;
+        const UINT generatable = m_pTab->CanGenerate() ? MF_ENABLED : MF_GRAYED;
+        const std::wstring editText = L"Edit " + std::to_wstring(chosen.size()) + L" Operations...";
+        CMenu bulkMenu;
+        bulkMenu.CreatePopupMenu();
+        bulkMenu.AppendMenu(MF_STRING | editable, ID_CAM_EDIT_STEP, editText.c_str());
+        bulkMenu.AppendMenu(MF_SEPARATOR);
+        bulkMenu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
+
+        CPoint at;
+        ::GetCursorPos(&at);
+        const UINT chosenCommand = bulkMenu.TrackPopupMenu(TPM_LEFTALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD |
+                                                               TPM_NONOTIFY,
+                                                           at.x, at.y, this);
+        if (m_pTab == nullptr)
+            return;
+        if (chosenCommand == ID_CAM_EDIT_STEP)
+            m_pTab->EditOperations(chosen);
+        else if (chosenCommand == ID_CAM_GENERATE)
+            m_pTab->GenerateOperations(chosen);
+        return;
+    }
 
     const HTREEITEM hItem = ItemUnderCursor(true);
     if (hItem != nullptr && (hItem == m_hMachine || hItem == m_hMaterial))
@@ -3416,7 +3670,12 @@ void CCamTabWnd::OnTreeDoubleClick(NMHDR* /*pNotify*/, LRESULT* pResult)
 
     const HTREEITEM hItem = m_tree.HitTest(point);
     const StepRef ref = StepOfItem(hItem);
-    if (hItem != nullptr && (hItem == m_hTools || m_tree.GetParentItem(hItem) == m_hTools))
+    if (m_chosen.size() > 1 && IsChosen(ref))
+    {
+        *pResult = 1;
+        m_pTab->EditOperations(m_chosen);
+    }
+    else if (hItem != nullptr && (hItem == m_hTools || m_tree.GetParentItem(hItem) == m_hTools))
     {
         // Handled, so the tree doesn't also expand or collapse the item.
         *pResult = 1;
@@ -3454,6 +3713,7 @@ void CCamTabWnd::OnTreeDoubleClick(NMHDR* /*pNotify*/, LRESULT* pResult)
 void CCamTabWnd::ShowSequence(const camcore::Job& job, const StepRef& selected)
 {
     m_fillingTree = true;
+    m_chosen.clear();       // the tab clears its own copy
 
     HTREEITEM hChild = m_tree.GetChildItem(m_hOperations);
     while (hChild != nullptr)
@@ -3509,6 +3769,13 @@ void CCamTabWnd::OnTreeCustomDraw(NMHDR* pNotify, LRESULT* pResult)
         const HTREEITEM hItem = reinterpret_cast<HTREEITEM>(pDraw->nmcd.dwItemSpec);
         if (m_greyItems.count(hItem) != 0 && (pDraw->nmcd.uItemState & CDIS_SELECTED) == 0)
             pDraw->clrText = ::GetSysColor(COLOR_GRAYTEXT);
+
+        // Operations chosen together are drawn as selected.
+        if (!m_chosen.empty() && (pDraw->nmcd.uItemState & CDIS_SELECTED) == 0 && IsChosen(StepOfItem(hItem)))
+        {
+            pDraw->clrText = ::GetSysColor(COLOR_HIGHLIGHTTEXT);
+            pDraw->clrTextBk = ::GetSysColor(COLOR_HIGHLIGHT);
+        }
         break;
     }
     default:

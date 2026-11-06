@@ -11,7 +11,9 @@
 #include "Features.h"
 #include "ToolLibrary.h"
 
+#include <map>
 #include <memory>
+#include <set>
 #include <vector>
 
 class CCamTabCommand;
@@ -42,6 +44,38 @@ public:
 
     // The tab's dialog template, which says which help section it has.
     UINT TemplateId() const { return m_templateId; }
+
+    // Bulk editing works on the controls, so each tab's own Load, Save and
+    // rules are used unchanged. A control's value, by its ID: an edit's text, a
+    // check box's or radio's check, a combo's or list's selection. Sliders are
+    // left out, as they follow the boxes beside them.
+    struct ControlValue
+    {
+        int kind = 0;
+        std::wstring text;
+        int number = 0;
+
+        bool operator==(const ControlValue& other) const
+        {
+            return kind == other.kind && text == other.text && number == other.number;
+        }
+        bool operator!=(const ControlValue& other) const { return !(*this == other); }
+    };
+    using ControlState = std::map<int, ControlValue>;
+
+    ControlState Snapshot() const;
+
+    // Shows each control whose value differs between the states as mixed: an
+    // empty box, no radio or combo choice, a check box neither on nor off.
+    void ShowMixed(const std::vector<ControlState>& states);
+
+    // The controls that differ between two states. A changed radio brings every
+    // radio in its group.
+    std::set<int> ChangedControls(const ControlState& before, const ControlState& after);
+
+    // Sets those controls to their values in the state, telling the tab as if
+    // the user had: choices first, then boxes.
+    void Overlay(const ControlState& state, const std::set<int>& ids);
 
 protected:
     // Enter and Escape belong to the dialog, not the page.
@@ -417,6 +451,12 @@ class COperationDlg : public CDialog
 public:
     COperationDlg(CCamTabCommand* pTab, const camcore::SequenceStep& step);
 
+    // Edits several operations together: only the tabs they all have, with
+    // values that differ shown mixed, and only the fields changed applied to each.
+    COperationDlg(CCamTabCommand* pTab, const std::vector<camcore::SequenceStep>& steps);
+    bool IsBulk() const { return !m_bulk.empty(); }
+    const std::vector<camcore::SequenceStep>& GetSteps() const { return m_bulk; }
+
     bool CreateModeless(CWnd* pParent);
     void DetachFromTab() { m_pTab = nullptr; }
 
@@ -469,6 +509,8 @@ private:
     void AddPage(const wchar_t* title, std::unique_ptr<COperationPage> page);
     void ShowPage(int index);
     bool ReadSettings();        // every tab into m_step. False after showing the problems.
+    bool ReadBulkSettings();    // the changed fields into each of m_bulk
+    std::unique_ptr<COperationPage> MakePage(UINT templateId);
     void Finish(bool apply);
 
     CCamTabCommand* m_pTab;
@@ -480,6 +522,12 @@ private:
     CCutLevelsPage* m_pCutLevels;   // owned by m_pages. Null for operations without one.
     CHolePocketingPage* m_pHolePocketing;   // owned by m_pages. Null for other operations.
     CToolPage* m_pToolPage;     // owned by m_pages
+
+    // Bulk editing: the operations, each tab's state as first shown, and a
+    // hidden copy of each tab that applies the changes to one operation at a time.
+    std::vector<camcore::SequenceStep> m_bulk;
+    std::vector<COperationPage::ControlState> m_baselines;
+    std::vector<std::unique_ptr<COperationPage>> m_twins;
     bool m_locating;
     LocateTarget m_locateTarget;
     bool m_selectingFeatures;

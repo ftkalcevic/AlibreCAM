@@ -65,6 +65,210 @@ bool COperationPage::CreateInTab(CWnd* pParent)
     return Create(m_templateId, pParent) != FALSE;
 }
 
+namespace
+{
+    enum ControlKind
+    {
+        kEditControl = 1,
+        kCheckControl,
+        kRadioControl,
+        kComboControl,
+        kListControl
+    };
+
+    int KindOf(CWnd* pControl)
+    {
+        wchar_t name[32] = {};
+        ::GetClassNameW(pControl->GetSafeHwnd(), name, _countof(name));
+        if (_wcsicmp(name, L"Edit") == 0)
+            return kEditControl;
+        if (_wcsicmp(name, L"ComboBox") == 0)
+            return kComboControl;
+        if (_wcsicmp(name, WC_LISTVIEWW) == 0)
+            return kListControl;
+        if (_wcsicmp(name, L"Button") == 0)
+        {
+            switch (pControl->GetStyle() & BS_TYPEMASK)
+            {
+            case BS_CHECKBOX:
+            case BS_AUTOCHECKBOX:
+            case BS_3STATE:
+            case BS_AUTO3STATE:
+                return kCheckControl;
+            case BS_RADIOBUTTON:
+            case BS_AUTORADIOBUTTON:
+                return kRadioControl;
+            default:
+                return 0;
+            }
+        }
+        return 0;
+    }
+}
+
+COperationPage::ControlState COperationPage::Snapshot() const
+{
+    ControlState state;
+    for (CWnd* pControl = GetWindow(GW_CHILD); pControl != nullptr; pControl = pControl->GetWindow(GW_HWNDNEXT))
+    {
+        const int id = pControl->GetDlgCtrlID();
+        const int kind = KindOf(pControl);
+        if (id <= 0 || id == 0xFFFF || kind == 0)
+            continue;
+
+        ControlValue value;
+        value.kind = kind;
+        switch (kind)
+        {
+        case kEditControl:
+        {
+            CString text;
+            pControl->GetWindowText(text);
+            value.text = static_cast<LPCWSTR>(text);
+            break;
+        }
+        case kCheckControl:
+        case kRadioControl:
+            value.number = static_cast<int>(pControl->SendMessage(BM_GETCHECK));
+            break;
+        case kComboControl:
+            value.number = static_cast<int>(pControl->SendMessage(CB_GETCURSEL));
+            break;
+        case kListControl:
+            value.number = static_cast<int>(pControl->SendMessage(LVM_GETNEXTITEM, static_cast<WPARAM>(-1),
+                                                                  LVNI_SELECTED));
+            break;
+        }
+        state[id] = value;
+    }
+    return state;
+}
+
+void COperationPage::ShowMixed(const std::vector<ControlState>& states)
+{
+    if (states.empty())
+        return;
+    for (const auto& entry : states.front())
+    {
+        bool same = true;
+        for (const ControlState& other : states)
+        {
+            const auto found = other.find(entry.first);
+            same = same && found != other.end() && found->second == entry.second;
+        }
+        if (same)
+            continue;
+
+        CWnd* pControl = GetDlgItem(entry.first);
+        if (pControl == nullptr)
+            continue;
+        switch (entry.second.kind)
+        {
+        case kEditControl:
+            pControl->SetWindowText(L"");
+            break;
+        case kCheckControl:
+            // Neither on nor off. Clicking it goes through on and off.
+            pControl->ModifyStyle(BS_TYPEMASK, BS_AUTO3STATE);
+            pControl->SendMessage(BM_SETCHECK, BST_INDETERMINATE);
+            break;
+        case kRadioControl:
+            pControl->SendMessage(BM_SETCHECK, BST_UNCHECKED);
+            break;
+        case kComboControl:
+            pControl->SendMessage(CB_SETCURSEL, static_cast<WPARAM>(-1));
+            break;
+        case kListControl:
+        {
+            LVITEMW item = {};
+            item.stateMask = LVIS_SELECTED | LVIS_FOCUSED;
+            pControl->SendMessage(LVM_SETITEMSTATE, static_cast<WPARAM>(-1), reinterpret_cast<LPARAM>(&item));
+            break;
+        }
+        }
+    }
+}
+
+std::set<int> COperationPage::ChangedControls(const ControlState& before, const ControlState& after)
+{
+    std::set<int> changed;
+    for (const auto& entry : after)
+    {
+        const auto found = before.find(entry.first);
+        if (found != before.end() && found->second == entry.second)
+            continue;
+        changed.insert(entry.first);
+
+        // A radio's choice is its whole group's.
+        if (entry.second.kind == kRadioControl)
+        {
+            CWnd* pFirst = GetDlgItem(entry.first);
+            CWnd* pControl = pFirst;
+            for (int guard = 0; pControl != nullptr && guard < 64; ++guard)
+            {
+                const auto member = after.find(pControl->GetDlgCtrlID());
+                if (member != after.end() && member->second.kind == kRadioControl)
+                    changed.insert(member->first);
+                pControl = GetNextDlgGroupItem(pControl, FALSE);
+                if (pControl == pFirst)
+                    break;
+            }
+        }
+    }
+    return changed;
+}
+
+void COperationPage::Overlay(const ControlState& state, const std::set<int>& ids)
+{
+    // Choices first, each with the notice a click or selection sends, so the
+    // tab enables its boxes as it would for the user. Then the boxes.
+    std::vector<CWnd*> clicked;
+    for (int id : ids)
+    {
+        const auto found = state.find(id);
+        CWnd* pControl = GetDlgItem(id);
+        if (found == state.end() || pControl == nullptr)
+            continue;
+        const ControlValue& value = found->second;
+        switch (value.kind)
+        {
+        case kCheckControl:
+        case kRadioControl:
+            pControl->SendMessage(BM_SETCHECK, static_cast<WPARAM>(value.number));
+            if (value.kind == kCheckControl || value.number == BST_CHECKED)
+                clicked.push_back(pControl);
+            break;
+        case kComboControl:
+            pControl->SendMessage(CB_SETCURSEL, static_cast<WPARAM>(value.number));
+            SendMessage(WM_COMMAND, MAKEWPARAM(id, CBN_SELCHANGE), reinterpret_cast<LPARAM>(pControl->GetSafeHwnd()));
+            break;
+        case kListControl:
+            if (value.number >= 0)
+            {
+                LVITEMW item = {};
+                item.stateMask = LVIS_SELECTED | LVIS_FOCUSED;
+                item.state = LVIS_SELECTED | LVIS_FOCUSED;
+                pControl->SendMessage(LVM_SETITEMSTATE, static_cast<WPARAM>(value.number),
+                                      reinterpret_cast<LPARAM>(&item));
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    for (CWnd* pControl : clicked)
+        SendMessage(WM_COMMAND, MAKEWPARAM(pControl->GetDlgCtrlID(), BN_CLICKED),
+                    reinterpret_cast<LPARAM>(pControl->GetSafeHwnd()));
+
+    for (int id : ids)
+    {
+        const auto found = state.find(id);
+        CWnd* pControl = GetDlgItem(id);
+        if (found != state.end() && pControl != nullptr && found->second.kind == kEditControl)
+            pControl->SetWindowText(found->second.text.c_str());
+    }
+}
+
 bool COperationPage::ReadNumber(int id, const wchar_t* label, double& value, std::wstring& problems,
                                 bool blankAllowed, bool* pBlank)
 {
@@ -2273,6 +2477,30 @@ COperationDlg::COperationDlg(CCamTabCommand* pTab, const SequenceStep& step)
 {
 }
 
+COperationDlg::COperationDlg(CCamTabCommand* pTab, const std::vector<SequenceStep>& steps)
+    : COperationDlg(pTab, steps.empty() ? SequenceStep() : steps.front())
+{
+    m_bulk = steps;
+}
+
+std::unique_ptr<COperationPage> COperationDlg::MakePage(UINT templateId)
+{
+    switch (templateId)
+    {
+    case IDD_OP_TOOL:           return std::make_unique<CToolPage>(this);
+    case IDD_OP_FEEDS:          return std::make_unique<CFeedsPage>(this);
+    case IDD_OP_CLEARANCE:      return std::make_unique<CClearancePage>(this);
+    case IDD_OP_CUT_LEVELS:     return std::make_unique<CCutLevelsPage>(this);
+    case IDD_OP_ENTRY_EXIT:     return std::make_unique<CEntryExitPage>(this);
+    case IDD_OP_FACING:         return std::make_unique<CFacingPage>(this);
+    case IDD_OP_PROFILING:      return std::make_unique<CProfilingPage>(this);
+    case IDD_OP_POCKETING:      return std::make_unique<CPocketingPage>(this);
+    case IDD_OP_DRILLING:       return std::make_unique<CDrillingPage>(this);
+    case IDD_OP_HOLE_POCKETING: return std::make_unique<CHolePocketingPage>(this);
+    default:                    return std::make_unique<COperationPage>(templateId, this);
+    }
+}
+
 bool COperationDlg::CreateModeless(CWnd* pParent)
 {
     return Create(IDD_OPERATION, pParent) != FALSE;
@@ -2282,19 +2510,48 @@ BOOL COperationDlg::OnInitDialog()
 {
     CDialog::OnInitDialog();
 
-    SetWindowText(OperationTitle(m_step.type));
-    SetDlgItemText(IDC_OP_NAME, FromUtf8(m_step.name).c_str());
+    const bool bulk = IsBulk();
+    if (bulk)
+    {
+        // Several operations: no name or Generate of their own.
+        const std::wstring count = std::to_wstring(m_bulk.size());
+        SetWindowText((L"Edit " + count + L" Operations").c_str());
+        SetDlgItemText(IDC_OP_NAME, (count + L" operations").c_str());
+        GetDlgItem(IDC_OP_NAME)->EnableWindow(FALSE);
+        GetDlgItem(IDC_OP_GENERATE)->ShowWindow(SW_HIDE);
+    }
+    else
+    {
+        SetWindowText(OperationTitle(m_step.type));
+        SetDlgItemText(IDC_OP_NAME, FromUtf8(m_step.name).c_str());
+    }
+
+    // The tabs every chosen operation has. One operation has all of its own.
+    const auto isArea = [](StepType type) {
+        return type == StepType::Facing || type == StepType::Profiling || type == StepType::Pocketing;
+    };
+    bool sameType = true;
+    bool allArea = isArea(m_step.type);
+    for (const SequenceStep& other : m_bulk)
+    {
+        sameType = sameType && other.type == m_step.type;
+        allArea = allArea && isArea(other.type);
+    }
 
     m_tabs.SubclassDlgItem(IDC_OP_TABS, this);
     if (m_pTab != nullptr)
         m_haveFrame = m_pTab->GetOperationFrame(m_frame);
 
     // Every operation has these. The empty ones are still to be built.
-    auto features = std::make_unique<CFeaturesPage>(this);
-    CFeaturesPage* pFeatures = features.get();
-    AddPage(L"Features", std::move(features));
-    if (pFeatures->GetSafeHwnd() != nullptr)
-        m_pFeatures = pFeatures;
+    // Features are each operation's own, so they aren't bulk edited.
+    if (!bulk)
+    {
+        auto features = std::make_unique<CFeaturesPage>(this);
+        CFeaturesPage* pFeatures = features.get();
+        AddPage(L"Features", std::move(features));
+        if (pFeatures->GetSafeHwnd() != nullptr)
+            m_pFeatures = pFeatures;
+    }
 
     auto toolPage = std::make_unique<CToolPage>(this);
     CToolPage* pToolPage = toolPage.get();
@@ -2305,12 +2562,13 @@ BOOL COperationDlg::OnInitDialog()
     AddPage(L"Clearance", std::make_unique<CClearancePage>(this));
 
     // Drill, Hole Pocketing, Facing, Profiling and Pocketing have no Sorting tab.
-    if (m_step.type != StepType::Drill && m_step.type != StepType::Facing && m_step.type != StepType::Profiling &&
-        m_step.type != StepType::Pocketing && m_step.type != StepType::HolePocketing)
+    if (!bulk && m_step.type != StepType::Drill && m_step.type != StepType::Facing &&
+        m_step.type != StepType::Profiling && m_step.type != StepType::Pocketing &&
+        m_step.type != StepType::HolePocketing)
         AddPage(L"Sorting", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
 
     // Then its own.
-    if (m_step.type == StepType::Facing || m_step.type == StepType::Profiling || m_step.type == StepType::Pocketing)
+    if (allArea)
     {
         // Cut Levels is shared by the operations that cut in levels.
         auto cutLevels = std::make_unique<CCutLevelsPage>(this);
@@ -2322,13 +2580,17 @@ BOOL COperationDlg::OnInitDialog()
         // Entry/Exit is shared with them too.
         AddPage(L"Entry/Exit", std::make_unique<CEntryExitPage>(this));
 
-        // Then the operation's own tab.
-        if (m_step.type == StepType::Facing)
+        // Then the operation's own tab, when they're all the same kind.
+        if (sameType && m_step.type == StepType::Facing)
             AddPage(L"Facing", std::make_unique<CFacingPage>(this));
-        else if (m_step.type == StepType::Profiling)
+        else if (sameType && m_step.type == StepType::Profiling)
             AddPage(L"Profiling", std::make_unique<CProfilingPage>(this));
-        else
+        else if (sameType)
             AddPage(L"Pocketing", std::make_unique<CPocketingPage>(this));
+    }
+    else if (!sameType)
+    {
+        // Mixed kinds share only the first tabs.
     }
     else if (m_step.type == StepType::Drill)
     {
@@ -2347,8 +2609,34 @@ BOOL COperationDlg::OnInitDialog()
             m_pHolePocketing = pHole;
     }
 
-    for (const auto& page : m_pages)
-        page->Load(m_step);
+    if (!bulk)
+    {
+        for (const auto& page : m_pages)
+            page->Load(m_step);
+    }
+    else
+    {
+        // Each tab shows what the operations agree on, and the rest mixed. A
+        // hidden copy of the tab applies the changes to each operation on OK.
+        for (const auto& page : m_pages)
+        {
+            std::vector<COperationPage::ControlState> states;
+            for (const SequenceStep& other : m_bulk)
+            {
+                page->Load(other);
+                states.push_back(page->Snapshot());
+            }
+            page->Load(m_bulk.front());
+            page->ShowMixed(states);
+            m_baselines.push_back(page->Snapshot());
+
+            std::unique_ptr<COperationPage> twin = MakePage(page->TemplateId());
+            if (!twin->CreateInTab(this))
+                Log(L"[operation] could not create a hidden tab for bulk editing");
+            m_twins.push_back(std::move(twin));
+        }
+        g_lastPage = 0;
+    }
 
     if (g_lastPosition.x >= 0)
         SetWindowPos(nullptr, g_lastPosition.x, g_lastPosition.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
@@ -2604,8 +2892,57 @@ void COperationDlg::PostNcDestroy()
 
 void COperationDlg::OnOK()
 {
-    if (ReadSettings())
+    if (IsBulk() ? ReadBulkSettings() : ReadSettings())
         Finish(true);
+}
+
+bool COperationDlg::ReadBulkSettings()
+{
+    // The fields changed on each tab, from how it was first shown.
+    std::vector<COperationPage::ControlState> finals;
+    std::vector<std::set<int>> changes;
+    for (size_t i = 0; i < m_pages.size(); ++i)
+    {
+        finals.push_back(m_pages[i]->Snapshot());
+        changes.push_back(m_pages[i]->ChangedControls(m_baselines[i], finals.back()));
+    }
+
+    // Each operation in turn: its own values, the changed fields over them, then read back.
+    std::vector<SequenceStep> results = m_bulk;
+    std::wstring problems;
+    int firstBad = -1;
+    for (SequenceStep& step : results)
+    {
+        for (size_t i = 0; i < m_pages.size(); ++i)
+        {
+            COperationPage* pTwin = (i < m_twins.size()) ? m_twins[i].get() : nullptr;
+            if (changes[i].empty() || pTwin == nullptr || pTwin->GetSafeHwnd() == nullptr)
+                continue;
+            pTwin->Load(step);
+            pTwin->Overlay(finals[i], changes[i]);
+            std::wstring found;
+            if (!pTwin->Save(step, found))
+            {
+                AppendProblem(problems, FromUtf8(step.name) + L": " + found);
+                if (firstBad < 0)
+                    firstBad = static_cast<int>(i);
+            }
+        }
+    }
+
+    if (!problems.empty())
+    {
+        if (firstBad >= 0)
+        {
+            m_tabs.SetCurSel(firstBad);
+            ShowPage(firstBad);
+        }
+        MessageBoxW(problems.c_str(), L"Edit Operations", MB_OK | MB_ICONWARNING);
+        return false;
+    }
+
+    m_bulk = results;
+    return true;
 }
 
 void COperationDlg::OnGenerate()
