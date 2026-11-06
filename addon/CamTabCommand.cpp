@@ -19,6 +19,7 @@
 #include "GeometryReader.h"
 #include "Help.h"
 #include "ModelReader.h"
+#include "MachineDialog.h"
 #include "ToolDialogs.h"
 #include "Log.h"
 
@@ -67,6 +68,13 @@ namespace
         ID_CAM_STOCK_IMPORT,
         ID_CAM_STOCK_EDIT,
         ID_CAM_STOCK_DELETE,
+        ID_CAM_MACHINE_EDIT,
+        ID_CAM_MATERIAL_EDIT,
+        ID_CAM_MATERIAL_NONE,
+
+        // Choosing a material from the Material node's menu: the first, and room for many.
+        ID_CAM_MATERIAL_FIRST = 15000,
+        ID_CAM_MATERIAL_LAST = 15999,
         ID_CAM_RENAME_STEP,
         ID_CAM_DUPLICATE_STEP,
         ID_CAM_SUPPRESS_STEP,
@@ -392,81 +400,101 @@ void CCamTabCommand::OnWindowGone()
 /////////////////////////////////////////////////////////////////////////////
 // Loading and saving the .cam file
 
-fs::path CCamTabCommand::CurrentLibraryPath() const
-{
-    return m_job.toolLibraryPath.empty() ? DefaultToolLibraryPath()
-                                         : camcore::ResolveLibraryPath(m_camPath, m_job.toolLibraryPath);
-}
-
 void CCamTabCommand::ReloadTools()
 {
-    const fs::path path = CurrentLibraryPath();
-    const camcore::ToolLibraryLoadResult loaded = camcore::LoadToolLibrary(path);
+    // A job with no machine takes the last one used. That alone isn't an unsaved change.
+    if (m_job.machineId.empty() && !m_saveBlocked)
+        m_job.machineId = DefaultMachineId();
 
+    m_machine = camcore::Machine();
     m_library = camcore::ToolLibrary();
+    std::wstring machineName;
+    const camcore::MachineLoadResult loaded =
+        m_job.machineId.empty() ? camcore::MachineLoadResult()
+                                : camcore::LoadMachine(camcore::MachineFilePath(MachinesFolder(), m_job.machineId));
     if (loaded.status == camcore::LoadStatus::Ok)
     {
-        m_library = loaded.library;
+        m_machine = loaded.machine;
+        m_library = m_machine.tools;
+        machineName = FromUtf8(m_machine.name);
 
         if (m_library.tools.empty())
-        {
-            m_toolStatus = L"The tool library is empty. Double-click Tools to add one.";
-        }
+            m_toolStatus = L"This machine has no tools. Double-click Tools to add one.";
         else if (m_job.selectedToolId.empty())
-        {
             m_toolStatus = L"No tool selected.";
-        }
         else if (const camcore::Tool* pTool = camcore::FindToolById(m_library, m_job.selectedToolId))
-        {
             m_toolStatus = L"Selected tool: T" + std::to_wstring(pTool->number) + L" " + FromUtf8(pTool->name);
-        }
         else
-        {
-            m_toolStatus = L"The selected tool isn't in this library. Select another.";
-        }
+            m_toolStatus = L"The selected tool isn't on this machine. Select another.";
     }
-    else if (loaded.status == camcore::LoadStatus::NotFound)
+    else if (loaded.status == camcore::LoadStatus::NotFound || m_job.machineId.empty())
     {
-        // A new default library is expected. A job's own library should exist.
-        m_toolStatus = m_job.toolLibraryPath.empty()
-                           ? L"The tool library is empty. Double-click Tools to add one."
-                           : L"This job's tool library is missing: " + path.wstring();
+        machineName = L"not found";
+        m_toolStatus = L"This job's machine isn't in the machines folder. Double-click Machine to choose one.";
     }
     else
     {
-        m_toolStatus = L"The tool library can't be used. " + FromUtf8(loaded.message);
+        machineName = L"can't be read";
+        m_toolStatus = L"This job's machine can't be used. " + FromUtf8(loaded.message);
     }
 
-    Log(L"[tools] library '%s': %zu tools. %s", path.c_str(), m_library.tools.size(), m_toolStatus.c_str());
+    // The shared materials.
+    const camcore::MaterialsLoadResult materials = camcore::LoadMaterials(MaterialsPath());
+    m_materials = materials.list;
+    if (materials.status != camcore::LoadStatus::Ok && materials.status != camcore::LoadStatus::NotFound)
+        Log(L"[machine] materials: %s", FromUtf8(materials.message).c_str());
+
+    Log(L"[machine] %s: %zu tools. %s", machineName.c_str(), m_library.tools.size(), m_toolStatus.c_str());
 
     if (m_pWnd != nullptr)
+    {
+        m_pWnd->ShowMachine(machineName);
         m_pWnd->ShowTools(m_library, m_job.selectedToolId);
+        m_pWnd->ShowMaterial(GetMaterialName());
+    }
 
     SetStatus(m_jobStatus);
 }
 
-void CCamTabCommand::OpenToolLibrary()
+std::wstring CCamTabCommand::GetMaterialName() const
+{
+    if (m_job.materialId.empty())
+        return L"none";
+    const camcore::Material* pMaterial = camcore::FindMaterial(m_materials, m_job.materialId);
+    return (pMaterial != nullptr) ? FromUtf8(pMaterial->name) : L"not in the list";
+}
+
+void CCamTabCommand::ChooseMaterial(const std::string& id)
+{
+    if (m_saveBlocked || id == m_job.materialId)
+        return;
+    m_job.materialId = id;
+    MarkJobChanged();
+    if (m_pWnd != nullptr)
+        m_pWnd->ShowMaterial(GetMaterialName());
+}
+
+void CCamTabCommand::OpenMachineDialog(int tab)
 {
     AFX_MANAGE_STATE(AfxGetStaticModuleState());
 
     if (m_saveBlocked)
         return;
 
-    const fs::path before = CurrentLibraryPath();
-
-    CToolLibraryDlg dialog(before, m_job.selectedToolId, m_pWnd);
+    CMachineDlg dialog(m_job.machineId, m_job.materialId, static_cast<CMachineDlg::Tab>(tab), m_pWnd);
     dialog.DoModal();
 
-    const fs::path after = dialog.GetLibraryPath();
-    if (after != before)
+    if (dialog.GetMachineId() != m_job.machineId)
     {
-        m_job.toolLibraryPath = (after == DefaultToolLibraryPath())
-                                    ? std::string()
-                                    : camcore::StoredLibraryPath(m_camPath, after);
-        Log(L"[tools] job library is now '%s'", after.c_str());
+        m_job.machineId = dialog.GetMachineId();
+        Log(L"[machine] the job's machine is now %s", FromUtf8(m_job.machineId).c_str());
         MarkJobChanged();
     }
-
+    if (dialog.GetMaterialId() != m_job.materialId)
+    {
+        m_job.materialId = dialog.GetMaterialId();
+        MarkJobChanged();
+    }
     ReloadTools();
 }
 
@@ -631,13 +659,6 @@ void CCamTabCommand::SaveJobFile()
     }
 
     m_job.assembly = current.identity;
-
-    // A library kept beside the job must still resolve from the new location.
-    if (target != m_camPath && !m_job.toolLibraryPath.empty())
-    {
-        const fs::path library = camcore::ResolveLibraryPath(m_camPath, m_job.toolLibraryPath);
-        m_job.toolLibraryPath = camcore::StoredLibraryPath(target, library);
-    }
 
     const camcore::SaveResult saved = camcore::SaveJob(m_job, target);
     if (!saved.ok)
@@ -2613,7 +2634,9 @@ END_MESSAGE_MAP()
 
 CCamTabWnd::CCamTabWnd(CCamTabCommand* pTab)
     : m_pTab(pTab)
+    , m_hMachine(nullptr)
     , m_hTools(nullptr)
+    , m_hMaterial(nullptr)
     , m_hStock(nullptr)
     , m_hOperations(nullptr)
     , m_fillingTree(false)
@@ -2649,8 +2672,9 @@ int CCamTabWnd::OnCreate(LPCREATESTRUCT pCreate)
     m_tree.SetFont(pFont);
 
     HTREEITEM hSetup = m_tree.InsertItem(L"Setup");
-    m_tree.InsertItem(L"Machine", hSetup);
+    m_hMachine = m_tree.InsertItem(L"Machine", hSetup);
     m_hTools = m_tree.InsertItem(L"Tools", hSetup);
+    m_hMaterial = m_tree.InsertItem(L"Material", hSetup);
     m_hStock = m_tree.InsertItem(L"Stock", hSetup);
     m_hOperations = m_tree.InsertItem(L"Operations");
     m_tree.Expand(hSetup, TVE_EXPAND);
@@ -2825,6 +2849,11 @@ void CCamTabWnd::OnSettings()
     m_settings = dialog.GetSettings();
     ApplyViewSize();
 
+    // The last machine is kept by the Machine dialog, so this doesn't put back an older one.
+    const camcore::ProgramSettingsLoadResult current = camcore::LoadProgramSettings(ProgramSettingsPath());
+    if (current.status == camcore::LoadStatus::Ok)
+        m_settings.lastMachineId = current.settings.lastMachineId;
+
     // A damaged settings file, or one from a newer add-on, isn't overwritten.
     if (!m_settingsWritable)
     {
@@ -2979,6 +3008,55 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         return;
 
     const HTREEITEM hItem = ItemUnderCursor(true);
+    if (hItem != nullptr && (hItem == m_hMachine || hItem == m_hMaterial))
+    {
+        const UINT editable = m_pTab->CanEditSequence() ? MF_ENABLED : MF_GRAYED;
+        CMenu setupMenu;
+        setupMenu.CreatePopupMenu();
+        if (hItem == m_hMachine)
+        {
+            setupMenu.AppendMenu(MF_STRING | editable, ID_CAM_MACHINE_EDIT, L"Edit Machine...");
+        }
+        else
+        {
+            // The materials to choose from, the job's ticked.
+            const camcore::MaterialList& materials = m_pTab->GetMaterials();
+            const std::string& current = m_pTab->GetMaterialId();
+            for (size_t i = 0; i < materials.materials.size() && ID_CAM_MATERIAL_FIRST + i <= ID_CAM_MATERIAL_LAST; ++i)
+            {
+                const camcore::Material& material = materials.materials[i];
+                const UINT check = (material.id == current) ? MF_CHECKED : MF_UNCHECKED;
+                setupMenu.AppendMenu(MF_STRING | editable | check, ID_CAM_MATERIAL_FIRST + static_cast<UINT>(i),
+                                     FromUtf8(material.name).c_str());
+            }
+            setupMenu.AppendMenu(MF_STRING | editable | (current.empty() ? MF_CHECKED : MF_UNCHECKED),
+                                 ID_CAM_MATERIAL_NONE, L"No Material");
+            setupMenu.AppendMenu(MF_SEPARATOR);
+            setupMenu.AppendMenu(MF_STRING | editable, ID_CAM_MATERIAL_EDIT, L"Edit Materials...");
+        }
+
+        CPoint at;
+        ::GetCursorPos(&at);
+        const UINT chosen = setupMenu.TrackPopupMenu(TPM_LEFTALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NONOTIFY,
+                                                     at.x, at.y, this);
+        if (m_pTab == nullptr || chosen == 0)
+            return;
+        if (chosen == ID_CAM_MACHINE_EDIT)
+            m_pTab->OpenMachineDialog(CMachineDlg::MachineTab);
+        else if (chosen == ID_CAM_MATERIAL_EDIT)
+            m_pTab->OpenMachineDialog(CMachineDlg::MaterialsTab);
+        else if (chosen == ID_CAM_MATERIAL_NONE)
+            m_pTab->ChooseMaterial(std::string());
+        else if (chosen >= ID_CAM_MATERIAL_FIRST && chosen <= ID_CAM_MATERIAL_LAST)
+        {
+            const size_t index = chosen - ID_CAM_MATERIAL_FIRST;
+            const camcore::MaterialList& materials = m_pTab->GetMaterials();
+            if (index < materials.materials.size())
+                m_pTab->ChooseMaterial(materials.materials[index].id);
+        }
+        return;
+    }
+
     if (hItem != nullptr && hItem == m_hStock)
     {
         // One stock: the kinds while there's none, then Edit and Delete.
@@ -3342,7 +3420,17 @@ void CCamTabWnd::OnTreeDoubleClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     {
         // Handled, so the tree doesn't also expand or collapse the item.
         *pResult = 1;
-        m_pTab->OpenToolLibrary();
+        m_pTab->OpenMachineDialog(CMachineDlg::ToolsTab);
+    }
+    else if (hItem != nullptr && hItem == m_hMachine)
+    {
+        *pResult = 1;
+        m_pTab->OpenMachineDialog(CMachineDlg::MachineTab);
+    }
+    else if (hItem != nullptr && hItem == m_hMaterial)
+    {
+        *pResult = 1;
+        m_pTab->OpenMachineDialog(CMachineDlg::MaterialsTab);
     }
     else if (hItem != nullptr && hItem == m_hStock)
     {
@@ -3464,6 +3552,18 @@ void CCamTabWnd::ShowTools(const camcore::ToolLibrary& library, const std::strin
     m_tree.Expand(m_hTools, TVE_EXPAND);
 
     m_fillingTree = false;
+}
+
+void CCamTabWnd::ShowMachine(const std::wstring& name)
+{
+    if (m_hMachine != nullptr)
+        m_tree.SetItemText(m_hMachine, (L"Machine - " + name).c_str());
+}
+
+void CCamTabWnd::ShowMaterial(const std::wstring& name)
+{
+    if (m_hMaterial != nullptr)
+        m_tree.SetItemText(m_hMaterial, (L"Material - " + name).c_str());
 }
 
 void CCamTabWnd::MarkSelectedTool(const camcore::ToolLibrary& library, const std::string& selectedToolId)

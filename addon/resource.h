@@ -5,7 +5,7 @@
 #define IDD_ABOUTBOX                    13001
 #define IDC_ADDON_VERSION               13002
 #define IDC_ALIBRE_VERSION              13003
-#define IDD_TOOL_LIBRARY                13010
+#define IDD_MACHINE                     13010
 #define IDD_TOOL_EDIT                   13011
 #define IDC_LIB_PATH                    13020
 #define IDC_LIB_NOTE                    13021
@@ -14,8 +14,8 @@
 #define IDC_LIB_EDIT                    13024
 #define IDC_LIB_COPY                    13025
 #define IDC_LIB_DELETE                  13026
-#define IDC_LIB_OTHER                   13027
-#define IDC_LIB_DEFAULT                 13028
+#define IDC_LIB_IMPORT                  13027
+#define IDC_LIB_EXPORT                  13028
 #define IDC_TOOL_NUMBER                 13040
 #define IDC_TOOL_NAME                   13041
 #define IDC_TOOL_TYPE                   13042
@@ -213,6 +213,8 @@
 #define IDD_STOCK_BOX                   13031
 #define IDD_STOCK_PART_BOX              13032
 #define IDD_STOCK_IMPORT                13033
+#define IDD_NAME_PROMPT                 13034
+#define IDD_TOOL_FEEDS                  13035
 #define IDC_VIEW_SMALL                  13296
 #define IDC_VIEW_MEDIUM                 13297
 #define IDC_VIEW_LARGE                  13298
@@ -243,6 +245,30 @@
 #define IDC_STOCK_ROT_Y                 13323
 #define IDC_STOCK_ROT_Z                 13324
 #define IDC_STOCK_PROMPT                13325
+#define IDC_MACHINE_LIST                13326
+#define IDC_MACHINE_NEW                 13327
+#define IDC_MACHINE_COPY                13328
+#define IDC_MACHINE_DELETE              13329
+#define IDC_MACHINE_TABS                13330
+#define IDC_MACHINE_NAME                13331
+#define IDC_MACHINE_AXES                13332
+#define IDC_MACHINE_ROTARY              13333
+#define IDC_MACHINE_NAME_LABEL          13334
+#define IDC_MACHINE_AXES_LABEL          13335
+#define IDC_MACHINE_ROTARY_LABEL        13336
+#define IDC_MATERIAL_LIST               13337
+#define IDC_MATERIAL_ADD                13338
+#define IDC_MATERIAL_RENAME             13339
+#define IDC_MATERIAL_DELETE             13340
+#define IDC_NAME_PROMPT_LABEL           13341
+#define IDC_NAME_PROMPT_EDIT            13342
+#define IDC_TOOL_FEEDS_LIST             13343
+#define IDC_TOOL_FEEDS_ADD              13344
+#define IDC_TOOL_FEEDS_EDIT             13345
+#define IDC_TOOL_FEEDS_REMOVE           13346
+#define IDC_FEEDS_MATERIAL              13347
+#define IDC_FEEDS_PAGE_AREA             13348
+#define IDC_FEEDS_FROM_TOOL             13349
 #define IDC_HP_AT_TOP                   13266
 #define IDC_HP_AT_BOTTOM                13267
 #define IDC_HP_PICK_TOP                 13268
@@ -278,9 +304,9 @@
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13034
+#define _APS_NEXT_RESOURCE_VALUE        13036
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13326
+#define _APS_NEXT_CONTROL_VALUE         13350
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

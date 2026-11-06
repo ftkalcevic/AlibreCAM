@@ -1548,7 +1548,8 @@ namespace camcore
 
         // Version 3 added arcs to boundaries and toolpaths, which version 2 files
         // simply don't have, so they read as they are. Version 4 added the stock
-        // to the setup section; older files have none.
+        // to the setup section; older files have none. Version 5 added the
+        // machine and material, and stopped saving the tool library.
 
         const auto assembly = root.find("assembly");
         if (assembly == root.end() || !assembly->is_object())
@@ -1587,6 +1588,17 @@ namespace camcore
             const auto stock = setup->find("stock");
             if (stock != setup->end() && !ReadStock(*stock, result.job.stock))
                 return LoadFailure(LoadStatus::NotACamFile, "The stock is damaged: " + PathText(path), fileVersion);
+
+            const auto machine = setup->find("machine");
+            const auto material = setup->find("material");
+            if ((machine != setup->end() && !machine->is_string()) ||
+                (material != setup->end() && !material->is_string()))
+                return LoadFailure(LoadStatus::NotACamFile, "The machine or material is damaged: " + PathText(path),
+                                   fileVersion);
+            if (machine != setup->end())
+                result.job.machineId = machine->get<std::string>();
+            if (material != setup->end())
+                result.job.materialId = material->get<std::string>();
         }
 
         // Version 1 files always have an empty sequence.
@@ -1644,12 +1656,13 @@ namespace camcore
                       { "name", job.assembly.name },
                       { "guid", job.assembly.guid }
                   } },
-                { "tools",
+                { "tools", { { "selected", job.selectedToolId } } },
+                { "setup",
                   {
-                      { "library", job.toolLibraryPath },
-                      { "selected", job.selectedToolId }
+                      { "stock", WriteStock(job.stock) },
+                      { "machine", job.machineId },
+                      { "material", job.materialId }
                   } },
-                { "setup", { { "stock", WriteStock(job.stock) } } },
                 { "sequence", sequence }
             };
             text = root.dump(2) + "\n";

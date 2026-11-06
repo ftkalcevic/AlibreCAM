@@ -139,6 +139,10 @@ protected:
 
     DECLARE_MESSAGE_MAP()
 
+public:
+    // The tool chosen on the tab, or the operation's own if none is.
+    std::string ChosenToolId() const;
+
 private:
     const camcore::Tool* ChosenTool() const;
     void ShowDetails(const camcore::Tool* pTool);
@@ -161,7 +165,9 @@ public:
     enum { IDD = IDD_OP_FEEDS };
 
 protected:
+    BOOL OnInitDialog() override;
     afx_msg void OnTransferChanged();
+    afx_msg void OnFromTool();
 
     DECLARE_MESSAGE_MAP()
 
@@ -440,6 +446,10 @@ public:
     // The job's tool library. Empty if the dialog has lost its tab.
     camcore::ToolLibrary GetToolLibrary() const;
 
+    // The chosen tool's speeds and feeds for the job's material. False with a
+    // problem, in words for the user, if there are none.
+    bool FeedsFromTool(camcore::FeedSettings& feeds, std::wstring& problem) const;
+
     enum { IDD = IDD_OPERATION };
 
 protected:
@@ -469,6 +479,7 @@ private:
     CDrillingPage* m_pDrilling;     // owned by m_pages. Null for other operations.
     CCutLevelsPage* m_pCutLevels;   // owned by m_pages. Null for operations without one.
     CHolePocketingPage* m_pHolePocketing;   // owned by m_pages. Null for other operations.
+    CToolPage* m_pToolPage;     // owned by m_pages
     bool m_locating;
     LocateTarget m_locateTarget;
     bool m_selectingFeatures;

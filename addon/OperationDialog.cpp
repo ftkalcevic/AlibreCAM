@@ -613,9 +613,9 @@ void CToolPage::Load(const SequenceStep& step)
     }
 
     if (m_library.tools.empty())
-        SetDlgItemText(IDC_TOOL_NOTE, L"The tool library is empty. Double-click Tools on the CAM tab to add tools.");
+        SetDlgItemText(IDC_TOOL_NOTE, L"The machine has no tools. Double-click Tools on the CAM tab to add tools.");
     else if (!m_toolId.empty() && chosen < 0)
-        SetDlgItemText(IDC_TOOL_NOTE, L"This operation's tool isn't in the library. Choose another.");
+        SetDlgItemText(IDC_TOOL_NOTE, L"This operation's tool isn't on the machine. Choose another.");
     else if (chosen < 0)
         SetDlgItemText(IDC_TOOL_NOTE, L"Choose a tool.");
     else
@@ -632,6 +632,12 @@ bool CToolPage::Save(SequenceStep& step, std::wstring& /*problems*/)
     else
         step.toolId = m_toolId;
     return true;
+}
+
+std::string CToolPage::ChosenToolId() const
+{
+    const Tool* pTool = ChosenTool();
+    return (pTool != nullptr) ? pTool->id : m_toolId;
 }
 
 const Tool* CToolPage::ChosenTool() const
@@ -685,6 +691,7 @@ void CToolPage::OnToolChanged(NMHDR* pNotify, LRESULT* pResult)
 // CFeedsPage
 
 BEGIN_MESSAGE_MAP(CFeedsPage, COperationPage)
+    ON_BN_CLICKED(IDC_FEEDS_FROM_TOOL, &CFeedsPage::OnFromTool)
     ON_BN_CLICKED(IDC_FEEDS_TRANSFER_RAPID, &CFeedsPage::OnTransferChanged)
     ON_BN_CLICKED(IDC_FEEDS_TRANSFER_SET, &CFeedsPage::OnTransferChanged)
 END_MESSAGE_MAP()
@@ -742,6 +749,33 @@ bool CFeedsPage::Save(SequenceStep& step, std::wstring& problems)
 
     step.feeds = feeds;
     return true;
+}
+
+BOOL CFeedsPage::OnInitDialog()
+{
+    COperationPage::OnInitDialog();
+
+    // From Tool belongs to an operation. Editing a tool's own feeds hosts this page without one.
+    if (m_pOwner == nullptr)
+        GetDlgItem(IDC_FEEDS_FROM_TOOL)->ShowWindow(SW_HIDE);
+    return TRUE;
+}
+
+void CFeedsPage::OnFromTool()
+{
+    if (m_pOwner == nullptr)
+        return;
+
+    FeedSettings feeds;
+    std::wstring problem;
+    if (!m_pOwner->FeedsFromTool(feeds, problem))
+    {
+        MessageBox(problem.c_str(), L"AlibreCAM", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    SequenceStep step;
+    step.feeds = feeds;
+    Load(step);
 }
 
 void CFeedsPage::UpdateFields()
@@ -2231,6 +2265,7 @@ COperationDlg::COperationDlg(CCamTabCommand* pTab, const SequenceStep& step)
     , m_pDrilling(nullptr)
     , m_pCutLevels(nullptr)
     , m_pHolePocketing(nullptr)
+    , m_pToolPage(nullptr)
     , m_locating(false)
     , m_locateTarget(LocateTarget::DrillDepth)
     , m_selectingFeatures(false)
@@ -2261,7 +2296,11 @@ BOOL COperationDlg::OnInitDialog()
     if (pFeatures->GetSafeHwnd() != nullptr)
         m_pFeatures = pFeatures;
 
-    AddPage(L"Tool", std::make_unique<CToolPage>(this));
+    auto toolPage = std::make_unique<CToolPage>(this);
+    CToolPage* pToolPage = toolPage.get();
+    AddPage(L"Tool", std::move(toolPage));
+    if (pToolPage->GetSafeHwnd() != nullptr)
+        m_pToolPage = pToolPage;
     AddPage(L"Feeds && Speeds", std::make_unique<CFeedsPage>(this));
     AddPage(L"Clearance", std::make_unique<CClearancePage>(this));
 
@@ -2516,6 +2555,39 @@ void COperationDlg::ShowFeatureNote(const std::wstring& text)
 ToolLibrary COperationDlg::GetToolLibrary() const
 {
     return (m_pTab != nullptr) ? m_pTab->GetToolLibrary() : ToolLibrary();
+}
+
+bool COperationDlg::FeedsFromTool(FeedSettings& feeds, std::wstring& problem) const
+{
+    if (m_pTab == nullptr || m_pToolPage == nullptr)
+    {
+        problem = L"The CAM tab has closed.";
+        return false;
+    }
+
+    const ToolLibrary library = m_pTab->GetToolLibrary();
+    const Tool* pTool = FindToolById(library, m_pToolPage->ChosenToolId());
+    if (pTool == nullptr)
+    {
+        problem = L"Choose a tool on the Tool tab first.";
+        return false;
+    }
+    const std::string materialId = m_pTab->GetMaterialId();
+    if (materialId.empty())
+    {
+        problem = L"The job has no material. Right-click Material on the CAM tab to choose one.";
+        return false;
+    }
+    const ToolFeeds* pRow = FeedsFor(*pTool, materialId);
+    if (pRow == nullptr)
+    {
+        problem = L"T" + std::to_wstring(pTool->number) + L" " + FromUtf8(pTool->name) +
+                  L" has no speeds and feeds for " + m_pTab->GetMaterialName() +
+                  L". Add them to the tool on the Machine dialog's Tools tab.";
+        return false;
+    }
+    feeds = pRow->feeds;
+    return true;
 }
 
 bool COperationDlg::GetFrame(camcore::Frame& frame) const

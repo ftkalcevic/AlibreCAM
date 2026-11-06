@@ -25,6 +25,9 @@ namespace camcore
     struct ProgramSettings
     {
         ViewSize viewSize = ViewSize::Small;
+
+        // The machine used last, which a job with no machine takes.
+        std::string lastMachineId;
     };
 
     // The icons' size in pixels: 16, 24 or 32.

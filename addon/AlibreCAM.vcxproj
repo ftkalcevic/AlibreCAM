@@ -117,6 +117,7 @@
     <ClCompile Include="SettingsDialog.cpp" />
     <ClCompile Include="Help.cpp" />
     <ClCompile Include="StockDialog.cpp" />
+    <ClCompile Include="MachineDialog.cpp" />
     <ClCompile Include="ToolDialogs.cpp" />
     <ClCompile Include="AlibreCAM.cpp" />
     <ClCompile Include="stdafx.cpp">
@@ -139,6 +140,7 @@
     <ClInclude Include="SettingsDialog.h" />
     <ClInclude Include="Help.h" />
     <ClInclude Include="StockDialog.h" />
+    <ClInclude Include="MachineDialog.h" />
     <ClInclude Include="ToolDialogs.h" />
     <ClInclude Include="AlibreCAM.h" />
     <ClInclude Include="resource.h" />

@@ -66,8 +66,11 @@
   <a href="#stock-box">Box Stock</a>
   <a href="#stock-part-box">Part Box Stock</a>
   <a href="#stock-import">Imported Stock</a>
-  <a href="#tool-library">Tool Library</a>
+  <a href="#machine">Machine</a>
+  <a class="sub" href="#machine-tools">Tools tab</a>
+  <a class="sub" href="#machine-materials">Materials tab</a>
   <a href="#tool-edit">Tool</a>
+  <a class="sub" href="#tool-feeds">Speeds and Feeds</a>
   <a href="#set-origin">Set Origin</a>
   <a href="#post">Post</a>
   <a href="#operation">Operation dialog</a>
@@ -115,9 +118,11 @@
 <p>The tree has a fixed <strong>Setup</strong> at the top and the <strong>Operations</strong> sequence below it. Operations run from top to bottom. Drag a step to reorder it.</p>
 <dl>
   <dt>Setup ▸ Machine</dt>
-  <dd><span class="tbc">To be completed.</span> Machine settings aren't built yet.</dd>
+  <dd>The machine the job is cut on, shown as <em>Machine - name</em>. Double-click it, or right-click and Edit Machine, to open the <a href="#machine">Machine</a> dialog.</dd>
   <dt>Setup ▸ Tools</dt>
-  <dd>The tools in the job's tool library. Click a tool to select it: new operations start with the selected tool. Double-click Tools or a tool to open the <a href="#tool-library">Tool Library</a>.</dd>
+  <dd>The machine's tools. Click a tool to select it: new operations start with the selected tool. Double-click Tools or a tool to open the Machine dialog at its <a href="#machine-tools">Tools tab</a>.</dd>
+  <dt>Setup ▸ Material</dt>
+  <dd>The material the job is cut from, shown as <em>Material - name</em>. Right-click it to choose a material, or No Material, or Edit Materials to change the list. The Feeds &amp; Speeds tab's From Tool button uses it. Double-click opens the <a href="#machine-materials">Materials tab</a>.</dd>
   <dt>Setup ▸ Stock</dt>
   <dd>The material the parts are cut from. A job has at most one stock, and the node shows its kind, such as <em>Stock - Box Stock</em>. Right-click it to make one: <a href="#stock-box">Box Stock</a>, <a href="#stock-part-box">Part Box Stock</a> or <a href="#stock-import">Import Stock</a>. Once there's a stock, those are greyed, and Edit (or double-clicking Stock) changes it and Delete removes it. The stock is drawn as its edges in teal, and it's measured along the assembly's axes.</dd>
   <dt>Operations</dt>
@@ -243,14 +248,33 @@
 </dl>
 </section>
 
-<section id="tool-library">
-<h2>Tool Library</h2>
-<p>The tools a job can use. Tools are kept only in a library file, not in the job. The default library is <code>%APPDATA%\AlibreCAM\tools.json</code>, and a job can use another library instead. Changes are saved to the library file straight away.</p>
+<section id="machine">
+<h2>Machine</h2>
+<p>The machine the job is cut on, its tools, and the list of materials. Each machine is a file of its own in <code>%APPDATA%\AlibreCAM\machines\</code>, holding its settings and its tools, and the job remembers which one it uses. A new job starts on the machine used last. Changes are saved straight away. Open it by double-clicking Machine, Tools or Material on the CAM tab.</p>
 <dl>
-  <dt>Library</dt>
-  <dd>The library file this job uses.</dd>
+  <dt>Machine</dt>
+  <dd>The machine this job uses. Choosing another moves the job to it, and it becomes the machine new jobs start on.</dd>
+  <dt>New</dt>
+  <dd>Makes a new machine with no tools, and moves the job to it.</dd>
+  <dt>Copy</dt>
+  <dd>Makes a copy of the machine, with its tools, under a new name, and moves the job to it.</dd>
+  <dt>Delete</dt>
+  <dd>Deletes the machine's file and its tools, after asking. The job moves to another machine. The only machine can't be deleted.</dd>
+  <dt>Name</dt>
+  <dd>The machine's name, shown in the tree as <em>Machine - name</em>.</dd>
+  <dt>Number of axes</dt>
+  <dd>3, or 4 for a machine with a rotary axis.</dd>
+  <dt>Rotary axis</dt>
+  <dd>Which way the rotary (4th) axis runs: along -X, +X, -Y or +Y. Only used with 4 axes. <span class="tbc">Not used for toolpaths yet.</span></dd>
+  <dt>Close</dt>
+  <dd>Closes the dialog. Everything is already saved.</dd>
+</dl>
+
+<h3 id="machine-tools">Tools tab</h3>
+<p>The machine's tools. Each has a number, size, and speeds and feeds for each material.</p>
+<dl>
   <dt>Tool list</dt>
-  <dd>The library's tools, with their numbers, names, types and sizes. Double-click a tool to edit it.</dd>
+  <dd>The machine's tools, with their numbers, names, types, sizes, and how many materials have speeds and feeds. Double-click a tool to edit it.</dd>
   <dt>Add</dt>
   <dd>Adds a new tool, in the <a href="#tool-edit">Tool</a> dialog.</dd>
   <dt>Edit</dt>
@@ -258,19 +282,30 @@
   <dt>Copy</dt>
   <dd>Adds a new tool starting as a copy of the chosen one.</dd>
   <dt>Delete</dt>
-  <dd>Removes the chosen tool from the library. Operations that use it will report the tool as missing.</dd>
-  <dt>Other library</dt>
-  <dd>Chooses another library file for this job.</dd>
-  <dt>Use default library</dt>
-  <dd>Goes back to the default library for this job.</dd>
-  <dt>Close</dt>
-  <dd>Closes the dialog.</dd>
+  <dd>Removes the chosen tool. Operations that use it will report the tool as missing.</dd>
+  <dt>Import</dt>
+  <dd>Adds the tools from a tool library file, such as an older <code>tools.json</code> or one exported from another machine. Tools keep their identity, so operations that used them find them again. If some are already on the machine, you choose whether to replace them. A tool whose number is taken gets the next free number.</dd>
+  <dt>Export</dt>
+  <dd>Saves the machine's tools, with their speeds and feeds, to a tool library file.</dd>
+</dl>
+
+<h3 id="machine-materials">Materials tab</h3>
+<p>The materials jobs can be cut from. The list is shared by every machine (<code>%APPDATA%\AlibreCAM\materials.json</code>). Only names for now.</p>
+<dl>
+  <dt>Material list</dt>
+  <dd>Every material. Double-click one to rename it.</dd>
+  <dt>Add</dt>
+  <dd>Adds a material. Names must be different.</dd>
+  <dt>Rename</dt>
+  <dd>Renames the chosen material. Tools' speeds and feeds stay with it.</dd>
+  <dt>Delete</dt>
+  <dd>Deletes the chosen material, after asking. Every machine's tools lose their speeds and feeds for it, and a job using it is left with no material.</dd>
 </dl>
 </section>
 
 <section id="tool-edit">
 <h2>Tool</h2>
-<p>One tool's number, name and size. Version 1 has flat end mills and drills.</p>
+<p>One tool's number, name and size, and its speeds and feeds for each material. Version 1 has flat end mills and drills.</p>
 <dl>
   <dt>Number</dt>
   <dd>The tool number (T number) the machine knows the tool by. It's written at tool changes.</dd>
@@ -290,10 +325,29 @@
   <dd>The number of flutes (end mills).</dd>
   <dt>Point angle (deg)</dt>
   <dd>The drill's included point angle, such as 118. Used by the Drilling tab's Add drill tip to depth.</dd>
+  <dt>Speeds &amp; Feeds</dt>
+  <dd>One row for each material the tool has speeds and feeds for, with its spindle speed and cut feed. An operation's Feeds &amp; Speeds tab can be filled from the row for the job's material.</dd>
+  <dt>Add, Edit, Remove</dt>
+  <dd>Add a row for another material, change the chosen row, or remove it, in the <a href="#tool-feeds">Speeds and Feeds</a> dialog.</dd>
   <dt>OK</dt>
-  <dd>Saves the tool to the library.</dd>
+  <dd>Saves the tool to the machine.</dd>
   <dt>Cancel</dt>
   <dd>Closes the dialog without saving.</dd>
+</dl>
+</section>
+
+<section id="tool-feeds">
+<h2>Speeds and Feeds</h2>
+<p>A tool's spindle speed and feeds for one material. The fields are the same as an operation's <a href="#tab-feeds">Feeds &amp; Speeds tab</a>.</p>
+<dl>
+  <dt>Material</dt>
+  <dd>The material these are for. Materials the tool already has a row for aren't offered.</dd>
+  <dt>Spindle Speed, Feed Rates and Transfer</dt>
+  <dd>As on the Feeds &amp; Speeds tab.</dd>
+  <dt>OK</dt>
+  <dd>Keeps the row. It's saved with the tool when the Tool dialog's OK is pressed.</dd>
+  <dt>Cancel</dt>
+  <dd>Closes the dialog without changing the row.</dd>
 </dl>
 </section>
 
@@ -393,12 +447,12 @@
 
 <section id="tab-tool">
 <h2>Tool tab</h2>
-<p>The tool the operation cuts with, chosen from the job's tool library. A new operation starts with the tool selected in the tree.</p>
+<p>The tool the operation cuts with, chosen from the machine's tools. A new operation starts with the tool selected in the tree.</p>
 <dl>
   <dt>Tool list</dt>
-  <dd>Every tool in the library, with its T number, name and type. Choose one.</dd>
+  <dd>Every tool on the machine, with its T number, name and type. Choose one.</dd>
   <dt>Tool details</dt>
-  <dd>The chosen tool's sizes, in its own unit. If the operation's tool is missing from the library, this says so.</dd>
+  <dd>The chosen tool's sizes, in its own unit. If the operation's tool isn't on the machine, this says so.</dd>
 </dl>
 </section>
 
@@ -406,6 +460,8 @@
 <h2>Feeds &amp; Speeds tab</h2>
 <p>The spindle speed and feed rates for this operation. They belong to the operation because they depend on the material. Feeds are in mm/min.</p>
 <dl>
+  <dt>From Tool</dt>
+  <dd>Fills every field from the speeds and feeds of the tool chosen on the Tool tab, for the job's material. If the tool has none for that material, it says so and changes nothing. The values can be changed afterwards.</dd>
   <dt>Spindle Speed</dt>
   <dd>In revolutions per minute.</dd>
   <dt>Plunge</dt>

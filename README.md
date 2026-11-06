@@ -97,7 +97,8 @@ Visual Studio. The project launches `Alibre Design.exe` and breakpoints in
 | `StockDialog.cpp/.h` | The Box Stock, Part Box Stock and Imported Stock dialogs |
 | `SettingsDialog.cpp/.h` | The Settings dialog (CAM view size), saved in `%APPDATA%\AlibreCAM\settings.json` |
 | `Log.cpp/.h` | The log file |
-| `ToolDialogs.cpp/.h` | The tool library and tool editing dialogs |
+| `MachineDialog.cpp/.h` | The Machine dialog: machines, their tools (with import and export), and the materials |
+| `ToolDialogs.cpp/.h` | Edits one tool and its speeds and feeds per material |
 | `AlibreCAM.adc` | Add-on manifest. `specificationVersion="2"` is required for the ribbon tab and icons |
 | `Alibre.props` | Finds the Alibre type libraries |
 | `deploy\*.ps1` | Install and uninstall |

@@ -104,6 +104,14 @@ namespace camcore
                 return LoadFailure(LoadStatus::NotACamFile, "The view size isn't one this add-on knows: " +
                                                                  path.u8string());
         }
+
+        const auto lastMachine = root.find("lastMachine");
+        if (lastMachine != root.end())
+        {
+            if (!lastMachine->is_string())
+                return LoadFailure(LoadStatus::NotACamFile, "The last machine is damaged: " + path.u8string());
+            result.settings.lastMachineId = lastMachine->get<std::string>();
+        }
         return result;
     }
 
@@ -113,7 +121,8 @@ namespace camcore
         {
             { "format", kFormatName },
             { "formatVersion", kProgramSettingsFormatVersion },
-            { "viewSize", ViewSizeName(settings.viewSize) }
+            { "viewSize", ViewSizeName(settings.viewSize) },
+            { "lastMachine", settings.lastMachineId }
         };
 
         SaveResult result;

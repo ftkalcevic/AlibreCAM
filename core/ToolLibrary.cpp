@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "FileIO.h"
+#include "ToolJson.h"
 
 namespace camcore
 {
@@ -39,7 +40,40 @@ namespace camcore
             return (unit == ToolUnit::Inches) ? "in" : "mm";
         }
 
-        json ToolToJson(const Tool& tool)
+    }
+
+    json FeedsToJson(const FeedSettings& feeds)
+    {
+        return
+        {
+            { "spindleRpm", feeds.spindleRpm },
+            { "plunge", feeds.plunge },
+            { "approach", feeds.approach },
+            { "engage", feeds.engage },
+            { "cut", feeds.cut },
+            { "retract", feeds.retract },
+            { "departure", feeds.departure },
+            { "transferAtRapid", feeds.transferAtRapid },
+            { "transfer", feeds.transfer }
+        };
+    }
+
+    FeedSettings FeedsFromJson(const json& item)
+    {
+        FeedSettings feeds;
+        feeds.spindleRpm = item.at("spindleRpm").get<double>();
+        feeds.plunge = item.at("plunge").get<double>();
+        feeds.approach = item.at("approach").get<double>();
+        feeds.engage = item.at("engage").get<double>();
+        feeds.cut = item.at("cut").get<double>();
+        feeds.retract = item.at("retract").get<double>();
+        feeds.departure = item.at("departure").get<double>();
+        feeds.transferAtRapid = item.at("transferAtRapid").get<bool>();
+        feeds.transfer = item.at("transfer").get<double>();
+        return feeds;
+    }
+
+    json ToolToJson(const Tool& tool)
         {
             json item =
             {
@@ -58,11 +92,19 @@ namespace camcore
             else
                 item["fluteCount"] = tool.fluteCount;
 
+            json feeds = json::array();
+            for (const ToolFeeds& row : tool.feeds)
+            {
+                json entry = FeedsToJson(row.feeds);
+                entry["material"] = row.materialId;
+                feeds.push_back(entry);
+            }
+            item["feeds"] = feeds;
             return item;
         }
 
-        // Throws json::exception if a field is missing or the wrong type.
-        Tool ToolFromJson(const json& item)
+    // Throws json::exception if a field is missing or the wrong type.
+    Tool ToolFromJson(const json& item)
         {
             Tool tool;
             tool.id = item.at("id").get<std::string>();
@@ -94,9 +136,20 @@ namespace camcore
             else
                 tool.fluteCount = item.at("fluteCount").get<int>();
 
+            // Version 1 libraries have no feeds.
+            const auto feeds = item.find("feeds");
+            if (feeds != item.end())
+            {
+                for (const json& entry : feeds->get_ref<const json::array_t&>())
+                {
+                    ToolFeeds row;
+                    row.materialId = entry.at("material").get<std::string>();
+                    row.feeds = FeedsFromJson(entry);
+                    tool.feeds.push_back(row);
+                }
+            }
             return tool;
         }
-    }
 
     std::string NewToolId()
     {
@@ -129,6 +182,17 @@ namespace camcore
         {
             if (tool.fluteCount < 1)
                 problems.push_back("The flute count must be 1 or more.");
+        }
+
+        std::set<std::string> materials;
+        for (const ToolFeeds& row : tool.feeds)
+        {
+            if (row.materialId.empty())
+                problems.push_back("A row of speeds and feeds has no material.");
+            else if (!materials.insert(row.materialId).second)
+                problems.push_back("A material has two rows of speeds and feeds.");
+            for (const std::string& problem : ValidateFeeds(row.feeds))
+                problems.push_back("Speeds and feeds: " + problem);
         }
         return problems;
     }
@@ -172,6 +236,16 @@ namespace camcore
         {
             if (tool.id == id)
                 return &tool;
+        }
+        return nullptr;
+    }
+
+    const ToolFeeds* FeedsFor(const Tool& tool, const std::string& materialId)
+    {
+        for (const ToolFeeds& row : tool.feeds)
+        {
+            if (row.materialId == materialId)
+                return &row;
         }
         return nullptr;
     }

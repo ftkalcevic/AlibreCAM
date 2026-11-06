@@ -12,6 +12,8 @@
 #include "CamJob.h"
 #include "CamViewCommand.h"
 #include "GeometryReader.h"
+#include "Machine.h"
+#include "Materials.h"
 #include "OperationDialog.h"
 #include "OriginDialog.h"
 #include "ProgramSettings.h"
@@ -51,9 +53,13 @@ public:
     void LoadJobFile();
     void SaveJobFile();
 
-    // The tool library
-    void OpenToolLibrary();
+    // The machine, its tools, and the job's material. tab is a CMachineDlg::Tab.
+    void OpenMachineDialog(int tab);
     void SelectToolByIndex(size_t index);
+    const camcore::MaterialList& GetMaterials() const { return m_materials; }
+    const std::string& GetMaterialId() const { return m_job.materialId; }
+    std::wstring GetMaterialName() const;       // "none" when the job has no material
+    void ChooseMaterial(const std::string& id);
 
     // The stock. There's at most one.
     bool HasStock() const { return m_job.stock.kind != camcore::StockKind::None; }
@@ -153,8 +159,7 @@ private:
     void SetSaveBlocked(bool blocked);
     void WarnIfUnsaved();
     void MarkJobChanged();
-    std::filesystem::path CurrentLibraryPath() const;
-    void ReloadTools();
+    void ReloadTools();         // the job's machine, its tools, and the materials
     void ReadJobFile();
     void ShowSequence();
     void DestroyWindowIfOpen();
@@ -203,7 +208,9 @@ private:
 
     bool m_unsavedChanges;
 
-    camcore::ToolLibrary m_library;
+    camcore::Machine m_machine;         // the job's machine, empty if it can't be read
+    camcore::ToolLibrary m_library;     // its tools
+    camcore::MaterialList m_materials;
     std::wstring m_jobStatus;
     std::wstring m_toolStatus;
     std::wstring m_sequenceStatus;
@@ -259,6 +266,8 @@ public:
     void SetStatusText(const std::wstring& text);
     void EnableSave(bool enable);
     void ShowTools(const camcore::ToolLibrary& library, const std::string& selectedToolId);
+    void ShowMachine(const std::wstring& name);
+    void ShowMaterial(const std::wstring& name);
     void MarkSelectedTool(const camcore::ToolLibrary& library, const std::string& selectedToolId);
     void ShowSequence(const camcore::Job& job, const StepRef& selected);
     void ShowStock(const camcore::Stock& stock);
@@ -331,7 +340,9 @@ private:
     camcore::ProgramSettings m_settings;
     bool m_settingsWritable;        // false if the file is damaged or newer, so it isn't overwritten
     CButton m_save;
+    HTREEITEM m_hMachine;
     HTREEITEM m_hTools;
+    HTREEITEM m_hMaterial;
     HTREEITEM m_hStock;
     HTREEITEM m_hOperations;
     bool m_fillingTree;

@@ -13,7 +13,8 @@
 
 namespace camcore
 {
-    constexpr int kToolLibraryFormatVersion = 1;
+    // Version 2 added each tool's feeds per material.
+    constexpr int kToolLibraryFormatVersion = 2;
 
     enum class ToolType
     {
@@ -27,8 +28,16 @@ namespace camcore
         Inches
     };
 
-    // The physical tool only. Speeds, feeds and depths vary with the material,
-    // so they belong to each operation.
+    // A tool's spindle speed and feeds for one material, which fill an
+    // operation's Feeds & Speeds tab when asked.
+    struct ToolFeeds
+    {
+        std::string materialId;
+        FeedSettings feeds;
+    };
+
+    // The physical tool, with its speeds and feeds for each material. An
+    // operation keeps its own copy of the feeds, as they can be changed there.
     struct Tool
     {
         std::string id;     // stable, so jobs keep their reference if the tool is renumbered
@@ -46,6 +55,9 @@ namespace camcore
 
         // Drills only
         double pointAngle = 118.0;      // degrees
+
+        // At most one for each material.
+        std::vector<ToolFeeds> feeds;
     };
 
     struct ToolLibrary
@@ -73,14 +85,17 @@ namespace camcore
 
     const Tool* FindToolById(const ToolLibrary& library, const std::string& id);
 
+    // The tool's feeds for a material, or null if it has none.
+    const ToolFeeds* FeedsFor(const Tool& tool, const std::string& materialId);
+
     // The lowest tool number not already in use.
     int NextFreeToolNumber(const ToolLibrary& library);
 
     ToolLibraryLoadResult LoadToolLibrary(const std::filesystem::path& path);
     SaveResult SaveToolLibrary(const ToolLibrary& library, const std::filesystem::path& path);
 
-    // A job keeps a library in its own folder as a bare file name, so the job and
-    // library can move together. Any other library is stored as a full path.
+    // Older jobs kept a library in their own folder as a bare file name, and any
+    // other library as a full path. Tools now belong to the machine.
     std::string StoredLibraryPath(const std::filesystem::path& camPath, const std::filesystem::path& libraryPath);
     std::filesystem::path ResolveLibraryPath(const std::filesystem::path& camPath, const std::string& stored);
 }

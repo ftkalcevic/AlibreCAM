@@ -770,7 +770,7 @@ TEST_CASE("cutting settings in a library are ignored and not written back")
 
     std::string text;
     REQUIRE(ReadWholeFile(path, text));
-    CHECK(text.find("feed") == std::string::npos);
+    CHECK(text.find("\"feed\"") == std::string::npos);
     CHECK(text.find("spindleSpeed") == std::string::npos);
     CHECK(text.find("stepover") == std::string::npos);
 }
@@ -922,20 +922,42 @@ TEST_CASE("finding tools and choosing numbers")
     CHECK(NewToolId() != NewToolId());
 }
 
-TEST_CASE("a job remembers its tool library and selected tool")
+TEST_CASE("a job remembers its selected tool, machine and material")
 {
     TempFolder folder;
     const fs::path path = folder / "Bracket.cam";
 
     Job job = SampleJob();
-    job.toolLibraryPath = "shop_tools.json";
     job.selectedToolId = "abc123";
+    job.machineId = "router";
+    job.materialId = "alu";
     REQUIRE(SaveJob(job, path).ok);
 
     const LoadResult loaded = LoadJob(path);
     REQUIRE(loaded.status == LoadStatus::Ok);
-    CHECK(loaded.job.toolLibraryPath == "shop_tools.json");
     CHECK(loaded.job.selectedToolId == "abc123");
+    CHECK(loaded.job.machineId == "router");
+    CHECK(loaded.job.materialId == "alu");
+}
+
+TEST_CASE("an older job's tool library is read but not saved again")
+{
+    TempFolder folder;
+    const fs::path path = folder / "Bracket.cam";
+    WriteText(path, R"({"format":"AlibreCAM","formatVersion":4,"assembly":{"name":"a","guid":"b"},)"
+                    R"("tools":{"library":"shop_tools.json","selected":"t1"},"setup":{},"sequence":[]})");
+
+    LoadResult loaded = LoadJob(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    CHECK(loaded.job.toolLibraryPath == "shop_tools.json");
+    CHECK(loaded.job.selectedToolId == "t1");
+    CHECK(loaded.job.machineId.empty());
+
+    REQUIRE(SaveJob(loaded.job, path).ok);
+    loaded = LoadJob(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    CHECK(loaded.job.toolLibraryPath.empty());
+    CHECK(loaded.job.selectedToolId == "t1");
 }
 
 TEST_CASE("jobs saved before tools existed still load")

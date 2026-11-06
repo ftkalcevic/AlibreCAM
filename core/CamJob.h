@@ -26,7 +26,7 @@ namespace camcore
 {
     // The newest .cam format this build can read and the one it writes.
     // Version 2 added Set Origin steps and groups to the sequence.
-    constexpr int kCamFormatVersion = 4;
+    constexpr int kCamFormatVersion = 5;
 
     // Which assembly a job belongs to. The GUID comes from the assembly file,
     // and is empty if it couldn't be read.
@@ -110,8 +110,13 @@ namespace camcore
         // At most one stock. Its kind is None until one is made.
         Stock stock;
 
-        // Empty uses the add-on's default tool library. Otherwise, as returned
-        // by StoredLibraryPath.
+        // The machine (its ID) the job is cut on, and the material (its ID) it's
+        // cut from. Empty until chosen.
+        std::string machineId;
+        std::string materialId;
+
+        // The tool library older jobs (before version 5) used, as StoredLibraryPath
+        // returned it. Read but not saved: tools now belong to the machine.
         std::string toolLibraryPath;
 
         // The ID of the selected tool in the library, or empty.
