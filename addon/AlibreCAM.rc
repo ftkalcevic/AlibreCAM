@@ -42,6 +42,9 @@ IDI_ALIBRECAM             ICON                    "res\\AlibreCAM.ico"
 IDB_CAM_TOOLBAR_16        BITMAP                  "res\\CamToolbar16.bmp"
 IDB_CAM_TOOLBAR_24        BITMAP                  "res\\CamToolbar24.bmp"
 IDB_CAM_TOOLBAR_32        BITMAP                  "res\\CamToolbar32.bmp"
+IDB_CAM_TREE_16           BITMAP                  "res\\CamTree16.bmp"
+IDB_CAM_TREE_24           BITMAP                  "res\\CamTree24.bmp"
+IDB_CAM_TREE_32           BITMAP                  "res\\CamTree32.bmp"
 
 /////////////////////////////////////////////////////////////////////////////
 // Dialog

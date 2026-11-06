@@ -2837,6 +2837,70 @@ void CCamTabCommand::ClearPickedSelection()
 /////////////////////////////////////////////////////////////////////////////
 // CCamTabWnd
 
+namespace
+{
+    // The tree's images, in the order of the strips in res\CamTree16.bmp, 24 and 32
+    // (drawn by the scratch script treeicons.py; add an image to every strip to add one).
+    enum TreeImage
+    {
+        kImageSetup,
+        kImageMachine,
+        kImageTools,
+        kImageMaterial,
+        kImageStock,
+        kImageOperations,
+        kImageSetOrigin,
+        kImageFolder,
+        kImageFlatEndMill,
+        kImageBallMill,
+        kImageCornerRadiusMill,
+        kImageVMill,
+        kImageChamferMill,
+        kImageTaperMill,
+        kImageThreadMill,
+        kImageDrill,
+        kImageDrillOperation,
+        kImageHolePocketing,
+        kImageFacing,
+        kImageProfiling,
+        kImagePocketing,
+        kImageChamfer,
+        kImageEngrave
+    };
+
+    int ToolImage(camcore::ToolType type)
+    {
+        switch (type)
+        {
+        case camcore::ToolType::BallMill:         return kImageBallMill;
+        case camcore::ToolType::CornerRadiusMill: return kImageCornerRadiusMill;
+        case camcore::ToolType::VMill:            return kImageVMill;
+        case camcore::ToolType::ChamferMill:      return kImageChamferMill;
+        case camcore::ToolType::TaperMill:        return kImageTaperMill;
+        case camcore::ToolType::ThreadMill:       return kImageThreadMill;
+        case camcore::ToolType::Drill:            return kImageDrill;
+        default:                                  return kImageFlatEndMill;
+        }
+    }
+
+    int StepImage(camcore::StepType type)
+    {
+        switch (type)
+        {
+        case camcore::StepType::SetOrigin:     return kImageSetOrigin;
+        case camcore::StepType::Group:         return kImageFolder;
+        case camcore::StepType::Drill:         return kImageDrillOperation;
+        case camcore::StepType::HolePocketing: return kImageHolePocketing;
+        case camcore::StepType::Facing:        return kImageFacing;
+        case camcore::StepType::Profiling:     return kImageProfiling;
+        case camcore::StepType::Pocketing:     return kImagePocketing;
+        case camcore::StepType::Chamfer:       return kImageChamfer;
+        case camcore::StepType::Engrave:       return kImageEngrave;
+        default:                               return kImageOperations;
+        }
+    }
+}
+
 BEGIN_MESSAGE_MAP(CCamTabWnd, CWnd)
     ON_WM_CREATE()
     ON_WM_DESTROY()
@@ -2906,12 +2970,12 @@ int CCamTabWnd::OnCreate(LPCREATESTRUCT pCreate)
                   CRect(0, 0, 10, 10), this, IDC_CAM_TREE);
     m_tree.SetFont(pFont);
 
-    HTREEITEM hSetup = m_tree.InsertItem(L"Setup");
-    m_hMachine = m_tree.InsertItem(L"Machine", hSetup);
-    m_hTools = m_tree.InsertItem(L"Tools", hSetup);
-    m_hMaterial = m_tree.InsertItem(L"Material", hSetup);
-    m_hStock = m_tree.InsertItem(L"Stock", hSetup);
-    m_hOperations = m_tree.InsertItem(L"Operations");
+    HTREEITEM hSetup = m_tree.InsertItem(L"Setup", kImageSetup, kImageSetup);
+    m_hMachine = m_tree.InsertItem(L"Machine", kImageMachine, kImageMachine, hSetup);
+    m_hTools = m_tree.InsertItem(L"Tools", kImageTools, kImageTools, hSetup);
+    m_hMaterial = m_tree.InsertItem(L"Material", kImageMaterial, kImageMaterial, hSetup);
+    m_hStock = m_tree.InsertItem(L"Stock", kImageStock, kImageStock, hSetup);
+    m_hOperations = m_tree.InsertItem(L"Operations", kImageOperations, kImageOperations);
     m_tree.Expand(hSetup, TVE_EXPAND);
 
     m_status.Create(L"", WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX, CRect(0, 0, 10, 10), this, IDC_CAM_STATUS);
@@ -3121,6 +3185,15 @@ void CCamTabWnd::ApplyViewSize()
     m_toolbarImages.DeleteImageList();
     if (!m_toolbarImages.Create(strip, icon, 0, RGB(255, 0, 255)))
         Log(L"[tab] could not load the %d pixel toolbar images", icon);
+    // The tree's images, at the same size.
+    const UINT treeStrip = (icon == 32) ? IDB_CAM_TREE_32 : (icon == 24) ? IDB_CAM_TREE_24 : IDB_CAM_TREE_16;
+    m_tree.SetImageList(nullptr, TVSIL_NORMAL);
+    m_treeImages.DeleteImageList();
+    if (m_treeImages.Create(treeStrip, icon, 0, RGB(255, 0, 255)))
+        m_tree.SetImageList(&m_treeImages, TVSIL_NORMAL);
+    else
+        Log(L"[tab] could not load the %d pixel tree images", icon);
+
     for (CToolBarCtrl* pBar : { &m_toolbar, &m_settingsBar })
     {
         pBar->SetImageList(&m_toolbarImages);
@@ -3843,7 +3916,8 @@ void CCamTabWnd::ShowSequence(const camcore::Job& job, const StepRef& selected)
         if (step.type == camcore::StepType::SetOrigin && !camcore::BuildFrame(step.origin).ok)
             text += L" (incomplete)";
 
-        const HTREEITEM hItem = m_tree.InsertItem(text.c_str(), m_hOperations);
+        const int image = StepImage(step.type);
+        const HTREEITEM hItem = m_tree.InsertItem(text.c_str(), image, image, m_hOperations);
         m_tree.SetItemData(hItem, StepItemData(StepRef{ i }));
         if (step.suppressed)
             m_greyItems.insert(hItem);
@@ -3851,7 +3925,9 @@ void CCamTabWnd::ShowSequence(const camcore::Job& job, const StepRef& selected)
         // A folder's operations sit under it, grey if it's suppressed.
         for (size_t c = 0; c < step.children.size(); ++c)
         {
-            const HTREEITEM hOperation = m_tree.InsertItem(FromUtf8(step.children[c].name).c_str(), hItem);
+            const int operationImage = StepImage(step.children[c].type);
+            const HTREEITEM hOperation = m_tree.InsertItem(FromUtf8(step.children[c].name).c_str(), operationImage,
+                                                           operationImage, hItem);
             m_tree.SetItemData(hOperation, StepItemData(StepRef{ i, c }));
             if (step.suppressed || step.children[c].suppressed)
                 m_greyItems.insert(hOperation);
@@ -3923,7 +3999,8 @@ void CCamTabWnd::ShowTools(const camcore::ToolLibrary& library, const std::strin
     {
         const camcore::Tool& tool = library.tools[i];
         const std::wstring text = L"T" + std::to_wstring(tool.number) + L" " + FromUtf8(tool.name);
-        const HTREEITEM hItem = m_tree.InsertItem(text.c_str(), m_hTools);
+        const int image = ToolImage(tool.type);
+        const HTREEITEM hItem = m_tree.InsertItem(text.c_str(), image, image, m_hTools);
         m_tree.SetItemData(hItem, static_cast<DWORD_PTR>(i));
     }
 

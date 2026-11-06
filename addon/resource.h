@@ -209,6 +209,9 @@
 #define IDB_CAM_TOOLBAR_16              13027
 #define IDB_CAM_TOOLBAR_24              13028
 #define IDB_CAM_TOOLBAR_32              13029
+#define IDB_CAM_TREE_16                 13038
+#define IDB_CAM_TREE_24                 13039
+#define IDB_CAM_TREE_32                 13040
 #define IDD_SETTINGS                    13030
 #define IDD_STOCK_BOX                   13031
 #define IDD_STOCK_PART_BOX              13032
@@ -327,7 +330,7 @@
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13038
+#define _APS_NEXT_RESOURCE_VALUE        13041
 #define _APS_NEXT_COMMAND_VALUE         32771
 #define _APS_NEXT_CONTROL_VALUE         13371
 #define _APS_NEXT_SYMED_VALUE           13010

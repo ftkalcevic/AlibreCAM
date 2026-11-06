@@ -360,6 +360,7 @@ private:
     CToolBarCtrl m_toolbar;         // view toggles above the tree
     CToolBarCtrl m_settingsBar;     // the gear, at the right
     CImageList m_toolbarImages;
+    CImageList m_treeImages;        // one for each kind of node, at the view size
     CFont m_font;                   // the tab's text, at the view size
     camcore::ProgramSettings m_settings;
     bool m_settingsWritable;        // false if the file is damaged or newer, so it isn't overwritten
