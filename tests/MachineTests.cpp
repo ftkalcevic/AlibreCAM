@@ -66,6 +66,10 @@ namespace
         machine.name = "Router";
         machine.axes = 4;
         machine.rotary = RotaryAxis::MinusX;
+        machine.travelX = 800;
+        machine.travelY = 500;
+        machine.travelZ = 120;
+        machine.maxSpindleRpm = 18000;
         Tool tool = Mill("t1", 1);
         tool.feeds.push_back(Row("alu", 16000, 800));
         tool.feeds.push_back(Row("mdf", 18000, 2500));
@@ -87,6 +91,10 @@ TEST_CASE("a machine saves and loads with its tools and their feeds")
     CHECK(loaded.machine.name == "Router");
     CHECK(loaded.machine.axes == 4);
     CHECK(loaded.machine.rotary == RotaryAxis::MinusX);
+    CHECK(loaded.machine.travelX == 800);
+    CHECK(loaded.machine.travelY == 500);
+    CHECK(loaded.machine.travelZ == 120);
+    CHECK(loaded.machine.maxSpindleRpm == 18000);
     REQUIRE(loaded.machine.tools.tools.size() == 1);
     const Tool& tool = loaded.machine.tools.tools[0];
     REQUIRE(tool.feeds.size() == 2);
@@ -109,6 +117,14 @@ TEST_CASE("machines are checked")
     machine.axes = 5;
     CHECK_FALSE(ValidateMachine(machine).empty());
 
+    machine = Router();
+    machine.travelZ = 0;
+    CHECK_FALSE(ValidateMachine(machine).empty());
+
+    machine = Router();
+    machine.maxSpindleRpm = -1;
+    CHECK_FALSE(ValidateMachine(machine).empty());
+
     // A material at most once in a tool's feeds, and the feeds themselves valid.
     machine = Router();
     machine.tools.tools[0].feeds.push_back(Row("alu", 1000, 100));
@@ -117,6 +133,19 @@ TEST_CASE("machines are checked")
     machine = Router();
     machine.tools.tools[0].feeds[0].feeds.cut = 0;
     CHECK_FALSE(ValidateMachine(machine).empty());
+}
+
+TEST_CASE("a version 1 machine, without travel or spindle speed, loads with the defaults")
+{
+    Folder folder;
+    const fs::path path = folder.path / "m.json";
+    Write(path, R"({"format":"AlibreCAM machine","formatVersion":1,"id":"m","name":"M","axes":3,"rotaryAxis":"+Y","tools":[]})");
+    const MachineLoadResult loaded = LoadMachine(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    const Machine defaults;
+    CHECK(loaded.machine.travelX == defaults.travelX);
+    CHECK(loaded.machine.travelZ == defaults.travelZ);
+    CHECK(loaded.machine.maxSpindleRpm == defaults.maxSpindleRpm);
 }
 
 TEST_CASE("damaged, newer and missing machine files")

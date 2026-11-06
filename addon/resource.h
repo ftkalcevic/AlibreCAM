@@ -269,6 +269,16 @@
 #define IDC_FEEDS_MATERIAL              13347
 #define IDC_FEEDS_PAGE_AREA             13348
 #define IDC_FEEDS_FROM_TOOL             13349
+#define IDC_MACHINE_TRAVEL_LABEL        13350
+#define IDC_MACHINE_TRAVEL_X_LABEL      13351
+#define IDC_MACHINE_TRAVEL_X            13352
+#define IDC_MACHINE_TRAVEL_Y_LABEL      13353
+#define IDC_MACHINE_TRAVEL_Y            13354
+#define IDC_MACHINE_TRAVEL_Z_LABEL      13355
+#define IDC_MACHINE_TRAVEL_Z            13356
+#define IDC_MACHINE_SPINDLE_LABEL       13357
+#define IDC_MACHINE_SPINDLE             13358
+#define IDC_MACHINE_SPINDLE_UNIT        13359
 #define IDC_HP_AT_TOP                   13266
 #define IDC_HP_AT_BOTTOM                13267
 #define IDC_HP_PICK_TOP                 13268
@@ -306,7 +316,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        13036
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13350
+#define _APS_NEXT_CONTROL_VALUE         13360
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

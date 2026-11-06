@@ -68,6 +68,10 @@ namespace camcore
             problems.push_back("The machine needs a name.");
         if (machine.axes != 3 && machine.axes != 4)
             problems.push_back("The machine must have 3 or 4 axes.");
+        if (!(machine.travelX > 0.0) || !(machine.travelY > 0.0) || !(machine.travelZ > 0.0))
+            problems.push_back("Each axis's travel must be more than 0.");
+        if (!(machine.maxSpindleRpm > 0.0))
+            problems.push_back("The spindle's maximum speed must be more than 0.");
         for (const std::string& problem : ValidateLibrary(machine.tools))
             problems.push_back(problem);
         return problems;
@@ -113,6 +117,18 @@ namespace camcore
             if (!RotaryAxisFromName(root.at("rotaryAxis").get<std::string>(), result.machine.rotary))
                 return LoadFailure(LoadStatus::NotACamFile, "The rotary axis isn't one this add-on knows: " +
                                                                 path.u8string());
+            // Version 1 files have no travel or spindle speed, so they keep the defaults.
+            const auto travel = root.find("travel");
+            if (travel != root.end())
+            {
+                result.machine.travelX = travel->at(0).get<double>();
+                result.machine.travelY = travel->at(1).get<double>();
+                result.machine.travelZ = travel->at(2).get<double>();
+            }
+            const auto spindle = root.find("maxSpindleRpm");
+            if (spindle != root.end())
+                result.machine.maxSpindleRpm = spindle->get<double>();
+
             for (const json& item : root.at("tools"))
                 result.machine.tools.tools.push_back(ToolFromJson(item));
         }
@@ -153,6 +169,8 @@ namespace camcore
                 { "name", machine.name },
                 { "axes", machine.axes },
                 { "rotaryAxis", RotaryAxisName(machine.rotary) },
+                { "travel", json::array({ machine.travelX, machine.travelY, machine.travelZ }) },
+                { "maxSpindleRpm", machine.maxSpindleRpm },
                 { "tools", tools }
             };
             text = root.dump(2) + "\n";

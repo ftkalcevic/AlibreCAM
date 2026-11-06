@@ -52,7 +52,25 @@ namespace
 
     // The controls on each tab, shown only while it's chosen.
     const int kMachineTabControls[] = { IDC_MACHINE_NAME_LABEL, IDC_MACHINE_NAME, IDC_MACHINE_AXES_LABEL,
-                                        IDC_MACHINE_AXES, IDC_MACHINE_ROTARY_LABEL, IDC_MACHINE_ROTARY };
+                                        IDC_MACHINE_AXES, IDC_MACHINE_ROTARY_LABEL, IDC_MACHINE_ROTARY,
+                                        IDC_MACHINE_TRAVEL_LABEL, IDC_MACHINE_TRAVEL_X_LABEL, IDC_MACHINE_TRAVEL_X,
+                                        IDC_MACHINE_TRAVEL_Y_LABEL, IDC_MACHINE_TRAVEL_Y, IDC_MACHINE_TRAVEL_Z_LABEL,
+                                        IDC_MACHINE_TRAVEL_Z, IDC_MACHINE_SPINDLE_LABEL, IDC_MACHINE_SPINDLE,
+                                        IDC_MACHINE_SPINDLE_UNIT };
+
+    // The machine tab's number boxes, and what each is called in a message.
+    struct NumberBox
+    {
+        int id;
+        const wchar_t* label;
+        double Machine::*field;
+    };
+    const NumberBox kNumberBoxes[] = {
+        { IDC_MACHINE_TRAVEL_X, L"The X travel", &Machine::travelX },
+        { IDC_MACHINE_TRAVEL_Y, L"The Y travel", &Machine::travelY },
+        { IDC_MACHINE_TRAVEL_Z, L"The Z travel", &Machine::travelZ },
+        { IDC_MACHINE_SPINDLE, L"The maximum spindle speed", &Machine::maxSpindleRpm },
+    };
     const int kToolsTabControls[] = { IDC_LIB_LIST, IDC_LIB_ADD, IDC_LIB_EDIT, IDC_LIB_COPY, IDC_LIB_DELETE,
                                       IDC_LIB_IMPORT, IDC_LIB_EXPORT };
     const int kMaterialsTabControls[] = { IDC_MATERIAL_LIST, IDC_MATERIAL_ADD, IDC_MATERIAL_RENAME,
@@ -129,6 +147,10 @@ BEGIN_MESSAGE_MAP(CMachineDlg, CDialog)
     ON_BN_CLICKED(IDC_MACHINE_COPY, &CMachineDlg::OnCopyMachine)
     ON_BN_CLICKED(IDC_MACHINE_DELETE, &CMachineDlg::OnDeleteMachine)
     ON_EN_KILLFOCUS(IDC_MACHINE_NAME, &CMachineDlg::OnMachineFieldChanged)
+    ON_EN_KILLFOCUS(IDC_MACHINE_TRAVEL_X, &CMachineDlg::OnMachineFieldChanged)
+    ON_EN_KILLFOCUS(IDC_MACHINE_TRAVEL_Y, &CMachineDlg::OnMachineFieldChanged)
+    ON_EN_KILLFOCUS(IDC_MACHINE_TRAVEL_Z, &CMachineDlg::OnMachineFieldChanged)
+    ON_EN_KILLFOCUS(IDC_MACHINE_SPINDLE, &CMachineDlg::OnMachineFieldChanged)
     ON_CBN_SELCHANGE(IDC_MACHINE_AXES, &CMachineDlg::OnMachineFieldChanged)
     ON_CBN_SELCHANGE(IDC_MACHINE_ROTARY, &CMachineDlg::OnMachineFieldChanged)
     ON_BN_CLICKED(IDC_LIB_ADD, &CMachineDlg::OnAddTool)
@@ -249,6 +271,8 @@ void CMachineDlg::ShowMachine()
     SetDlgItemText(IDC_LIB_NOTE, note.c_str());
     SetDlgItemText(IDC_MACHINE_NAME, FromUtf8(m_machine.name).c_str());
     m_axes.SetCurSel(m_machine.axes == 4 ? 1 : 0);
+    for (const NumberBox& box : kNumberBoxes)
+        SetDlgItemText(box.id, m_canEdit ? FormatNumber(m_machine.*box.field).c_str() : L"");
     for (int i = 0; i < 4; ++i)
     {
         if (kRotaryAxes[i] == m_machine.rotary)
@@ -286,6 +310,8 @@ void CMachineDlg::UpdateButtons()
     GetDlgItem(IDC_MACHINE_DELETE)->EnableWindow(m_machineList.GetCurSel() >= 0 ? TRUE : FALSE);
     GetDlgItem(IDC_MACHINE_NAME)->EnableWindow(edit);
     GetDlgItem(IDC_MACHINE_AXES)->EnableWindow(edit);
+    for (const NumberBox& box : kNumberBoxes)
+        GetDlgItem(box.id)->EnableWindow(edit);
     GetDlgItem(IDC_MACHINE_ROTARY)->EnableWindow((m_canEdit && m_axes.GetCurSel() == 1) ? TRUE : FALSE);
     GetDlgItem(IDC_LIB_ADD)->EnableWindow(edit);
     GetDlgItem(IDC_LIB_IMPORT)->EnableWindow(edit);
@@ -327,7 +353,27 @@ bool CMachineDlg::ApplyMachineFields()
         changed.rotary = kRotaryAxes[rotary];
     UpdateButtons();
 
-    if (changed.name == m_machine.name && changed.axes == m_machine.axes && changed.rotary == m_machine.rotary)
+    // The travel and spindle speed, each a number more than 0. A bad one goes back to what was saved.
+    for (const NumberBox& box : kNumberBoxes)
+    {
+        CString text;
+        GetDlgItemText(box.id, text);
+        text.Trim();
+        wchar_t* pEnd = nullptr;
+        const double value = wcstod(text, &pEnd);
+        if (text.IsEmpty() || pEnd == nullptr || *pEnd != L'\0' || !(value > 0.0))
+        {
+            MessageBox((std::wstring(box.label) + L" must be a number more than 0.").c_str(), L"AlibreCAM",
+                       MB_OK | MB_ICONWARNING);
+            SetDlgItemText(box.id, FormatNumber(m_machine.*box.field).c_str());
+            return false;
+        }
+        changed.*box.field = value;
+    }
+
+    if (changed.name == m_machine.name && changed.axes == m_machine.axes && changed.rotary == m_machine.rotary &&
+        changed.travelX == m_machine.travelX && changed.travelY == m_machine.travelY &&
+        changed.travelZ == m_machine.travelZ && changed.maxSpindleRpm == m_machine.maxSpindleRpm)
         return true;
     if (changed.name.empty())
     {

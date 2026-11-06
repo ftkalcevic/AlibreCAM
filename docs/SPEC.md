@@ -1,4 +1,4 @@
-> Exported from the Claude doc "Alibre CAM Add-on: Version 1 Specification" on 4 November 2026 (rev 162).
+> Exported from the Claude doc "Alibre CAM Add-on: Version 1 Specification" on 4 November 2026 (rev 164).
 > The Claude doc is the master copy: https://claude.ai/artifact/JZEKmxczFdEn2eV32A5acB
 > The two diagrams are redrawn here in Mermaid, because they don't export from the doc.
 > Update this copy after spec changes, or note here if it becomes the master.
@@ -96,7 +96,7 @@ Both types also have a tool number and a name.
 - **Library changes:** Editing a tool marks the operations that use it as out of date.
 - **Missing tools:** If the library or a referenced tool can't be found, the affected operations are marked as needing repair and can't be posted.
 - **Tool library files:** A tool library is a JSON file with its own format version; version 2 adds each tool's speeds and feeds per material. Export writes a machine's tools to one, and Import adds one's tools to a machine, keeping their IDs so jobs still find them. Tools already on the machine are replaced or kept, as the user chooses, and a tool whose number is taken gets the next free number. Jobs before .cam format version 5 named a library; it's read but no longer used or saved.
-- **Editing:** Double-clicking Machine, Tools or Material opens the Machine dialog. It chooses the job's machine, which also becomes the one new jobs start on, with New, Copy and Delete (deleting moves the job to another machine, and the only machine can't be deleted). Its tabs are Machine (Name, Number of axes 3 or 4, and Rotary axis -X, +X, -Y or +Y, enabled only for 4), Tools (Add, Edit, Copy, Delete, Import and Export) and Materials. Changes save to their files straight away, separately from the job's manual save.
+- **Editing:** Double-clicking Machine, Tools or Material opens the Machine dialog. It chooses the job's machine, which also becomes the one new jobs start on, with New, Copy and Delete (deleting moves the job to another machine, and the only machine can't be deleted). Its tabs are Machine (Name, Number of axes 3 or 4, Rotary axis -X, +X, -Y or +Y, enabled only for 4, Travel X, Y and Z, and Max spindle speed), Tools (Add, Edit, Copy, Delete, Import and Export) and Materials. Changes save to their files straight away, separately from the job's manual save.
 - **Selected tool:** The Tools node lists the machine's tools. Clicking one selects it, and the job stores that selection by tool ID, ready for new operations.
 - **Protected files:** A machine, tool library or materials file that is damaged or from a newer build can be viewed but isn't changed. A materials file that doesn't exist yet is treated as empty.
 - **Speeds and feeds per material:** Each tool can hold, for each material, the Feeds & Speeds tab's fields (spindle speed; plunge, approach, engage, cut, retract and departure feeds; transfer), edited in the Tool dialog's Speeds & Feeds list, at most one row per material. An operation keeps its own copy: the Feeds & Speeds tab's From Tool button fills it from the chosen tool's row for the job's material, and nothing fills it automatically (decided). Stepdown, stepover and peck depth stay with the operation.
@@ -236,7 +236,7 @@ The interface and posting follow these rules:
 
 Machines are configurable, and each one uses a post written in a simple template language. The first target is a LinuxCNC 3-axis router with an optional 4th axis.
 
-- **Machine definition:** Axes, travel limits, rotary setup, spindle limits, and which post to use. Rotary setup defines each rotary axis's orientation, which can be along any direction. Built so far: the name, 3 or 4 axes, and the rotary axis along -X, +X, -Y or +Y; the rest are still to come.
+- **Machine definition:** Axes, travel limits, rotary setup, spindle limits, and which post to use. Rotary setup defines each rotary axis's orientation, which can be along any direction. Built so far: the name, 3 or 4 axes, the rotary axis along -X, +X, -Y or +Y, the travel along X, Y and Z in mm (defaults 600, 400 and 100), and the spindle's maximum speed in RPM (default 24,000), each more than 0; machine files are format version 2, and version 1 files get the defaults. They aren't used to check toolpaths or speeds yet, and the post choice is still to come.
 - **Post file:** How motion and machine events are written as G-code. It maps events to templates, with number formatting and a few simple conditions.
 - **Orientation changes:** The post outputs a safe retract and rotary move, then continues with 3-axis motion.
 - **First post:** It calculates coordinates for the active rotary position, and doesn't rely on tilted-plane commands.

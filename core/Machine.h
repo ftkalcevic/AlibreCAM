@@ -14,7 +14,8 @@
 
 namespace camcore
 {
-    constexpr int kMachineFormatVersion = 1;
+    // Version 2 added the travel and the spindle's top speed.
+    constexpr int kMachineFormatVersion = 2;
 
     // Which way the rotary (4th) axis runs.
     enum class RotaryAxis
@@ -34,6 +35,14 @@ namespace camcore
         std::string name;
         int axes = 3;       // 3, or 4 with a rotary axis
         RotaryAxis rotary = RotaryAxis::PlusY;      // used only with 4 axes
+
+        // How far each axis can move, in mm. Version 1 files have these defaults.
+        double travelX = 600.0;
+        double travelY = 400.0;
+        double travelZ = 100.0;
+
+        double maxSpindleRpm = 24000.0;
+
         ToolLibrary tools;
     };
 
