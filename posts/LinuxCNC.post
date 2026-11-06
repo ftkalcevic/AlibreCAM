@@ -1,0 +1,59 @@
+; LinuxCNC post for AlibreCAM: a 3 axis router, in millimetres, with manual tool changes.
+;
+; Lines starting with a semicolon are notes and aren't written. Each [section]
+; is written at its point in the program, filling in {...}: the name is the
+; capitals at the end of the braces, and anything before it is written in front
+; of the value. X, Y, Z and F are written only when they change, and a G0 or G1
+; that would move nothing is left out. See core\ScriptedPost.h for every name.
+;
+; To change it for your machine, copy this file to %APPDATA%\AlibreCAM\posts\
+; and edit the copy: a post there replaces one of the same file name here.
+
+[settings]
+name = LinuxCNC (3 axis router, mm)
+extension = ngc
+axes = 3
+decimals = 4
+feed decimals = 0
+trim zeros = yes
+line numbers = no
+
+[program start]
+%
+({PROGRAM})
+(Posted by AlibreCAM on {DATE})
+G21 G90 G17 G94 G40 G49 G80
+G64 P0.01
+
+; LinuxCNC's manual tool change asks for the tool, then carries on.
+[tool change]
+M5
+T{TOOL} M6
+({TOOLNAME}, {TOOLDIA} mm)
+
+[operation start]
+({OPERATION})
+S{SPINDLE} M3
+
+[rapid]
+G0{ X}{ Y}{ Z}
+
+[feed]
+G1{ X}{ Y}{ Z}{ F}
+
+; I and J are the arc's centre from where it starts. Z changing makes a helix.
+[arc cw]
+G2{ X}{ Y}{ Z}{ I}{ J}{ F}
+
+[arc ccw]
+G3{ X}{ Y}{ Z}{ I}{ J}{ F}
+
+[dwell]
+G4 P{SECONDS}
+
+[operation end]
+
+[program end]
+M5
+M30
+%

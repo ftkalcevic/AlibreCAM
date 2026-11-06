@@ -92,7 +92,8 @@ Visual Studio. The project launches `Alibre Design.exe` and breakpoints in
 | `ModelReader.cpp/.h` | Reads Alibre data into plain data for `CamCore` |
 | `OperationDialog.cpp/.h` | The modeless operation dialog and its tabs |
 | `OriginDialog.cpp/.h` | The modeless Set Origin dialog |
-| `PostDialog.cpp/.h` | Chooses the post and output file before posting |
+| `PostDialog.cpp/.h` | Finds the post scripts and chooses the post and output file before posting |
+| `SettingsDialog.cpp/.h` | The Settings dialog (CAM view size), saved in `%APPDATA%\AlibreCAM\settings.json` |
 | `Log.cpp/.h` | The log file |
 | `ToolDialogs.cpp/.h` | The tool library and tool editing dialogs |
 | `AlibreCAM.adc` | Add-on manifest. `specificationVersion="2"` is required for the ribbon tab and icons |
@@ -107,3 +108,7 @@ add more ribbon buttons, add a menu id in `AddOnInterface.h`, add it to the
 
 The add-on GUID `{D3A31918-AFE0-45F2-A080-B531E6894179}` appears in
 `AlibreCAM.adc` and both deploy scripts. If you change it, change all three.
+
+## Posts
+
+Post scripts are plain text `.post` files in `posts\`. `deploy\install.ps1` copies them into the add-on's `posts\` folder. To change one for a machine, copy it to `%APPDATA%\AlibreCAM\posts\` and edit the copy; a post there replaces one of the same file name. The template format is described at the top of `core\ScriptedPost.h`, and `posts\LinuxCNC.post` is the first.

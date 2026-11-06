@@ -1,4 +1,4 @@
-> Exported from the Claude doc "Alibre CAM Add-on: Version 1 Specification" on 4 November 2026 (rev 145).
+> Exported from the Claude doc "Alibre CAM Add-on: Version 1 Specification" on 4 November 2026 (rev 149).
 > The Claude doc is the master copy: https://claude.ai/artifact/JZEKmxczFdEn2eV32A5acB
 > The two diagrams are redrawn here in Mermaid, because they don't export from the doc.
 > Update this copy after spec changes, or note here if it becomes the master.
@@ -195,7 +195,7 @@ These rules keep group behaviour predictable:
 - **Drill toolpath:** For each feature in the list's order, the tool moves across at the clearance plane (rapid first, then rapid or the transfer feed), rapids down to the approach distance above the hole's top, and drills at the plunge feed. With a peck depth it returns to the approach height between pecks, then rapids back to 0.5 mm above where it stopped. The dwell follows (revolutions are converted with the spindle speed), then it feeds back up to the approach height at the retract feed and rapids to the clearance plane. At bottom puts the hole's top a depth above the picked geometry. Add drill tip to depth adds the drill's point length, worked out from its diameter and point angle. Automatic clearance is 5 mm above the parts until it's decided. Stock max Z fails until stock exists. A clearance plane below a hole's approach height fails too.
 - **Facing features:** Generate first sorts a Facing operation's features into areas. Any number of flat faces and edges (straight, circular, or other curves such as splines) can be picked, and mixed. Only their positions in the origin's XY plane matter: everything is flattened onto it, so features needn't be flat, parallel to it or at one height, and the cut levels are measured from the highest point of all the selected geometry (for At Top and At Bottom), as the Cut Levels tab's depth Pick is. Each face is an area of its own. Edges whose ends meet (within 0.01 mm, seen from above) are grouped, and each group is an area, which needn't close. Pieces with no length seen from above, such as edges along Z, are left out, and arcs not about Z become straight segments. Areas are taken in the order of their first feature in the list, and cut by the Cut Levels tab's ordering: each to its full depth before the next (Depth First), or every area at a level before the next level (Level First). A problem is reported with the area it concerns. Profiling's and Pocketing's features are sorted the same way.
 - **Facing boundary:** After the check, Generate turns each area into a closed boundary, in the origin's frame. A face gives its outer loop's edges (holes in it are ignored). Edges give themselves. Each edge is read again from the model by its keys: a straight edge as its two ends, a circle or circular arc as an exact arc (its centre and which way it turns, a full circle as two half arcs), and any other curve sampled along it (72 segments a full turn, at least 4). Each area's pieces are then joined: starting with the first, the next is always the piece with an end nearest to where the chain has got to, turned round if need be. Gaps between pieces are bridged with straight lines, and the chain is closed back to its start, so open edges become a closed boundary. Arcs stay arcs (a piece turned round turns its arcs the other way). Repeated points are dropped, and the boundary runs anticlockwise seen from +Z. Facing uses the arcs exactly: pass ends, the area's extent, the spiral's rectangle and the Cut Start corner all count how far each arc reaches. Arcs are drawn as 5 degree segments. Features that enclose nothing fail. The boundaries are saved with the operation (as boundaries; an older single boundary loads as one area), drawn in orange (hidden while picking like toolpaths), and discarded when the operation is edited.
-- **Post:** On the Operations and folder menus, after Generate. It posts every operation, or a folder's, and every one must have been generated first, or it lists the ones that haven't. A dialog chooses the post and the output file, by default beside the `.cam` file and named after the assembly (and the folder). There's no real post yet, only the built-in post, which writes standard APT CL data to a .cls file: PARTNO, UNITS/MM, then for each operation a $$ comment naming it (and its origin when that changes), CUTTER and LOADTL when the tool changes, SPINDL/RPM, RAPID before each rapid GOTO, FEDRAT/MMPM when the feed changes, DELAY for dwells, and CIRCLE/xc,yc,zc,i,j,k,r before the GOTO that ends an arc (its centre, the tool axis for anticlockwise or reversed for clockwise, and its radius), ending SPINDL/OFF, END, FINI. Every point is in mm from the job's work zero, the first Set Origin that isn't suppressed, and each GOTO carries the tool axis as GOTO/x,y,z,i,j,k, so later origins give their 3+2 orientation.
+- **Post:** On the Operations and folder menus, after Generate. It posts every operation, or a folder's, and every one must have been generated first, or it lists the ones that haven't. A dialog chooses the post and the output file, by default beside the `.cam` file and named after the assembly (and the folder). The dialog lists the scripted posts found (by their names, with a post that can't be read shown by its file name and refused when used), then the built-in APT CL data last; it starts on the post used last time, and the output file takes the chosen post's extension. The built-in post writes standard APT CL data to a .cls file: PARTNO, UNITS/MM, then for each operation a $$ comment naming it (and its origin when that changes), CUTTER and LOADTL when the tool changes, SPINDL/RPM, RAPID before each rapid GOTO, FEDRAT/MMPM when the feed changes, DELAY for dwells, and CIRCLE/xc,yc,zc,i,j,k,r before the GOTO that ends an arc (its centre, the tool axis for anticlockwise or reversed for clockwise, and its radius), ending SPINDL/OFF, END, FINI. Every point is in mm from the job's work zero, the first Set Origin that isn't suppressed, and each GOTO carries the tool axis as GOTO/x,y,z,i,j,k, so later origins give their 3+2 orientation.
 - **Operation dialog:** A modeless dialog with a name and tabs. Every operation has Features (its geometry), Tool (a drill or flat end mill), Feeds & Speeds, and Clearance, and other operations will add Sorting. Drill, Hole Pocketing, Facing, Profiling and Pocketing have no Sorting tab. Hole Pocketing (round holes cut with an end mill on a spiral, new operations named Hole Pocketing 1 and so on) has Drill's tabs, with a Hole Pocketing tab in place of the Drilling tab, and Drill's Features filter. Facing adds Cut Levels, Entry/Exit and a Facing tab. Profiling (2 1/2 axis profiling, new operations named Profiling 1 and so on) has the same tabs as Facing, with a Profiling tab in place of the Facing tab. Until its own is decided, Profiling's Features tab takes what Facing's does, and its features are checked by the same rules. It's saved with type profiling and the shared settings. Pocketing (2 1/2 axis pocketing, new operations named Pocketing 1 and so on) has the same tabs as Profiling, with a Pocketing tab in place of the Profiling tab. Its Features tab also takes what Facing's does for now, its features are checked by the same rules, and it's saved with type pocketing and the shared settings. Drill adds a Drilling tab. Depth is how far to drill, with Add drill tip to depth, and a Locate button that measures along the origin's Z from its XY plane to a picked point, plane, face or edge. Locate stores only the number. A plane is measured where the drill axis through the origin meets it, and a line at its point nearest that axis. Anything parallel to the drill direction has no answer, and anything over 10 m away counts as none, so both measure as 0. Location of cut geometry is at top or at bottom. Dwell is off, a time in seconds, or a number of revolutions. Engage/retract has an approach distance, and Options has a peck depth, left blank to drill in one pass. The tabs are built one at a time.
 - **Features tab:** A list of the operation's picked geometry, in the order it's machined, showing each feature's type, part, diameter, and X, Y and Z in the operation's origin frame. Rows are dragged to reorder them, and deleted with the Delete key, the right-click menu, or the Delete button. Choosing rows selects those features in the view. While Select Features is running the view's selection is the whole list, so the focused row is highlighted instead. The selection is cleared when the dialog closes. Select Features turns the view's selection into the list: the listed features start out selected, Ctrl+click adds or removes one, the list updates as the selection changes, and Done ends it. Features still selected keep their place, and new ones are added at the end. Sort reorders the list by Minimum distance (from the first feature, always to the nearest one left) or Directional (zigzag rows, X first or Y first, from a chosen start corner: top left, top right, bottom left or bottom right; features within 0.5 mm count as one row). Each operation type has its own filter. Facing accepts flat faces, and edges around the area to face: straight, circular, or other curves such as splines, listed as Curve. The edges don't need to make a closed shape. Drill accepts things that reduce to a point: circular edges and arcs (their centre), cylindrical hole faces (the centre of the end nearer the origin's +Z), and design points. Alibre refuses vertex selection in an assembly. Design points have no persistent key, so they stay in the list but can't be selected again later.
 - **Tool tab:** Lists every tool in the job's library (T number, name, type). Beside it, a read-only table shows the chosen tool's properties in its own unit. The operation stores the tool by ID. A new operation starts with the tool selected in the tree. A tool missing from the library stays stored, and the tab says so. Later the list will show only tools that suit the operation, so a drill can't be chosen for milling.
@@ -241,58 +241,63 @@ Machines are configurable, and each one uses a post written in a simple template
 - **Orientation changes:** The post outputs a safe retract and rotary move, then continues with 3-axis motion.
 - **First post:** It calculates coordinates for the active rotary position, and doesn't rely on tilted-plane commands.
 - **True 3+2 testing:** The first machine has at most one rotary axis, so this needs a two-rotary machine definition and simulated output.
-- **Tool changes:** The first router uses manual tool changes and a touch plate. For now, the post handles this, so the add-on doesn't need its own tool-change or touch-plate logic.
+- **Tool changes:** The first router uses manual tool changes and a touch plate. For now, the post handles this, so the add-on doesn't need its own tool-change or touch-plate logic. The LinuxCNC post writes just M5 and T<n> M6 at a tool change; touching off is left to the operator.
 - **4th-axis test setup:** The test router's 4th axis runs along the machine's Y axis.
 - **Operator responsibility:** The operator positions and zeroes the physical 4th axis, and sets the CAM origin to match it. The machine configuration doesn't store a measured centre position.
 - **Work zero:** A job uses one work zero. The first CAM origin and physical work zero are set on the rotary axis, and the post calculates all coordinates around them. Later `Set Origin` steps define new orientations and don't require re-zeroing.
 
-This illustrative post shows the intended style. The syntax isn't final, and real routers may need different retract and tool-change blocks.
+Posts are plain text template files (.post) that the add-on reads itself; no scripting library is used. Shipped posts are installed in a posts folder beside the add-on, and a user's %APPDATA%\AlibreCAM\posts\ adds more, replacing any with the same file name. A post has [settings] (name, extension, axes, decimals, feed decimals, trim zeros, line numbers, line number start and step) and sections written at events: [program start], [tool change] (before the first operation and whenever the tool changes), [operation start], [rapid], [feed], [arc cw], [arc ccw], [dwell], [operation end] and [program end]. Lines starting with ; are notes. In a section's lines {...} is filled in: the name is the capitals at the end, and anything before it is written in front of the value, so G1{ X}{ Y}{ F} writes G1 X10 F500 when only X and F change. X, Y and Z (from the work zero, in mm) and F are written only when they change, and again after a tool change; I and J (an arc's centre from its start) always. TOOL, TOOLNAME, TOOLDIA, SPINDLE, SECONDS, PROGRAM, OPERATION, ORIGIN and DATE are values, with ( and ) turned to [ and ]. A rapid or feed that moves no axis isn't written. Mistakes (unknown sections, settings or names) are reported with their line number when the post is read. A 3 axis post (axes = 3) refuses operations whose Set Origin tilts the tool away from the work zero's Z, naming them; origins that only move or turn about Z are fine. The shipped LinuxCNC post:
 
 ```text
-post "LinuxCNC Router"
-extension ".ngc"
+[settings]
+name = LinuxCNC (3 axis router, mm)
+extension = ngc
+axes = 3
+decimals = 4
+feed decimals = 0
+trim zeros = yes
+line numbers = no
 
-format linear "%.4f"
-format rotary "%.3f"
+[program start]
+%
+({PROGRAM})
+(Posted by AlibreCAM on {DATE})
+G21 G90 G17 G94 G40 G49 G80
+G64 P0.01
 
-on program_start
-  (PROGRAM {program_name})
-  {unit_code} G90 G17 G54
-end
+[tool change]
+M5
+T{TOOL} M6
+({TOOLNAME}, {TOOLDIA} mm)
 
-on tool_change
-  M5
-  G53 G0 Z0
-  T{tool} M6
-  G43 H{tool}
-  S{spindle} M3
-end
+[operation start]
+({OPERATION})
+S{SPINDLE} M3
 
-on orientation_change
-  G53 G0 Z0
-  if has_a: G0 A{a}
-end
+[rapid]
+G0{ X}{ Y}{ Z}
 
-on rapid
-  G0 X{x} Y{y} Z{z}
-end
+[feed]
+G1{ X}{ Y}{ Z}{ F}
 
-on linear
-  G1 X{x} Y{y} Z{z} F{feed}
-end
+[arc cw]
+G2{ X}{ Y}{ Z}{ I}{ J}{ F}
 
-on arc
-  {arc_code} X{x} Y{y} Z{z} I{i} J{j} F{feed}
-end
+[arc ccw]
+G3{ X}{ Y}{ Z}{ I}{ J}{ F}
 
-on program_end
-  M5
-  G53 G0 Z0
-  M30
-end
+[dwell]
+G4 P{SECONDS}
+
+[operation end]
+
+[program end]
+M5
+M30
+%
 ```
 
-If a controller needs more than this, language features are added as real cases come up.
+If a controller needs more than this, such as conditions or more names, they're added as real cases come up.
 
 ## CAM file
 
@@ -348,7 +353,7 @@ AlibreCAM\
   addon\      AlibreCAM.dll: tab, commands, model reader, change tracker
   core\       CamCore library: job model, toolpaths, post, storage
   tests\      CamCore tests
-  machines\   Machine definitions and post files
+  posts\      Post scripts (machine definitions later)
   deploy\     Install and uninstall scripts
 ```
 

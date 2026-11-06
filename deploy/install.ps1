@@ -5,6 +5,7 @@
 .DESCRIPTION
     1. Copies AlibreCAM.dll, AlibreCAM.adc and AlibreCAM.ico from the build output to
        %ProgramData%\Alibre AddOns\AlibreCAM\
+       and the post scripts from posts\ into a posts\ folder there
     2. Registers the add-on under HKLM\SOFTWARE\Alibre Design Add-Ons
        (value name = add-on GUID, data = install folder).
 
@@ -61,6 +62,14 @@ try {
     $pdb = Join-Path $buildDir "$AddOnName.pdb"
     if (Test-Path $pdb) { Copy-Item -Path $pdb -Destination $targetDir -Force }
     Write-Host "Copied add-on files to $targetDir"
+
+    # --- Posts -------------------------------------------------------------------
+    # The shipped post scripts go in a posts folder beside the add-on. A user's own
+    # posts live in %APPDATA%\AlibreCAM\posts and aren't touched here.
+    $postsDir = Join-Path $targetDir 'posts'
+    New-Item -ItemType Directory -Path $postsDir -Force | Out-Null
+    Copy-Item -Path (Join-Path $projectDir 'posts\*.post') -Destination $postsDir -Force
+    Write-Host "Copied post scripts to $postsDir"
 
     # --- Register --------------------------------------------------------------
     # Use the .NET API: New-Item -Force on HKLM:\SOFTWARE fails even when elevated.

@@ -206,6 +206,7 @@ private:
     std::vector<std::vector<camcore::Vec3>> m_highlightOutlines;   // in assembly mm
 
     std::filesystem::path m_lastPostPath;   // so the next post suggests the same folder
+    std::wstring m_lastPostName;            // and the same post
 
     // Picking changes Alibre's selection filter. This puts it back.
     bool m_filterChanged;

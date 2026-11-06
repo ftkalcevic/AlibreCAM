@@ -4,20 +4,99 @@
 #include "AlibreCAM.h"
 #include "PostDialog.h"
 
+#include <algorithm>
+#include <map>
+
+#include "FileIO.h"
+#include "Log.h"
+#include "ModelReader.h"
+#include "ScriptedPost.h"
+
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
 
 namespace fs = std::filesystem;
 
+namespace
+{
+    std::wstring LowerCase(std::wstring text)
+    {
+        for (wchar_t& c : text)
+            c = static_cast<wchar_t>(towlower(c));
+        return text;
+    }
+
+    // Each .post file in a folder, by its file name in lower case.
+    void AddPosts(const fs::path& folder, std::map<std::wstring, fs::path>& found)
+    {
+        std::error_code error;
+        if (!fs::is_directory(folder, error))
+            return;
+        for (const fs::directory_entry& entry : fs::directory_iterator(folder, error))
+        {
+            if (entry.is_regular_file(error) && LowerCase(entry.path().extension().wstring()) == L".post")
+                found[LowerCase(entry.path().filename().wstring())] = entry.path();
+        }
+    }
+}
+
+std::vector<PostChoice> FindPosts()
+{
+    // Installed beside the add-on, then the user's, which replace any of the same name.
+    std::map<std::wstring, fs::path> found;
+    wchar_t module[MAX_PATH] = {};
+    if (GetModuleFileNameW(AfxGetInstanceHandle(), module, MAX_PATH) > 0)
+        AddPosts(fs::path(module).parent_path() / L"posts", found);
+    wchar_t appData[MAX_PATH] = {};
+    const DWORD length = GetEnvironmentVariableW(L"APPDATA", appData, MAX_PATH);
+    if (length > 0 && length < MAX_PATH)
+        AddPosts(fs::path(appData) / L"AlibreCAM" / L"posts", found);
+
+    std::vector<PostChoice> posts;
+    for (const auto& file : found)
+    {
+        PostChoice choice;
+        choice.script = file.second;
+        choice.extension = L"ngc";
+        std::string text;
+        const camcore::PostScriptRead read = camcore::ReadWholeFile(file.second, text)
+                                                 ? camcore::ReadPostScript(text)
+                                                 : camcore::PostScriptRead();
+        if (read.ok)
+        {
+            choice.name = FromUtf8(read.script.name);
+            choice.extension = FromUtf8(read.script.extension);
+        }
+        else
+        {
+            choice.name = file.second.filename().wstring() + L" (has a mistake)";
+            Log(L"[post] %s: %s", file.second.c_str(), FromUtf8(read.problem).c_str());
+        }
+        posts.push_back(choice);
+    }
+    std::sort(posts.begin(), posts.end(),
+              [](const PostChoice& a, const PostChoice& b) { return LowerCase(a.name) < LowerCase(b.name); });
+
+    PostChoice builtIn;
+    builtIn.name = L"APT CL data (built in)";
+    builtIn.extension = L"cls";
+    posts.push_back(builtIn);
+    return posts;
+}
+
 BEGIN_MESSAGE_MAP(CPostDlg, CDialog)
     ON_BN_CLICKED(IDC_POST_BROWSE, &CPostDlg::OnBrowse)
+    ON_CBN_SELCHANGE(IDC_POST_PROCESSOR, &CPostDlg::OnPostChanged)
 END_MESSAGE_MAP()
 
-CPostDlg::CPostDlg(const std::wstring& scope, const fs::path& outputPath, CWnd* pParent)
+CPostDlg::CPostDlg(const std::wstring& scope, const fs::path& outputPath, const std::vector<PostChoice>& posts,
+                   size_t chosen, CWnd* pParent)
     : CDialog(IDD_POST, pParent)
     , m_scope(scope)
     , m_outputPath(outputPath)
+    , m_posts(posts)
+    , m_chosen(chosen < posts.size() ? chosen : 0)
 {
 }
 
@@ -27,13 +106,33 @@ BOOL CPostDlg::OnInitDialog()
 
     SetDlgItemText(IDC_POST_SCOPE, m_scope.c_str());
 
-    // Real posts are added with machines. Until then the built-in post writes APT CL data.
+    // The scripted posts, then the built-in APT CL data.
     m_post.SubclassDlgItem(IDC_POST_PROCESSOR, this);
-    m_post.AddString(L"APT CL data (built in)");
-    m_post.SetCurSel(0);
+    for (const PostChoice& post : m_posts)
+        m_post.AddString(post.name.c_str());
+    m_post.SetCurSel(static_cast<int>(m_chosen));
 
     SetDlgItemText(IDC_POST_FILE, m_outputPath.wstring().c_str());
+    OnPostChanged();
     return TRUE;
+}
+
+void CPostDlg::OnPostChanged()
+{
+    // The file takes the chosen post's extension.
+    const int selected = m_post.GetCurSel();
+    if (selected < 0 || static_cast<size_t>(selected) >= m_posts.size())
+        return;
+    m_chosen = static_cast<size_t>(selected);
+
+    CString text;
+    GetDlgItemText(IDC_POST_FILE, text);
+    fs::path path(static_cast<LPCWSTR>(text));
+    if (!path.empty())
+    {
+        path.replace_extension(L"." + m_posts[m_chosen].extension);
+        SetDlgItemText(IDC_POST_FILE, path.wstring().c_str());
+    }
 }
 
 void CPostDlg::OnBrowse()
@@ -41,8 +140,11 @@ void CPostDlg::OnBrowse()
     CString current;
     GetDlgItemText(IDC_POST_FILE, current);
 
-    CFileDialog dialog(FALSE, L"cls", current, OFN_OVERWRITEPROMPT | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST,
-                       L"APT CL data (*.cls)|*.cls|All files (*.*)|*.*||", this);
+    const std::wstring extension = m_posts[m_chosen].extension;
+    const std::wstring filter = m_posts[m_chosen].name + L" (*." + extension + L")|*." + extension +
+                                L"|All files (*.*)|*.*||";
+    CFileDialog dialog(FALSE, extension.c_str(), current, OFN_OVERWRITEPROMPT | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST,
+                       filter.c_str(), this);
     if (dialog.DoModal() != IDOK)
         return;
 

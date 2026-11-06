@@ -12,6 +12,7 @@
 #include "ProfileToolpath.h"
 #include "FileIO.h"
 #include "PostDialog.h"
+#include "ScriptedPost.h"
 #include "SettingsDialog.h"
 #include "PseudoPost.h"
 #include "GeometryReader.h"
@@ -1106,13 +1107,24 @@ void CCamTabCommand::Post(const StepRef& scope)
     fs::path folder = !m_lastPostPath.empty() ? m_lastPostPath.parent_path()
                       : !m_camPath.empty()    ? m_camPath.parent_path()
                                               : fs::path();
-    const fs::path suggested = folder.empty() ? fs::path(fileName + L".cls") : folder / (fileName + L".cls");
+    // The post chosen last time, or the first scripted one.
+    const std::vector<PostChoice> posts = FindPosts();
+    size_t chosen = 0;
+    for (size_t i = 0; i < posts.size(); ++i)
+    {
+        if (!m_lastPostName.empty() && posts[i].name == m_lastPostName)
+            chosen = i;
+    }
+    const std::wstring extension = L"." + posts[chosen].extension;
+    const fs::path suggested = folder.empty() ? fs::path(fileName + extension) : folder / (fileName + extension);
 
-    CPostDlg dialog(L"Posting: " + scopeText, suggested, m_pWnd);
+    CPostDlg dialog(L"Posting: " + scopeText, suggested, posts, chosen, m_pWnd);
     if (dialog.DoModal() != IDOK)
         return;
     const fs::path output = dialog.GetOutputPath();
+    const PostChoice& post = posts[dialog.GetChosen()];
     m_lastPostPath = output;
+    m_lastPostName = post.name;
 
     // Each operation with the origin it runs under and its tool. The tools are
     // kept here so the post can point at them.
@@ -1141,7 +1153,40 @@ void CCamTabCommand::Post(const StepRef& scope)
         entries.push_back(entry);
     }
 
-    const std::string text = camcore::WriteAptClData(m_job.assembly.name, workZero.frame, entries);
+    // A post script, or the built-in APT CL data.
+    std::string text;
+    if (post.script.empty())
+    {
+        text = camcore::WriteAptClData(m_job.assembly.name, workZero.frame, entries);
+    }
+    else
+    {
+        std::string script;
+        if (!camcore::ReadWholeFile(post.script, script))
+        {
+            ShowError(L"Could not read the post " + post.script.wstring() + L".");
+            return;
+        }
+        const camcore::PostScriptRead read = camcore::ReadPostScript(script);
+        if (!read.ok)
+        {
+            ShowError(L"The post " + post.script.filename().wstring() + L" has a mistake. " + FromUtf8(read.problem));
+            return;
+        }
+
+        SYSTEMTIME now = {};
+        GetLocalTime(&now);
+        char date[16];
+        std::snprintf(date, sizeof(date), "%04u-%02u-%02u", now.wYear, now.wMonth, now.wDay);
+        const camcore::PostOutput posted =
+            camcore::WriteScriptedPost(read.script, m_job.assembly.name, workZero.frame, entries, date);
+        if (!posted.ok)
+        {
+            ShowError(FromUtf8(posted.problem));
+            return;
+        }
+        text = posted.text;
+    }
     std::string message;
     if (!camcore::WriteFileAtomically(output, text, message))
     {
@@ -1149,7 +1194,7 @@ void CCamTabCommand::Post(const StepRef& scope)
         return;
     }
 
-    Log(L"[post] %zu operations to %s", entries.size(), output.c_str());
+    Log(L"[post] %zu operations to %s with %s", entries.size(), output.c_str(), post.name.c_str());
     m_sequenceStatus = L"Posted " + std::to_wstring(entries.size()) +
                        (entries.size() == 1 ? L" operation to " : L" operations to ") + output.filename().wstring() + L".";
     ShowStatus();
