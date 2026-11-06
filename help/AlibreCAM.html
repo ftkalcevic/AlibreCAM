@@ -117,7 +117,7 @@
 </dl>
 
 <h3 id="cam-tree">Tree</h3>
-<p>The tree has a fixed <strong>Setup</strong> at the top and the <strong>Operations</strong> sequence below it. Operations run from top to bottom. Drag a step to reorder it. Each node has an image: a gear for Setup, a machine, tools, a block of material and a wireframe stock; axes for a Set Origin and a folder for a folder; each tool shows its type (flat end mill, ball mill, corner radius mill, V-mill, chamfer mill, taper mill, thread mill or drill); and each kind of operation has its own. The images grow with the CAM View Size setting.</p>
+<p>The tree has a fixed <strong>Setup</strong> at the top and the <strong>Operations</strong> sequence below it. Operations run from top to bottom. Drag a step to reorder it. Each node has an image: a gear for Setup, a machine, tools, a block of material and a wireframe stock; axes for a Set Origin and a folder for a folder; each tool shows its type (flat end mill, ball mill, corner radius mill, V-mill, chamfer mill, taper mill, thread mill or drill); and each kind of operation has its own. The images grow with the CAM View Size setting. A red exclamation mark over a node's image means it has a problem: an operation with no toolpath (never generated, cleared, changed since, or Generate failed), a Set Origin that isn't complete, the machine when its file can't be found or read, the material when it's no longer in the list, or the stock when it can't be read. Folders are never marked, and suppressed operations aren't, as they aren't generated on purpose.</p>
 <dl>
   <dt>Setup ▸ Machine</dt>
   <dd>The machine the job is cut on, shown as <em>Machine - name</em>. Double-click it, or right-click and Edit Machine, to open the <a href="#machine">Machine</a> dialog.</dd>

@@ -176,6 +176,7 @@ private:
     void WarnIfUnsaved();
     void MarkJobChanged();
     void ReloadTools();         // the job's machine, its tools, and the materials
+    void UpdateTreeWarnings();  // the red exclamation marks on nodes with a problem
     void ReadJobFile();
     void ShowSequence();
     void DestroyWindowIfOpen();
@@ -259,6 +260,7 @@ private:
 
     // The stock's shape, read again when the stock or the model changes.
     bool m_stockShapeValid;
+    bool m_stockUnreadable;         // the job's stock couldn't be read when last drawn
     std::vector<camcore::LineSegment> m_stockEdges;
     std::string m_stockFacetsPath;                  // the imported part m_stockPartEdges came from
     std::vector<camcore::LineSegment> m_stockPartEdges;     // in the part's own coordinates, mm
@@ -291,6 +293,11 @@ public:
     void MarkSelectedTool(const camcore::ToolLibrary& library, const std::string& selectedToolId);
     void ShowSequence(const camcore::Job& job, const StepRef& selected);
     void ShowStock(const camcore::Stock& stock);
+
+    // Marks with a red exclamation mark the nodes with a problem: an operation
+    // with no toolpath (unless it's suppressed), an incomplete Set Origin, and the
+    // machine, material or stock when they can't be found or read. Never folders.
+    void ShowWarnings(const camcore::Job& job, bool machine, bool material, bool stock);
 
     // Starts editing a step's name in place.
     void StartRename(const StepRef& ref);

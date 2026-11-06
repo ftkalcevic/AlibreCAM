@@ -202,6 +202,7 @@ CCamTabCommand::CCamTabCommand(CAddOnInterface* pAddOn, const std::wstring& sess
     , m_operationTarget()
     , m_pPartBoxDlg(nullptr)
     , m_stockShapeValid(false)
+    , m_stockUnreadable(false)
     , m_filterChanged(false)
     , m_previousFilter()
 {
@@ -456,6 +457,7 @@ void CCamTabCommand::ReloadTools()
         m_pWnd->ShowTools(m_library, m_job.selectedToolId);
         m_pWnd->ShowMaterial(GetMaterialName());
     }
+    UpdateTreeWarnings();
 
     SetStatus(m_jobStatus);
 }
@@ -476,6 +478,7 @@ void CCamTabCommand::ChooseMaterial(const std::string& id)
     MarkJobChanged();
     if (m_pWnd != nullptr)
         m_pWnd->ShowMaterial(GetMaterialName());
+    UpdateTreeWarnings();
 }
 
 void CCamTabCommand::OpenMachineDialog(int tab)
@@ -954,6 +957,7 @@ void CCamTabCommand::ShowSequence()
         m_pWnd->ShowSequence(m_job, m_selected);
         m_pWnd->ShowStock(m_job.stock);
     }
+    UpdateTreeWarnings();
 }
 
 bool CCamTabCommand::FocusOpenDialog()
@@ -2346,6 +2350,15 @@ void CCamTabCommand::ReadModelSize()
     }
 }
 
+void CCamTabCommand::UpdateTreeWarnings()
+{
+    if (m_pWnd == nullptr)
+        return;
+    const bool machine = m_machine.id.empty();
+    const bool material = !m_job.materialId.empty() && camcore::FindMaterial(m_materials, m_job.materialId) == nullptr;
+    m_pWnd->ShowWarnings(m_job, machine, material, HasStock() && m_stockUnreadable);
+}
+
 void CCamTabCommand::RebuildScene()
 {
     m_scene.hasOrigin = false;
@@ -2406,7 +2419,8 @@ void CCamTabCommand::RebuildScene()
             camcore::StockBox box;
             std::wstring problem;
             m_stockEdges.clear();
-            if (HasStock() && !ReadStockShape(m_job.stock, m_stockEdges, box, problem))
+            m_stockUnreadable = HasStock() && !ReadStockShape(m_job.stock, m_stockEdges, box, problem);
+            if (m_stockUnreadable)
                 Log(L"[stock] %s", problem.c_str());
             m_stockShapeValid = true;
         }
@@ -2491,6 +2505,8 @@ void CCamTabCommand::RebuildScene()
 
     if (m_pView != nullptr)
         m_pView->Refresh();
+
+    UpdateTreeWarnings();
 }
 
 bool CCamTabCommand::PrepareSelection(const SelectionFilter& wanted)
@@ -2865,8 +2881,11 @@ namespace
         kImageProfiling,
         kImagePocketing,
         kImageChamfer,
-        kImageEngrave
+        kImageEngrave,
+        kImageWarning       // drawn over another image, as overlay 1
     };
+
+    const int kTreeWarningOverlay = 1;
 
     int ToolImage(camcore::ToolType type)
     {
@@ -3190,7 +3209,10 @@ void CCamTabWnd::ApplyViewSize()
     m_tree.SetImageList(nullptr, TVSIL_NORMAL);
     m_treeImages.DeleteImageList();
     if (m_treeImages.Create(treeStrip, icon, 0, RGB(255, 0, 255)))
+    {
+        m_treeImages.SetOverlayImage(kImageWarning, kTreeWarningOverlay);
         m_tree.SetImageList(&m_treeImages, TVSIL_NORMAL);
+    }
     else
         Log(L"[tab] could not load the %d pixel tree images", icon);
 
@@ -4008,6 +4030,37 @@ void CCamTabWnd::ShowTools(const camcore::ToolLibrary& library, const std::strin
     m_tree.Expand(m_hTools, TVE_EXPAND);
 
     m_fillingTree = false;
+}
+
+void CCamTabWnd::ShowWarnings(const camcore::Job& job, bool machine, bool material, bool stock)
+{
+    const auto mark = [&](HTREEITEM hItem, bool warn) {
+        if (hItem != nullptr)
+            m_tree.SetItemState(hItem, warn ? INDEXTOOVERLAYMASK(kTreeWarningOverlay) : 0, TVIS_OVERLAYMASK);
+    };
+    mark(m_hMachine, machine);
+    mark(m_hMaterial, material);
+    mark(m_hStock, stock);
+
+    for (HTREEITEM hItem = m_tree.GetChildItem(m_hOperations); hItem != nullptr; hItem = m_tree.GetNextSiblingItem(hItem))
+    {
+        const StepRef ref = StepOfItem(hItem);
+        if (ref.step >= job.sequence.size())
+            continue;
+        const camcore::SequenceStep& step = job.sequence[ref.step];
+        mark(hItem, step.type == camcore::StepType::SetOrigin && !camcore::BuildFrame(step.origin).ok);
+
+        // A folder's operations without a toolpath. Suppressed ones aren't
+        // generated on purpose, so they aren't marked.
+        for (HTREEITEM hChild = m_tree.GetChildItem(hItem); hChild != nullptr; hChild = m_tree.GetNextSiblingItem(hChild))
+        {
+            const StepRef child = StepOfItem(hChild);
+            if (child.child >= step.children.size())
+                continue;
+            const camcore::SequenceStep& operation = step.children[child.child];
+            mark(hChild, !step.suppressed && !operation.suppressed && operation.toolpath.moves.empty());
+        }
+    }
 }
 
 void CCamTabWnd::ShowMachine(const std::wstring& name)
