@@ -30,6 +30,7 @@ namespace
         case StepType::Facing: return L"Facing";
         case StepType::Profiling: return L"Profiling";
         case StepType::Pocketing: return L"Pocketing";
+        case StepType::Chamfer: return L"Chamfer";
         case StepType::HolePocketing: return L"Hole Pocketing";
         default:               return L"Operation";
         }
@@ -1719,11 +1720,56 @@ BEGIN_MESSAGE_MAP(CProfilingPage, COperationPage)
 END_MESSAGE_MAP()
 
 CProfilingPage::CProfilingPage(COperationDlg* pOwner)
-    : COperationPage(IDD_OP_PROFILING, pOwner)
+    : CProfilingPage(IDD_OP_PROFILING, pOwner)
+{
+}
+
+CProfilingPage::CProfilingPage(UINT templateId, COperationDlg* pOwner)
+    : COperationPage(templateId, pOwner)
     , m_cutWidth(0.0)
     , m_stepPerCut(0.0)
     , m_updating(false)
 {
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// CChamferingPage
+
+CChamferingPage::CChamferingPage(COperationDlg* pOwner)
+    : CProfilingPage(IDD_OP_CHAMFERING, pOwner)
+{
+}
+
+void CChamferingPage::Load(const SequenceStep& step)
+{
+    CProfilingPage::Load(step);
+    SetNumber(IDC_CHAMFER_WIDTH, step.chamfer.width);
+    SetNumber(IDC_CHAMFER_TIP_CLEARANCE, step.chamfer.tipClearance);
+    SetNumber(IDC_CHAMFER_MAX_DEPTH, step.chamfer.maxDepthPerCut);
+}
+
+bool CChamferingPage::Save(SequenceStep& step, std::wstring& problems)
+{
+    // The chamfer's own values, then Profiling's.
+    ChamferSettings chamfer = step.chamfer;
+    std::wstring found;
+    ReadNumber(IDC_CHAMFER_WIDTH, L"The chamfer width", chamfer.width, found);
+    ReadNumber(IDC_CHAMFER_TIP_CLEARANCE, L"The tool tip clearance", chamfer.tipClearance, found);
+    ReadNumber(IDC_CHAMFER_MAX_DEPTH, L"The maximum depth per cut", chamfer.maxDepthPerCut, found);
+    if (found.empty())
+    {
+        for (const std::string& problem : ValidateChamfer(chamfer))
+            AppendProblem(found, FromUtf8(problem));
+    }
+
+    const bool profilingOk = CProfilingPage::Save(step, found);
+    if (!found.empty() || !profilingOk)
+    {
+        AppendProblem(problems, found);
+        return false;
+    }
+    step.chamfer = chamfer;
+    return true;
 }
 
 BOOL CProfilingPage::OnInitDialog()
@@ -1894,6 +1940,10 @@ void CProfilingPage::UpdateFields()
     const BOOL closed = IsDlgButtonChecked(IDC_PROF_USE_CLOSED) == BST_CHECKED;
     GetDlgItem(IDC_PROF_OUTSIDE)->EnableWindow(closed);
     GetDlgItem(IDC_PROF_INSIDE)->EnableWindow(closed);
+
+    // The Chamfering tab has no Tabs group.
+    if (GetDlgItem(IDC_PROF_USE_TABS) == nullptr)
+        return;
 
     // The rest of the Tabs group only when tabs are used, and only the chosen spacing's box.
     const BOOL tabs = IsDlgButtonChecked(IDC_PROF_USE_TABS) == BST_CHECKED;
@@ -2468,6 +2518,7 @@ void COperationDlg::OnHelpButton()
                              : (page == IDD_OP_ENTRY_EXIT)     ? L"tab-entry-exit"
                              : (page == IDD_OP_FACING)         ? L"tab-facing"
                              : (page == IDD_OP_PROFILING)      ? L"tab-profiling"
+                             : (page == IDD_OP_CHAMFERING)     ? L"tab-chamfering"
                              : (page == IDD_OP_POCKETING)      ? L"tab-pocketing"
                              : (page == IDD_OP_HOLE_POCKETING) ? L"tab-hole-pocketing"
                              : (page == IDD_OP_DRILLING)       ? L"tab-drilling"
@@ -2508,6 +2559,7 @@ std::unique_ptr<COperationPage> COperationDlg::MakePage(UINT templateId)
     case IDD_OP_ENTRY_EXIT:     return std::make_unique<CEntryExitPage>(this);
     case IDD_OP_FACING:         return std::make_unique<CFacingPage>(this);
     case IDD_OP_PROFILING:      return std::make_unique<CProfilingPage>(this);
+    case IDD_OP_CHAMFERING:     return std::make_unique<CChamferingPage>(this);
     case IDD_OP_POCKETING:      return std::make_unique<CPocketingPage>(this);
     case IDD_OP_DRILLING:       return std::make_unique<CDrillingPage>(this);
     case IDD_OP_HOLE_POCKETING: return std::make_unique<CHolePocketingPage>(this);
@@ -2542,14 +2594,21 @@ BOOL COperationDlg::OnInitDialog()
 
     // The tabs every chosen operation has. One operation has all of its own.
     const auto isArea = [](StepType type) {
+        return type == StepType::Facing || type == StepType::Profiling || type == StepType::Pocketing ||
+               type == StepType::Chamfer;
+    };
+    // Chamfer has no Cut Levels tab: its depth comes from the chamfer.
+    const auto hasLevels = [](StepType type) {
         return type == StepType::Facing || type == StepType::Profiling || type == StepType::Pocketing;
     };
     bool sameType = true;
     bool allArea = isArea(m_step.type);
+    bool allLevels = hasLevels(m_step.type);
     for (const SequenceStep& other : m_bulk)
     {
         sameType = sameType && other.type == m_step.type;
         allArea = allArea && isArea(other.type);
+        allLevels = allLevels && hasLevels(other.type);
     }
 
     m_tabs.SubclassDlgItem(IDC_OP_TABS, this);
@@ -2577,7 +2636,7 @@ BOOL COperationDlg::OnInitDialog()
 
     // Drill, Hole Pocketing, Facing, Profiling and Pocketing have no Sorting tab.
     if (!bulk && m_step.type != StepType::Drill && m_step.type != StepType::Facing &&
-        m_step.type != StepType::Profiling && m_step.type != StepType::Pocketing &&
+        m_step.type != StepType::Profiling && m_step.type != StepType::Pocketing && m_step.type != StepType::Chamfer &&
         m_step.type != StepType::HolePocketing)
         AddPage(L"Sorting", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
 
@@ -2585,11 +2644,14 @@ BOOL COperationDlg::OnInitDialog()
     if (allArea)
     {
         // Cut Levels is shared by the operations that cut in levels.
-        auto cutLevels = std::make_unique<CCutLevelsPage>(this);
-        CCutLevelsPage* pCutLevels = cutLevels.get();
-        AddPage(L"Cut Levels", std::move(cutLevels));
-        if (pCutLevels->GetSafeHwnd() != nullptr)
-            m_pCutLevels = pCutLevels;
+        if (allLevels)
+        {
+            auto cutLevels = std::make_unique<CCutLevelsPage>(this);
+            CCutLevelsPage* pCutLevels = cutLevels.get();
+            AddPage(L"Cut Levels", std::move(cutLevels));
+            if (pCutLevels->GetSafeHwnd() != nullptr)
+                m_pCutLevels = pCutLevels;
+        }
 
         // Entry/Exit is shared with them too.
         AddPage(L"Entry/Exit", std::make_unique<CEntryExitPage>(this));
@@ -2599,7 +2661,9 @@ BOOL COperationDlg::OnInitDialog()
             AddPage(L"Facing", std::make_unique<CFacingPage>(this));
         else if (sameType && m_step.type == StepType::Profiling)
             AddPage(L"Profiling", std::make_unique<CProfilingPage>(this));
-        else if (sameType)
+        else if (sameType && m_step.type == StepType::Chamfer)
+            AddPage(L"Chamfering", std::make_unique<CChamferingPage>(this));
+        else if (sameType && m_step.type == StepType::Pocketing)
             AddPage(L"Pocketing", std::make_unique<CPocketingPage>(this));
     }
     else if (!sameType)
@@ -2796,7 +2860,7 @@ FeatureFilter COperationDlg::GetFeatureFilter() const
     // Each operation type has its own filter. Drill needs points, and Facing faces and edges.
     // Profiling and Pocketing borrow Facing's until their own are decided.
     const bool area = m_step.type == StepType::Facing || m_step.type == StepType::Profiling ||
-                      m_step.type == StepType::Pocketing;
+                      m_step.type == StepType::Pocketing || m_step.type == StepType::Chamfer;
     return area ? FeatureFilter::FacingArea : FeatureFilter::Points;
 }
 

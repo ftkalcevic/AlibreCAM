@@ -62,6 +62,7 @@ namespace
         ID_CAM_ADD_FACING,
         ID_CAM_ADD_PROFILING,
         ID_CAM_ADD_POCKETING,
+        ID_CAM_ADD_CHAMFER,
         ID_CAM_EDIT_STEP,
         ID_CAM_STOCK_BOX,
         ID_CAM_STOCK_PART_BOX,
@@ -1044,6 +1045,7 @@ void CCamTabCommand::AddOperation(size_t folder, camcore::StepType type)
     operation.name = NewOperationName(m_job, type == camcore::StepType::Facing      ? "Facing"
                                              : type == camcore::StepType::Profiling ? "Profiling"
                                              : type == camcore::StepType::Pocketing ? "Pocketing"
+                                             : type == camcore::StepType::Chamfer ? "Chamfer"
                                              : type == camcore::StepType::HolePocketing ? "Hole Pocketing"
                                                                                     : "Drill");
 
@@ -1523,6 +1525,7 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
     camcore::SequenceStep& operation = m_job.sequence[target.step].children[target.child];
     if (operation.type != camcore::StepType::Drill && operation.type != camcore::StepType::Facing &&
         operation.type != camcore::StepType::Profiling && operation.type != camcore::StepType::Pocketing &&
+        operation.type != camcore::StepType::Chamfer &&
         operation.type != camcore::StepType::HolePocketing)
     {
         problem = "Toolpaths for this operation aren't built yet.";
@@ -1638,10 +1641,12 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         return (areas.areas.size() > 1) ? std::string(kind) + " " + std::to_string(n + 1) + ": " : std::string();
     };
 
-    // Profiling joins each area's pieces end to end into a profile, then follows it.
-    if (operation.type == camcore::StepType::Profiling)
+    // Profiling joins each area's pieces end to end into a profile, then follows
+    // it. A chamfer does the same with a V-mill or chamfer mill.
+    if (operation.type == camcore::StepType::Profiling || operation.type == camcore::StepType::Chamfer)
     {
-        if (!gatherAreas("Profiling"))
+        const bool chamfer = operation.type == camcore::StepType::Chamfer;
+        if (!gatherAreas(chamfer ? "Chamfer" : "Profiling"))
             return false;
 
         camcore::ProfileToolpathInput profileInput;
@@ -1662,7 +1667,8 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
             profileInput.profiles.push_back(std::move(chain));
         }
 
-        const camcore::ToolpathResult profileResult = camcore::GenerateProfileToolpath(profileInput);
+        const camcore::ToolpathResult profileResult = chamfer ? camcore::GenerateChamferToolpath(profileInput)
+                                                              : camcore::GenerateProfileToolpath(profileInput);
         if (!profileResult.ok)
         {
             problem = profileResult.problem;
@@ -3378,6 +3384,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         twoAndAHalfAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_FACING, L"Facing...");
         twoAndAHalfAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_PROFILING, L"Profiling...");
         twoAndAHalfAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_POCKETING, L"Pocketing...");
+        twoAndAHalfAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_CHAMFER, L"Chamfer...");
         menu.AppendMenu(MF_POPUP | editable, reinterpret_cast<UINT_PTR>(twoAndAHalfAxis.GetSafeHmenu()),
                         L"Add 2 1/2 Axis");
         menu.AppendMenu(MF_SEPARATOR);
@@ -3433,6 +3440,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     case ID_CAM_ADD_FACING:  m_pTab->AddOperation(ref.step, camcore::StepType::Facing); break;
     case ID_CAM_ADD_PROFILING: m_pTab->AddOperation(ref.step, camcore::StepType::Profiling); break;
     case ID_CAM_ADD_POCKETING: m_pTab->AddOperation(ref.step, camcore::StepType::Pocketing); break;
+    case ID_CAM_ADD_CHAMFER: m_pTab->AddOperation(ref.step, camcore::StepType::Chamfer); break;
     case ID_CAM_EDIT_STEP:   m_pTab->EditStep(ref); break;
     case ID_CAM_RENAME_STEP: m_tree.EditLabel(hItem); break;
     case ID_CAM_DELETE_STEP: m_pTab->DeleteStep(ref); break;

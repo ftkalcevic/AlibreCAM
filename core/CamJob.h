@@ -26,7 +26,7 @@ namespace camcore
 {
     // The newest .cam format this build can read and the one it writes.
     // Version 2 added Set Origin steps and groups to the sequence.
-    constexpr int kCamFormatVersion = 5;
+    constexpr int kCamFormatVersion = 6;
 
     // Which assembly a job belongs to. The GUID comes from the assembly file,
     // and is empty if it couldn't be read.
@@ -44,7 +44,8 @@ namespace camcore
         Facing,         // an operation
         Profiling,      // an operation, 2 1/2 axis profiling
         Pocketing,      // an operation, 2 1/2 axis pocketing
-        HolePocketing   // an operation: round holes cut with an end mill on a spiral
+        HolePocketing,  // an operation: round holes cut with an end mill on a spiral
+        Chamfer         // an operation: a chamfer along edges, with Profiling's settings too
     };
 
     bool IsOperation(StepType type);
@@ -87,8 +88,11 @@ namespace camcore
         // in the origin's frame. Empty until Generate runs.
         FacingSettings facing;
 
-        // Profiling operations only.
+        // Profiling and Chamfer operations.
         ProfilingSettings profiling;
+
+        // Chamfer operations only.
+        ChamferSettings chamfer;
 
         // Pocketing operations only.
         PocketingSettings pocketing;

@@ -105,4 +105,22 @@ namespace camcore
     // to its full depth before the next (Depth First) or each level in every
     // profile before the next level (Level First).
     ToolpathResult GenerateProfileToolpath(const ProfileToolpathInput& input);
+
+    // A chamfer cut with a V-mill or chamfer mill, whose half angle is the
+    // chamfer's angle. Its depth is the width over the tangent of the half angle.
+    double ChamferDepth(const Tool& tool, const ChamferSettings& chamfer);
+
+    // How far the tool's centre runs from the edge so its cone lies on the
+    // chamfer face when the tip is the tooltip clearance below the chamfer: the
+    // tip radius plus the clearance times the tangent of the half angle, plus
+    // the stock to leave.
+    double ChamferOffset(const Tool& tool, const ChamferSettings& chamfer, double stockToLeave);
+
+    // A Chamfer operation's toolpath: Profiling's, following each profile at the
+    // chamfer offset. The chamfer's depth is cut in equal passes no deeper than
+    // Max Depth/Cut, each with the tip the tooltip clearance below that depth.
+    // The edge is the profiles' height (the selected geometry's highest point).
+    // Stepover passes work as in Profiling, there are no tabs, and each profile
+    // is cut to its full depth before the next.
+    ToolpathResult GenerateChamferToolpath(const ProfileToolpathInput& input);
 }

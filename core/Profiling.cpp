@@ -33,4 +33,16 @@ namespace camcore
 
         return problems;
     }
+
+    std::vector<std::string> ValidateChamfer(const ChamferSettings& settings)
+    {
+        std::vector<std::string> problems;
+        if (!(settings.width > 0.0))
+            problems.push_back("The chamfer width must be more than 0.");
+        if (!(settings.tipClearance >= 0.0))
+            problems.push_back("The tool tip clearance can't be negative.");
+        if (!(settings.maxDepthPerCut > 0.0))
+            problems.push_back("The maximum depth per cut must be more than 0.");
+        return problems;
+    }
 }

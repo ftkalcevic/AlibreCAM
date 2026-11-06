@@ -61,4 +61,15 @@ namespace camcore
     // Returns a sentence for each problem. Empty means the settings are valid.
     // Only the values the chosen options use are checked.
     std::vector<std::string> ValidateProfiling(const ProfilingSettings& settings);
+
+    // The Chamfer operation's Chamfering tab has the Profiling tab's settings,
+    // plus these. Distances are in millimetres.
+    struct ChamferSettings
+    {
+        double width = 1.0;             // the chamfer's width
+        double tipClearance = 0.5;      // how far the tool's tip goes below the chamfer
+        double maxDepthPerCut = 1.0;    // the most each pass cuts down
+    };
+
+    std::vector<std::string> ValidateChamfer(const ChamferSettings& settings);
 }

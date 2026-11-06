@@ -84,6 +84,7 @@
   <a href="#tab-entry-exit">Entry/Exit</a>
   <a href="#tab-facing">Facing</a>
   <a href="#tab-profiling">Profiling</a>
+  <a href="#tab-chamfering">Chamfering</a>
   <a href="#tab-pocketing">Pocketing</a>
   <a href="#tab-hole-pocketing">Hole Pocketing</a>
   <a href="#tab-drilling">Drilling</a>
@@ -155,6 +156,8 @@
   <dd>Adds a Profiling operation: cuts along a profile of edges, inside, outside or on it.</dd>
   <dt>Add 2 1/2 Axis ▸ Pocketing</dt>
   <dd>Adds a Pocketing operation: clears the area inside closed loops.</dd>
+  <dt>Add 2 1/2 Axis ▸ Chamfer</dt>
+  <dd>Adds a Chamfer operation: cuts a chamfer along edges with a V-mill or chamfer mill.</dd>
   <dt>Edit</dt>
   <dd>Opens the step's dialog.</dd>
   <dt>Rename</dt>
@@ -428,6 +431,7 @@
   <li><strong>Facing</strong>: Cut Levels, Entry/Exit, Facing.</li>
   <li><strong>Profiling</strong>: Cut Levels, Entry/Exit, Profiling.</li>
   <li><strong>Pocketing</strong>: Cut Levels, Entry/Exit, Pocketing.</li>
+  <li><strong>Chamfer</strong>: Entry/Exit, Chamfering. It has no Cut Levels tab: its depth comes from the chamfer.</li>
 </ul>
 <p>Pressing <strong>?</strong> opens the help for the tab that's showing.</p>
 <p><strong>Editing several operations together.</strong> With several operations chosen in the tree, the dialog shows only the tabs they all have: Tool, Feeds &amp; Speeds and Clearance; Cut Levels and Entry/Exit when they're all Facing, Profiling or Pocketing; and their own tab when they're all the same kind. Features aren't shown, as each operation's geometry is its own. A box that's empty, a group with no choice, or a check box neither on nor off means the operations differ there. Only the fields you change are written to every operation; everything else keeps each operation's own value. If a change doesn't suit an operation, OK names it and nothing is changed. Name and Generate aren't available, and Pick and Locate work only when the operations all run under the same Set Origin.</p>
@@ -633,6 +637,27 @@
   <dd>The number of tabs, spaced evenly along the profile.</dd>
   <dt>Distance between Tabs</dt>
   <dd>One tab every distance along the profile.</dd>
+</dl>
+</section>
+
+<section id="tab-chamfering">
+<h2>Chamfering tab</h2>
+<p>How Chamfer cuts a chamfer along its profiles with a V-mill or chamfer mill. The tool's angle sets the chamfer's angle: a 90&deg; tool cuts a 45&deg; chamfer. The edge is the selected geometry's highest point (Chamfer has no Cut Levels tab). The tool follows the edge as Profiling does, with its centre placed so the cone lies on the chamfer's face, and cuts the chamfer's depth in passes, its tip the Tooltip Clearance below each. Any other tool type is refused by Generate.</p>
+<dl>
+  <dt>Stock to Leave</dt>
+  <dd>Material left on the chamfer's face, measured across. Negative cuts further in.</dd>
+  <dt>Chamfer Width</dt>
+  <dd>How wide the chamfer is across, in mm. Its depth is the width divided by the tangent of half the tool's angle, so a 1 mm chamfer with a 90&deg; tool is 1 mm deep. It must be more than 0. Default 1 mm.</dd>
+  <dt>Tooltip Clearance</dt>
+  <dd>How far the tool's tip goes below the bottom of the chamfer, in mm, so a sharp or flat tip doesn't leave a ridge. It can't be negative. Default 0.5 mm.</dd>
+  <dt>Max Depth/Cut</dt>
+  <dd>The most each pass cuts down, in mm. The chamfer's depth is cut in equal passes no deeper than this, each cutting more of the same chamfer, with the tip the Tooltip Clearance below each pass's depth. A 1 mm wide chamfer with a 90&deg; tool and 0.5 here is 2 passes. It must be more than 0. Default 1 mm.</dd>
+  <dt>Cut Direction, Cut Start Side, Use Outside/Inside for Closed Curves</dt>
+  <dd>As on the <a href="#tab-profiling">Profiling tab</a>: which way the tool runs and which side of the edge it cuts.</dd>
+  <dt>Determine using 3D Model</dt>
+  <dd><span class="tbc">To be completed.</span> Not used yet.</dd>
+  <dt>Total Cut Width and Step/Cut</dt>
+  <dd>Several passes side by side at each depth: they start the width further out and step in, no more than Step/Cut apart. A width of 0 is one pass.</dd>
 </dl>
 </section>
 

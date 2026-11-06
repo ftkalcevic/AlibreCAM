@@ -96,6 +96,57 @@ TEST_CASE("a saved job loads back unchanged")
     CHECK(loaded.job.assembly.guid == "A4A39FD0-567C-4D6B-A085-77688483C8EA");
 }
 
+TEST_CASE("a chamfer operation is an operation, and loads back with its chamfer and profiling settings")
+{
+    CHECK(IsOperation(StepType::Chamfer));
+
+    TempFolder folder;
+    const fs::path path = folder / "Bracket.cam";
+    Job job = SampleJob();
+    SequenceStep origin;
+    origin.type = StepType::SetOrigin;
+    origin.id = NewStableId();
+    origin.name = "Set Origin 1";
+    job.sequence.push_back(origin);
+    SequenceStep group;
+    group.type = StepType::Group;
+    group.id = NewStableId();
+    group.name = "Folder 1";
+    SequenceStep chamfer;
+    chamfer.type = StepType::Chamfer;
+    chamfer.id = NewStableId();
+    chamfer.name = "Chamfer 1";
+    chamfer.chamfer.width = 1.5;
+    chamfer.chamfer.tipClearance = 0.25;
+    chamfer.chamfer.maxDepthPerCut = 0.75;
+    chamfer.profiling.stockToLeave = 0.1;
+    chamfer.profiling.direction = CutDirection::Climb;
+    group.children.push_back(chamfer);
+    job.sequence.push_back(group);
+    REQUIRE(SaveJob(job, path).ok);
+
+    const LoadResult loaded = LoadJob(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    const SequenceStep& back = loaded.job.sequence[1].children[0];
+    CHECK(back.type == StepType::Chamfer);
+    CHECK(back.chamfer.width == 1.5);
+    CHECK(back.chamfer.tipClearance == 0.25);
+    CHECK(back.chamfer.maxDepthPerCut == 0.75);
+    CHECK(back.profiling.stockToLeave == 0.1);
+    CHECK(back.profiling.direction == CutDirection::Climb);
+
+    ChamferSettings settings;
+    CHECK(ValidateChamfer(settings).empty());
+    settings.width = 0;
+    CHECK_FALSE(ValidateChamfer(settings).empty());
+    settings = ChamferSettings();
+    settings.tipClearance = -1;
+    CHECK_FALSE(ValidateChamfer(settings).empty());
+    settings = ChamferSettings();
+    settings.maxDepthPerCut = 0;
+    CHECK_FALSE(ValidateChamfer(settings).empty());
+}
+
 TEST_CASE("a profiling operation is an operation, and loads back with its shared settings")
 {
     CHECK(IsOperation(StepType::Profiling));

@@ -884,6 +884,23 @@ namespace camcore
         }
 
         // Profiling saved before the Profiling tab existed has the defaults.
+        json WriteChamfer(const ChamferSettings& chamfer)
+        {
+            return { { "width", chamfer.width }, { "tipClearance", chamfer.tipClearance },
+                     { "maxDepthPerCut", chamfer.maxDepthPerCut } };
+        }
+
+        bool ReadChamfer(const json& step, ChamferSettings& chamfer)
+        {
+            chamfer = ChamferSettings();
+            const auto item = step.find("chamfer");
+            if (item == step.end())
+                return true;
+            return item->is_object() && ReadNumber(*item, "width", chamfer.width) &&
+                   ReadNumber(*item, "tipClearance", chamfer.tipClearance) &&
+                   ReadNumber(*item, "maxDepthPerCut", chamfer.maxDepthPerCut);
+        }
+
         bool ReadProfiling(const json& step, ProfilingSettings& profiling)
         {
             profiling = ProfilingSettings();
@@ -1336,6 +1353,13 @@ namespace camcore
                          { "cutLevels", WriteCutLevels(step.cutLevels) }, { "entryExit", WriteEntryExit(step.entryExit) },
                          { "profiling", WriteProfiling(step.profiling) } };
 
+            if (step.type == StepType::Chamfer)
+                return { { "type", "chamfer" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
+                         { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
+                         { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
+                         { "cutLevels", WriteCutLevels(step.cutLevels) }, { "entryExit", WriteEntryExit(step.entryExit) },
+                         { "profiling", WriteProfiling(step.profiling) }, { "chamfer", WriteChamfer(step.chamfer) } };
+
             if (step.type == StepType::Pocketing)
                 return { { "type", "pocketing" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
                          { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
@@ -1421,6 +1445,15 @@ namespace camcore
                        ReadClearance(item, step.clearance);
             }
 
+            if (type == "chamfer")
+            {
+                step.type = StepType::Chamfer;
+                return ReadTool(item, step.toolId) && ReadFeeds(item, step.feeds) && ReadToolpath(item, step.toolpath) &&
+                       ReadFeatures(item, step.features) && ReadCutLevels(item, step.cutLevels) &&
+                       ReadEntryExit(item, step.entryExit) && ReadProfiling(item, step.profiling) &&
+                       ReadChamfer(item, step.chamfer) && ReadClearance(item, step.clearance);
+            }
+
             if (type == "pocketing")
             {
                 step.type = StepType::Pocketing;
@@ -1493,7 +1526,7 @@ namespace camcore
     bool IsOperation(StepType type)
     {
         return type == StepType::Drill || type == StepType::Facing || type == StepType::Profiling ||
-               type == StepType::Pocketing || type == StepType::HolePocketing;
+               type == StepType::Pocketing || type == StepType::HolePocketing || type == StepType::Chamfer;
     }
 
     std::string NewStableId()
@@ -1549,7 +1582,8 @@ namespace camcore
         // Version 3 added arcs to boundaries and toolpaths, which version 2 files
         // simply don't have, so they read as they are. Version 4 added the stock
         // to the setup section; older files have none. Version 5 added the
-        // machine and material, and stopped saving the tool library.
+        // machine and material, and stopped saving the tool library. Version 6
+        // added Chamfer operations.
 
         const auto assembly = root.find("assembly");
         if (assembly == root.end() || !assembly->is_object())

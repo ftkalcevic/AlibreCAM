@@ -986,11 +986,85 @@ namespace camcore
         }
     }
 
+    namespace
+    {
+        // What a chamfer changes in a profiling toolpath: the tool centre's
+        // distance from the profile, the levels, and the top of the cut.
+        struct ProfileOverride
+        {
+            double offset = 0.0;
+            std::vector<CutLevel> levels;
+            double cutTop = 0.0;
+        };
+
+        ToolpathResult ProfileToolpath(const ProfileToolpathInput& input, const ProfileOverride* pOverride);
+    }
+
     ToolpathResult GenerateProfileToolpath(const ProfileToolpathInput& input)
     {
-        const SequenceStep* pOperation = input.operation;
-        if (pOperation == nullptr || pOperation->type != StepType::Profiling)
+        if (input.operation == nullptr || input.operation->type != StepType::Profiling)
             return Failure("This isn't a profiling operation.");
+        return ProfileToolpath(input, nullptr);
+    }
+
+    double ChamferDepth(const Tool& tool, const ChamferSettings& chamfer)
+    {
+        const double half = tool.includedAngle / 2.0 * kPi / 180.0;
+        return chamfer.width / std::tan(half);
+    }
+
+    double ChamferOffset(const Tool& tool, const ChamferSettings& chamfer, double stockToLeave)
+    {
+        const double half = tool.includedAngle / 2.0 * kPi / 180.0;
+        return tool.tipDiameter / 2.0 + chamfer.tipClearance * std::tan(half) + stockToLeave;
+    }
+
+    ToolpathResult GenerateChamferToolpath(const ProfileToolpathInput& input)
+    {
+        const SequenceStep* pOperation = input.operation;
+        if (pOperation == nullptr || pOperation->type != StepType::Chamfer)
+            return Failure("This isn't a chamfer operation.");
+        if (input.tool == nullptr)
+            return Failure("Choose a tool on the Tool tab.");
+        if (input.tool->type != ToolType::VMill && input.tool->type != ToolType::ChamferMill)
+            return Failure("A chamfer needs a V-mill or a chamfer mill, not a " + ToolTypeTitle(input.tool->type) +
+                           ".");
+        if (!(input.tool->includedAngle > 0.0 && input.tool->includedAngle < 180.0))
+            return Failure("The tool's included angle must be more than 0 and less than 180 degrees.");
+        const std::vector<std::string> problems = ValidateChamfer(pOperation->chamfer);
+        if (!problems.empty())
+            return Failure(problems.front());
+        if (input.profiles.empty() || input.profiles.front().path.empty())
+            return Failure("There's no profile to follow.");
+
+        // The chamfer's depth is cut in equal passes, none deeper than Max
+        // Depth/Cut. Each pass's tip is the tooltip clearance below that pass's
+        // depth: the tool centre is outside the edge, so the clearance is in air.
+        const ChamferSettings& chamfer = pOperation->chamfer;
+        const double top = input.profiles.front().path.front().point.z;
+        const double depth = ChamferDepth(*input.tool, chamfer);
+        const int passes = (std::max)(1, static_cast<int>(std::ceil(depth / chamfer.maxDepthPerCut - 1e-9)));
+
+        ProfileOverride cut;
+        cut.offset = ChamferOffset(*input.tool, chamfer, pOperation->profiling.stockToLeave);
+        cut.cutTop = top;
+        for (int k = 1; k <= passes; ++k)
+        {
+            CutLevel level;
+            level.z = top - depth * k / passes - chamfer.tipClearance;
+            level.finish = k == passes;
+            cut.levels.push_back(level);
+        }
+        if (!(cut.offset >= 0.0))
+            return Failure("The stock to leave puts the tool past the edge.");
+        return ProfileToolpath(input, &cut);
+    }
+
+    namespace
+    {
+    ToolpathResult ProfileToolpath(const ProfileToolpathInput& input, const ProfileOverride* pOverride)
+    {
+        const SequenceStep* pOperation = input.operation;
         if (input.tool == nullptr || !(input.tool->diameter > 0.0))
             return Failure("Choose a tool on the Tool tab.");
         if (input.profiles.empty())
@@ -1002,24 +1076,29 @@ namespace camcore
         }
 
         const ProfilingSettings& settings = pOperation->profiling;
+        // A chamfer has no Cut Levels tab, or tabs.
         for (const std::vector<std::string>& problems :
-             { ValidateProfiling(settings), ValidateFeeds(pOperation->feeds), ValidateCutLevels(pOperation->cutLevels),
+             { ValidateProfiling(settings), ValidateFeeds(pOperation->feeds),
+               pOverride != nullptr ? std::vector<std::string>() : ValidateCutLevels(pOperation->cutLevels),
                ValidateEntryExit(pOperation->entryExit) })
         {
             if (!problems.empty())
                 return Failure(problems.front());
         }
+        const bool useTabs = settings.useTabs && pOverride == nullptr;
 
         // The profiles are the cut geometry, all at one height.
         const double z = input.profiles.front().path.front().point.z;
-        const std::vector<CutLevel> levels = CutLevelHeights(pOperation->cutLevels, z);
+        const std::vector<CutLevel> levels =
+            (pOverride != nullptr) ? pOverride->levels : CutLevelHeights(pOperation->cutLevels, z);
+        const double cutTop = (pOverride != nullptr) ? pOverride->cutTop : CutTopZ(pOperation->cutLevels, z);
         const EntryExitSettings& entryExit = pOperation->entryExit;
         double clearance = 0.0;
         std::string clearanceProblem;
         if (!ClearanceHeight(pOperation->clearance, input.havePartMaxZ, input.partMaxZ, clearance, clearanceProblem,
                              input.haveStockMaxZ, input.stockMaxZ))
             return Failure(clearanceProblem);
-        if (!(clearance > CutTopZ(pOperation->cutLevels, z)))
+        if (!(clearance > cutTop))
             return Failure("The clearance plane must be above the top of the cut.");
         if (entryExit.entry == EntryMode::AlongPath3D && !(clearance > levels.front().z + entryExit.alongPathHeight))
             return Failure("The along path height reaches the clearance plane.");
@@ -1068,7 +1147,7 @@ namespace camcore
 
             const std::vector<Seg> segs = ToSegs(chain.path, closed);
             std::vector<Vec3> tabCentres;
-            if (settings.useTabs)
+            if (useTabs)
             {
                 for (const double at : TabPositions(RunLength(segs), closed, settings))
                     tabCentres.push_back(PointAtLength(segs, at));
@@ -1076,7 +1155,8 @@ namespace camcore
 
             for (const double extra : extras)
             {
-                const double offset = radius + settings.stockToLeave + extra;
+                const double offset =
+                    ((pOverride != nullptr) ? pOverride->offset : radius + settings.stockToLeave) + extra;
                 std::vector<CutRun> pass;
                 for (const ProfileRun& run : OffsetProfile(chain.path, closed, profile.side * offset))
                 {
@@ -1117,14 +1197,14 @@ namespace camcore
             PathBuilder path(result.toolpath, pOperation->feeds, clearance, level.z);
             path.SetEntryExit(&entryExit, entryExit.eachCutLevel || l == 0,
                               entryExit.eachCutLevel || l + 1 == levels.size());
-            const bool tabs = settings.useTabs && level.z < tabTop - 1e-9;
+            const bool tabs = useTabs && level.z < tabTop - 1e-9;
             for (const std::vector<CutRun>& pass : profile.passes)
             {
                 for (const CutRun& run : pass)
                     CutAlong(path, run, level.z, tabTop, tabs, profile.side, profile.forward);
             }
         };
-        if (pOperation->cutLevels.order == CutLevelOrder::LevelFirst)
+        if (pOverride == nullptr && pOperation->cutLevels.order == CutLevelOrder::LevelFirst)
         {
             for (size_t l = 0; l < levels.size(); ++l)
             {
@@ -1145,6 +1225,7 @@ namespace camcore
         if (!result.ok)
             result.problem = "No passes fit the profile.";
         return result;
+    }
     }
 
     /////////////////////////////////////////////////////////////////////////

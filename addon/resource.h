@@ -215,6 +215,7 @@
 #define IDD_STOCK_IMPORT                13033
 #define IDD_NAME_PROMPT                 13034
 #define IDD_TOOL_FEEDS                  13035
+#define IDD_OP_CHAMFERING               13036
 #define IDC_VIEW_SMALL                  13296
 #define IDC_VIEW_MEDIUM                 13297
 #define IDC_VIEW_LARGE                  13298
@@ -285,6 +286,9 @@
 #define IDC_TOOL_TAPER_ANGLE            13363
 #define IDC_TOOL_PITCH                  13364
 #define IDC_TOOL_THREAD_ANGLE           13365
+#define IDC_CHAMFER_WIDTH               13366
+#define IDC_CHAMFER_TIP_CLEARANCE       13367
+#define IDC_CHAMFER_MAX_DEPTH           13368
 #define IDC_HP_AT_TOP                   13266
 #define IDC_HP_AT_BOTTOM                13267
 #define IDC_HP_PICK_TOP                 13268
@@ -320,9 +324,9 @@
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13036
+#define _APS_NEXT_RESOURCE_VALUE        13037
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13366
+#define _APS_NEXT_CONTROL_VALUE         13369
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

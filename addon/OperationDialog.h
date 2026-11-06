@@ -338,6 +338,7 @@ class CProfilingPage : public COperationPage
 {
 public:
     explicit CProfilingPage(COperationDlg* pOwner);
+    CProfilingPage(UINT templateId, COperationDlg* pOwner);      // for the Chamfering tab
 
     void Load(const camcore::SequenceStep& step) override;
     bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
@@ -361,6 +362,19 @@ private:
     double m_stepPerCut;
     CSliderCtrl m_stepSlider;
     bool m_updating;            // the page is setting its own boxes
+};
+
+// The Chamfer operation's own tab: Profiling's, with the chamfer's width, tool tip
+// clearance and depth per cut.
+class CChamferingPage : public CProfilingPage
+{
+public:
+    explicit CChamferingPage(COperationDlg* pOwner);
+
+    void Load(const camcore::SequenceStep& step) override;
+    bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
+
+    enum { IDD = IDD_OP_CHAMFERING };
 };
 
 // The Pocketing operation's own tab.
