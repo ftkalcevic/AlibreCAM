@@ -114,6 +114,18 @@ namespace
             return part * m_partToAssembly * m_assemblyMm;
         }
 
+        // A point in the assembly's coordinates in mm, in the part's own (its
+        // model units); the transform is a rotation and a move, so turned back.
+        Vec3 PartPoint(const Vec3& assemblyMillimetres) const
+        {
+            const Vec3 a = assemblyMillimetres * (1.0 / m_assemblyMm);
+            const double* m = m_matrix;
+            const Vec3 t{ a.x - m[12], a.y - m[13], a.z - m[14] };
+            const Vec3 p{ t.x * m[0] + t.y * m[1] + t.z * m[2], t.x * m[4] + t.y * m[5] + t.z * m[6],
+                          t.x * m[8] + t.y * m[9] + t.z * m[10] };
+            return p * (1.0 / m_partToAssembly);
+        }
+
         Vec3 Direction(const Vec3& part) const
         {
             const double* m = m_matrix;
@@ -1451,4 +1463,177 @@ bool ReadPartFacets(const std::wstring& path, std::vector<Vec3>& triangles, std:
         return false;
     }
     return problem.empty();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// PartSurfaces
+
+struct PartSurfaces::Impl
+{
+    struct Face
+    {
+        IADFacePtr face;
+        IADSurfacePtr surface;
+        size_t part = 0;
+    };
+    std::vector<Face> faces;
+    std::vector<PartToAssembly> parts;
+};
+
+PartSurfaces::PartSurfaces() : m_impl(std::make_unique<Impl>())
+{
+}
+
+PartSurfaces::~PartSurfaces() = default;
+
+bool PartSurfaces::Read(IADSession* pAssembly, const std::wstring& leaveOutPath, std::vector<Vec3>& triangles,
+                        std::vector<int>& faces, std::wstring& problem)
+{
+    triangles.clear();
+    faces.clear();
+    problem.clear();
+    m_impl->faces.clear();
+    m_impl->parts.clear();
+    const ULONGLONG start = GetTickCount64();
+    try
+    {
+        IADAssemblySessionPtr assembly = QI<IADAssemblySessionPtr>(pAssembly);
+        if (assembly == nullptr)
+        {
+            problem = L"The assembly can't be read.";
+            return false;
+        }
+        const double assemblyMm = MillimetresPerModelUnit(QI<IADDesignSessionPtr>(pAssembly));
+        std::vector<IADOccurrencePtr> occurrences;
+        CollectPartOccurrences(assembly->GetRootOccurrence(), occurrences);
+        const std::wstring leaveOut = SamePathKey(leaveOutPath);
+        int read = 0;
+        for (IADOccurrencePtr& occurrence : occurrences)
+        {
+            const std::wstring name = BstrText(occurrence->GetName());
+            IADDesignSessionPtr design = occurrence->GetDesignSession();
+            IADSessionPtr session = QI<IADSessionPtr>(design);
+            const std::wstring path = (session != nullptr) ? BstrText(session->GetfilePath()) : std::wstring();
+            if (!leaveOut.empty() && SamePathKey(path) == leaveOut)
+                continue;
+            const PartToAssembly toAssembly(occurrence, assemblyMm);
+            const size_t partIndex = m_impl->parts.size();
+            m_impl->parts.push_back(toAssembly);
+
+            // Each face's facets, about 0.05 mm from its surface, in the part's units.
+            const double partMm = MillimetresPerModelUnit(design);
+            size_t partTriangles = 0, partFaces = 0;
+            try
+            {
+                IADBodiesPtr bodies = QI<IADPartSessionPtr>(design)->GetBodies();
+                const long bodyCount = (bodies != nullptr) ? bodies->GetCount() : 0;
+                for (long bi = 0; bi < bodyCount; ++bi)
+                {
+                    IADFacesPtr bodyFaces = bodies->GetItem(bi)->GetFaces();
+                    const long faceCount = (bodyFaces != nullptr) ? bodyFaces->GetCount() : 0;
+                    for (long fi = 0; fi < faceCount; ++fi)
+                    {
+                        IADFacePtr face = bodyFaces->GetItem(fi);
+                        std::vector<Vec3> points;
+                        SAFEARRAY* pFacets = face->FacetData(0.05 / partMm);
+                        ReadFacetArray(pFacets, points);
+                        if (pFacets != nullptr)
+                            SafeArrayDestroy(pFacets);
+                        if (points.empty())
+                            continue;
+                        Impl::Face entry;
+                        entry.face = face;
+                        try
+                        {
+                            entry.surface = face->GetGeometry();
+                        }
+                        catch (const _com_error&)
+                        {
+                        }
+                        entry.part = partIndex;
+                        const int index = static_cast<int>(m_impl->faces.size());
+                        m_impl->faces.push_back(entry);
+                        for (const Vec3& p : points)
+                            triangles.push_back(toAssembly.Point(p));
+                        faces.insert(faces.end(), points.size() / 3, index);
+                        partTriangles += points.size() / 3;
+                        ++partFaces;
+                    }
+                }
+            }
+            catch (const _com_error& error)
+            {
+                Log(L"[surfaces] %s: its faces couldn't be read, hr=0x%08X", name.c_str(),
+                    static_cast<unsigned>(error.Error()));
+            }
+
+            // Failing that, the part whole, with no faces to refine on.
+            if (partTriangles == 0)
+            {
+                std::vector<Vec3> points;
+                try
+                {
+                    SAFEARRAY* pFacets = QI<IADPartSessionPtr>(design)->GetFacetData();
+                    ReadFacetArray(pFacets, points);
+                    if (pFacets != nullptr)
+                        SafeArrayDestroy(pFacets);
+                }
+                catch (const _com_error&)
+                {
+                    points.clear();
+                }
+                for (const Vec3& p : points)
+                    triangles.push_back(toAssembly.Point(p));
+                faces.insert(faces.end(), points.size() / 3, -1);
+                partTriangles = points.size() / 3;
+                Log(L"[surfaces] %s read whole: %zu triangles", name.c_str(), partTriangles);
+            }
+            else
+            {
+                Log(L"[surfaces] %s: %zu faces, %zu triangles", name.c_str(), partFaces, partTriangles);
+            }
+            if (partTriangles > 0)
+                ++read;
+        }
+        Log(L"[surfaces] read %d of %zu parts, %zu faces, %zu triangles, in %llu ms", read, occurrences.size(),
+            m_impl->faces.size(), triangles.size() / 3, GetTickCount64() - start);
+        if (triangles.empty())
+            problem = L"No parts could be read.";
+        return !triangles.empty();
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[surfaces] could not read the parts: hr=0x%08X", static_cast<unsigned>(error.Error()));
+        problem = L"The parts couldn't be read.";
+        triangles.clear();
+        faces.clear();
+        return false;
+    }
+}
+
+bool PartSurfaces::ClosestPoint(int face, const Vec3& p, Vec3& closest, bool& onFace) const
+{
+    if (face < 0 || static_cast<size_t>(face) >= m_impl->faces.size())
+        return false;
+    const Impl::Face& entry = m_impl->faces[static_cast<size_t>(face)];
+    if (entry.surface == nullptr)
+        return false;
+    const PartToAssembly& part = m_impl->parts[entry.part];
+    try
+    {
+        const Vec3 local = part.PartPoint(p);
+        IADPoint* pPoint = nullptr;
+        double distance = 0.0;
+        const VARIANT_BOOL found = entry.surface->GetClosestPoint(local.x, local.y, local.z, &pPoint, &distance);
+        IADPointPtr point(pPoint, false);
+        if (!found || point == nullptr)
+            return false;
+        closest = part.Point({ point->GetX(), point->GetY(), point->GetZ() });
+        onFace = entry.face->PointOnFace(point) != ADEntityPointRelation_POINT_OUTSIDE_BOUNDARY;
+        return true;
+    }
+    catch (const _com_error&)
+    {
+        return false;
+    }
 }

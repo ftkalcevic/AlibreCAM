@@ -18,11 +18,24 @@ namespace camcore
     {
     public:
         // triangles: three points to a triangle, in the frame the tool points down in.
-        DropCutter(const std::vector<Vec3>& triangles, const ToolProfile& profile, double stockToLeave);
+        // faces, if not empty: the face each triangle is on (-1 for none known).
+        DropCutter(const std::vector<Vec3>& triangles, const ToolProfile& profile, double stockToLeave,
+                   const std::vector<int>& faces = {});
 
         // The lowest the tip may go with the tool's axis through (x, y), or false
         // if no triangle is within reach.
         bool TipAt(double x, double y, double& tip) const;
+
+        // As TipAt, and which face the tool touches (-1 if not known), and how low
+        // the tip may go for every other face, where that's within 0.5 mm of the tip
+        // (otherwise anything at least 0.5 below it, or lowest() if none is within reach).
+        struct Contact
+        {
+            double tip = 0.0;
+            int face = -1;
+            double others = 0.0;
+        };
+        bool ContactAt(double x, double y, Contact& contact) const;
 
         // The tool's height above its tip at distance d from its axis (grown by
         // the stock to leave), for d from 0 to Reach().
@@ -36,15 +49,17 @@ namespace camcore
             double lowX, highX, lowY, highY, highZ;
             bool flat;              // a face seen from above (not edge on)
             double z0, gx, gy;      // its plane: z = z0 + gx x + gy y
+            int face;
         };
 
-        double Against(const Triangle& t, double x, double y, double best) const;
+        double Against(const Triangle& t, double x, double y) const;
         double AlongEdge(const Vec3& a, const Vec3& b, double x, double y) const;
         double ContactDistance(double slope) const;
 
         ToolProfile m_profile;
         double m_s = 0.0;
         double m_reach = 0.0;
+        bool m_haveFaces = false;
         std::vector<Triangle> m_triangles;
         // Buckets of triangles over XY, each a reach wide.
         double m_bucket = 1.0;

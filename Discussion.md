@@ -6603,6 +6603,129 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Good. Now the spec doc, the install and the discussion file:
 
+> The spec doc is now at rev 196, so the local copy's header needs to match:
+
+> Fixed: Parallel Finishing now always cuts a single finishing pass over the whole depth. Debug and Release both build, all tests pass, and the Release build and help are installed. I haven't tried it in Alibre, and nothing is committed.
+>
+> It was cutting layers because Parallel Finishing used the same Cut Levels tab as the waterline operations, stepdown included. In `Rough 2.cam` its Stepdown is set to 25% of the tool's diameter, so the depth was split into layers.
+>
+> What changed:
+> - **Generate:** Parallel Finishing ignores the stepdown and makes one pass down to the bottom of the cut. The stepdown's Scallop check no longer applies to it.
+> - **Cut Levels tab:** for Parallel Finishing it shows only Top and Bottom, moved to the left. Stepdown, Cut Levels Order and Clear Flats are hidden. Waterline Roughing and Waterline Finishing are unchanged.
+> - **Top and Bottom:** rows are cut only where the surface is below the Top, and never go lower than the Bottom.
+> - **Tests:** the old layers test now checks for the opposite. Distance, % and Scallop stepdowns all give the same single pass as the default.
+> - **Docs:** the help, spec (doc and `docs\SPEC.md`, rev 196), `CLAUDE.md` and `Discussion.md` are updated.
+>
+> Restart Alibre, then test:
+> 1. Generate Parallel Finishing in `Rough 2.cam` as it is: it should be one pass following the surface, with no layers.
+> 2. Its Cut Levels tab shows only the Top and Bottom check boxes, in a Cut Levels group on the left.
+> 3. A Waterline Roughing or Waterline Finishing Cut Levels tab still shows everything.
+> 4. Tick Bottom and set a height: the rows shouldn't go below it. Tick Top: rows should appear only where the surface is below it.
+> 5. The help's Parallel Finishing and Cut Levels sections say it's a single pass.
+
+### 🧑 Frank · 18:58
+
+> *[picture]*
+>
+> The parallel lines over a semi-sphere are appearing wobbly - is this just alibre rounding, or are the generated toolpaths having issues -
+
+### 🤖 Claude
+
+> The wobble is in the toolpath, not Alibre's drawing. Parallel Finishing takes its heights from the same grid as the waterline operations. That grid stores each cell's highest point and tests the tool against cell centres, so as the tool moves along a row the height steps up by a fraction of a cell. Those are the small notches in your picture, about 0.1–0.3 mm.
+>
+> The fix is to calculate the tool's height directly from the part's triangles at every point along the row (a "drop cutter"), which is exact for each tool shape. I'll first look at how the tool shape and Stock to Leave are handled now.
+
+> Now I'll switch Parallel Finishing's heights over to the drop cutter, working the rows out on all cores:
+
+> The build is still running. I'll wait for it to finish.
+
+> The Debug and Release builds and tests are still running in the background, and I'll carry on when they finish. Once I've checked the drop cutter's accuracy and speed on the dome, I'll ask whether to also ask Alibre for tighter facets.
+
+### 🧑 Frank · 19:04
+
+> <task-notification>
+> <task-id>b578q4j4t</task-id>
+> <tool-use-id>toolu_01LpJTfAaemBqftSMrmedf4r</tool-use-id>
+> <output-file>C:\Users\FRANKT~1\AppData\Local\Temp\claude\af67b47206b29857\3929cb7f-8be9-474a-b824-50f2445f44e3\tasks\b578q4j4t.output</output-file>
+> <status>completed</status>
+> <summary>Background command "python "C:/Users/FRANKT~1/AppData/Local/Temp/claude/af67b47206b29857/3929cb7f-8be9-474a-b824-50f2445f44e3/scratchpad/drop.py" &amp;&amp; python "$TEMP/claude_crlf.py" core/DropCutter.h core/DropCutter.cpp &gt;/dev/null; for c in Debug Release; do "/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" AlibreCAM.sln -p:Configuration=$c -p:Platform=x64 -m -v:minimal -nologo 2&gt;&amp;1 | grep -v "C4278\|C4192" | grep -i "error\|warning" | head; bin/x64/$c/CamCoreTests.exe 2&gt;&amp;1 | grep -A1 "ERROR" | head -16; bin/x64/$c/CamCoreTests.exe | tail -1; done; bin/x64/Release/CamCoreTests.exe -tc="parallel finishing timing*" --no-skip | grep moves" completed (exit code 0)</summary>
+> </task-notification>
+
+### 🤖 Claude
+
+> While that builds, the choice I mentioned:
+
+> Questions:
+> - With the exact drop cutter, what's left of the surface error comes from the parts' triangles (Alibre's default facets, tolerance unknown). How accurate should finishing be?
+>   - Finer facets (Recommended): For the finishing operations, facet each part face with IADFace::FacetData at a tight tolerance (say 0.005 mm, a setting I'd add). Fast, and the core stays testable. The FacetData call is unproven in Alibre, as it is for Plunge Roughing.
+>   - Exact surface refinement: Find each contact on the triangles, then polish it on Alibre's true surface with GetClosestPoint and NormalAtPoint. Most accurate, but thousands of COM calls per row (likely seconds to minutes), and it's Alibre-only code that can't be unit tested.
+>   - Leave as is for now: Try the exact drop cutter on Alibre's default facets first, and decide after seeing the result.
+
+### 🧑 Frank · 19:13
+
+> Answers:
+> - With the exact drop cutter, what's left of the surface error comes from the parts' triangles (Alibre's default facets, tolerance unknown). How accurate should finishing be?
+>   **Try #2**
+
+### 🤖 Claude
+
+> The build passed on the earlier change. You chose to refine on the exact surface, which needs some design first. Next I'll check what the 27.0.1 headers offer.
+
+> The new smoothness test fails: 1,192 places where a row's slope turns back up. Before designing the surface refinement I need to know whether that's real, so I'll have the test print a few of them.
+
+> The install didn't happen: the administrator prompt was cancelled, so the installed copy is still the earlier grid version. Meanwhile, here are the decisions the exact-surface refinement needs:
+
+> Questions:
+> - Refining on Alibre's true surface uses GetClosestPoint, which is exact for a ball: the ball's centre sits exactly a radius from the surface. Which tools should be refined?
+>   - Ball mills only (Recommended): Exact for a ball. Flat, corner radius and V mills keep the triangle drop cutter, which is exact for the facets.
+>   - Ball and corner radius: The corner radius mill too, by refining its torus contact. It's harder and slower, and there's more that can go wrong.
+> - Alibre's COM calls must run one at a time on Alibre's thread, so refining every point along every row could take tens of seconds. How much should be refined?
+>   - Every sample point (Recommended): Refine every point along each row (about every 0.075 mm with a 6 mm tool), then simplify to 0.01 mm. Exact, but Generate may take tens of seconds with Alibre busy. I'd log how long it took.
+>   - Only the kept points: Simplify on the triangles first, then refine only the points that are kept. About 10 times faster, but between kept points the line can be off by the facet error.
+
+### 🧑 Frank · 19:22
+
+> Answers:
+> - Refining on Alibre's true surface uses GetClosestPoint, which is exact for a ball: the ball's centre sits exactly a radius from the surface. Which tools should be refined?
+>   **Ball mills only (Recommended)**
+> - Alibre's COM calls must run one at a time on Alibre's thread, so refining every point along every row could take tens of seconds. How much should be refined?
+>   **Every sample point (Recommended)**
+
+### 🤖 Claude
+
+> Before building on `IADFace::FacetData`, I'll check the log for whether it has ever worked in your sessions (Plunge Roughing uses it).
+
+> `IADFace::FacetData` works in Alibre: the log has it returning triangles for faces of `Rough 2`. Next, how the code walks a part's bodies and faces, and the transforms:
+
+> Now a core test with an exact sphere as the "true surface", on a deliberately coarse 24-sided mesh, so the facets are well off the sphere and the refinement has to make the difference:
+
+> Collections are indexed from 0. Now the add-on: an exact inverse on `PartToAssembly`, the `PartSurfaces` reader, and the switch in Generate.
+
+> Debug and Release build cleanly and all tests pass. Now the docs and the install:
+
+> The administrator prompt was cancelled again, so nothing is installed. Rebuilding the discussion file:
+
+> The toolpaths really did have a problem; it wasn't Alibre's drawing. Parallel Finishing was reading heights from a grid that keeps each cell's highest point, so the rows stepped up by 0.1–0.3 mm each time they crossed into a new cell. Triangles weren't the cause, but they do have a smaller error of their own, so I've also done what you chose: refine on the true surface.
+>
+> Both parts are built and all tests pass in Debug and Release. **Nothing is installed:** the administrator prompt was cancelled twice, so Alibre still has the older grid version.
+>
+> - **Drop cutter (`core\DropCutter`):** each point along a row now comes from the tool dropped straight onto the parts' triangles. It checks each triangle's face, edges and corners, exactly for each tool shape. The moves are simplified to within 0.01 mm. A test checks that the rows over the dome are smooth.
+> - **True surface, ball mills only:** Generate now reads each part face with its own facets (`IADFace::FacetData`, which your log shows working). Every point a ball touches is then moved onto that face's true surface, so the ball sits exactly its radius plus Stock to Leave from it. A point keeps the facets' answer if the contact is on the ball's side, if Alibre can't answer, or if the result isn't on the face or is more than 0.5 mm from the facets' answer. A refined point is never allowed below a neighbouring face.
+> - **In the tests:** on a deliberately coarse mesh the facets were more than 0.05 mm out, and the refined rows were within 0.002 mm of the true sphere.
+> - **Unproven in Alibre:** `IADSurface::GetClosestPoint`, `PointOnFace`, and my inverse of the part transform.
+> - **Speed:** each point takes a few calls to Alibre, one at a time, so Generate with a ball mill may take tens of seconds, and Alibre is busy meanwhile. The log records how many points were refined and how many calls it took.
+>
+> After installing (close Alibre, then accept the prompt), test:
+> 1. On the half sphere, Generate Parallel Finishing with a ball mill. The rows should be smooth curves with no notches.
+> 2. Check `%LOCALAPPDATA%\AlibreCAM\AlibreCAM.log` for a `[surfaces]` line (faces and triangles read) and a `[generate] true surface: n of m points` line. If n is 0, refinement didn't work in Alibre, so please send me those lines.
+> 3. Note how long Generate takes, which the `roughing: … in … ms` line also records.
+> 4. Try a flat end mill: it uses only the drop cutter, which should be fast and smooth too.
+> 5. The help's Parallel Finishing section now describes the true-surface refinement and the slower Generate.
+
+### 🧑 Frank · 20:03
+
+> Install it
+
 ---
 
 # Side conversation

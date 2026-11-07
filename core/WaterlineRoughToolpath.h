@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <functional>
 #include <vector>
 
 #include "Boundary.h"
@@ -25,6 +26,13 @@ namespace camcore
         std::vector<std::vector<Vec3>> faces;
         std::vector<ProfileChain> outlines;
         std::vector<Vec3> partTriangles;            // the parts, three points to a triangle, in the frame
+
+        // Parallel Finishing with a ball mill only, both optional: the part face
+        // each triangle is on (-1 for none), and the closest point on a face's
+        // true surface to p (both in the frame), with whether it's on the face
+        // itself (not the surface past its edges). It's called from one thread.
+        std::vector<int> partTriangleFaces;
+        std::function<bool(int face, const Vec3& p, Vec3& closest, bool& onFace)> closestPoint;
 
         bool havePartMaxZ = false;
         double partMaxZ = 0.0;
@@ -84,5 +92,7 @@ namespace camcore
     // (rows only where the surface is below the top). Climb and Conventional cut every
     // row the same way, lifting between; Mixed zigzags, staying down from row to
     // row when the step is short and in the area. A Scallop stepover needs a ball mill.
+    // The heights come from the tool dropped onto the triangles; with a ball mill
+    // and closestPoint, each contact is then moved onto the face's true surface.
     ToolpathResult GenerateParallelFinishToolpath(const WaterlineRoughToolpathInput& input);
 }

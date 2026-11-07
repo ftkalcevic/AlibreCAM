@@ -2251,8 +2251,21 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
                                           : std::wstring();
         std::vector<camcore::Vec3> partTriangles;
         std::wstring partProblem;
-        if (!ReadAssemblyPartFacets(GetSession(), leaveOut, partTriangles, partProblem))
+        // Parallel Finishing with a ball mill reads each face with its true surface,
+        // to move the ball's contacts onto it.
+        const bool exactSurfaces = operation.type == camcore::StepType::ParallelFinishing && pTool != nullptr &&
+                                   tool.type == camcore::ToolType::BallMill;
+        PartSurfaces surfaces;
+        std::vector<int> partTriangleFaces;
+        if (exactSurfaces)
+        {
+            if (!surfaces.Read(GetSession(), leaveOut, partTriangles, partTriangleFaces, partProblem))
+                Log(L"[generate] finishing without parts: %s", partProblem.c_str());
+        }
+        else if (!ReadAssemblyPartFacets(GetSession(), leaveOut, partTriangles, partProblem))
+        {
             Log(L"[generate] roughing without parts: %s", partProblem.c_str());
+        }
         for (camcore::Vec3& point : partTriangles)
             point = camcore::WorldToFrame(frame.frame, point);
 
@@ -2294,6 +2307,19 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
             waterlineInput.faces = std::move(areaFaces);
             waterlineInput.outlines = std::move(areaLoops);
             waterlineInput.partTriangles = std::move(partTriangles);
+            if (exactSurfaces)
+            {
+                waterlineInput.partTriangleFaces = std::move(partTriangleFaces);
+                const camcore::Frame originFrame = frame.frame;
+                waterlineInput.closestPoint = [&surfaces, originFrame](int face, const camcore::Vec3& p,
+                                                                       camcore::Vec3& closest, bool& onFace) {
+                    camcore::Vec3 world;
+                    if (!surfaces.ClosestPoint(face, camcore::FramePointToWorld(originFrame, p), world, onFace))
+                        return false;
+                    closest = camcore::WorldToFrame(originFrame, world);
+                    return true;
+                };
+            }
             const std::vector<double> flats = camcore::FlatHeights(waterlineInput.partTriangles);
             std::wstring flatText;
             for (double h : flats)
@@ -2307,6 +2333,9 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
                               : camcore::GenerateWaterlineRoughToolpath(waterlineInput);
         }
         Log(L"[generate] roughing: %zu moves, in %llu ms", roughResult.toolpath.moves.size(), GetTickCount64() - start);
+        if (exactSurfaces)
+            Log(L"[generate] true surface: %zu of %zu points moved onto it, %zu closest point calls",
+                roughResult.refinedPoints, roughResult.refineTries, roughResult.refineCalls);
         if (!roughResult.ok)
         {
             problem = roughResult.problem;

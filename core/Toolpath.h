@@ -49,5 +49,11 @@ namespace camcore
         bool ok = false;
         Toolpath toolpath;
         std::string problem;    // why it couldn't be made. Empty when ok.
+
+        // Parallel Finishing with a ball mill: how many points were moved onto the
+        // true surface, of how many tried, with how many closest point calls.
+        size_t refinedPoints = 0;
+        size_t refineTries = 0;
+        size_t refineCalls = 0;
     };
 }

@@ -164,12 +164,90 @@ TEST_CASE("the rows are smooth over a dome: no steps")
         if (run1 < 1e-9 || run2 < 1e-9)
             continue;
         const double slope1 = (b.z - a.z) / run1, slope2 = (e.z - c.z) / run2;
-        // Going along +Y over the dome the slope only falls.
-        const double sign = (b.y > a.y) ? 1.0 : -1.0;
-        if (sign * (slope2 - slope1) > 0.05)
+        // Over a dome, the slope along the way the tool goes only falls.
+        if (slope2 - slope1 > 0.05)
             ++wobbles;
     }
     CHECK(wobbles == 0);
+}
+
+TEST_CASE("a ball's contacts are moved onto the true surface")
+{
+    SequenceStep step = ParallelStep();
+    step.parallelFinishing.direction = CutDirection::Climb;
+    const Tool tool = Ball(6);
+    WaterlineRoughToolpathInput input = Input(step, tool);
+    // A coarse dome, so its facets are well inside the sphere (0.13 mm at most).
+    input.partTriangles = Dome(30, 30, 15, 24, 12);
+    const auto worst = [&](const ToolpathResult& result) {
+        double error = 0.0;
+        for (const ToolpathMove& move : result.toolpath.moves)
+        {
+            const double d = std::hypot(move.to.x - 30, move.to.y - 30);
+            if (move.kind == MoveKind::Feed && move.feed == 1200 && d < 16.5)
+                error = (std::max)(error, std::fabs(move.to.z - BallTip(d)));
+        }
+        return error;
+    };
+
+    const ToolpathResult facets = GenerateParallelFinishToolpath(input);
+    REQUIRE(facets.ok);
+    CHECK(facets.refinedPoints == 0);
+    CHECK(worst(facets) > 0.05);
+
+    input.partTriangleFaces.assign(input.partTriangles.size() / 3, 0);
+    size_t calls = 0;
+    input.closestPoint = [&](int face, const Vec3& p, Vec3& closest, bool& onFace) {
+        ++calls;
+        const Vec3 centre{ 30, 30, 0 };
+        const Vec3 d = p - centre;
+        const double length = Length(d);
+        if (face != 0 || length < 1e-12)
+            return false;
+        closest = centre + d * (15.0 / length);
+        onFace = closest.z >= -1e-9;
+        return true;
+    };
+    const ToolpathResult exact = GenerateParallelFinishToolpath(input);
+    REQUIRE(exact.ok);
+    CHECK(exact.refinedPoints > 1000);
+    CHECK(exact.refineCalls == calls);
+    CHECK(worst(exact) < 0.002);
+}
+
+TEST_CASE("a refined contact never goes below another face")
+{
+    // The dome (face 0) with a thin plate (face 1) just above its top, along X.
+    SequenceStep step = ParallelStep();
+    const Tool tool = Ball(6);
+    WaterlineRoughToolpathInput input = Input(step, tool);
+    input.partTriangles = Dome(30, 30, 15);
+    input.partTriangleFaces.assign(input.partTriangles.size() / 3, 0);
+    const std::vector<Vec3> plate = { { 0, 29, 15.2 }, { 60, 29, 15.2 }, { 60, 31, 15.2 },
+                                      { 0, 29, 15.2 }, { 60, 31, 15.2 }, { 0, 31, 15.2 } };
+    input.partTriangles.insert(input.partTriangles.end(), plate.begin(), plate.end());
+    input.partTriangleFaces.push_back(1);
+    input.partTriangleFaces.push_back(1);
+    input.closestPoint = [&](int face, const Vec3& p, Vec3& closest, bool& onFace) {
+        if (face != 0)
+        {
+            closest = { p.x, (std::max)(29.0, (std::min)(31.0, p.y)), 15.2 };
+            onFace = p.x >= 0 && p.x <= 60;
+            return true;
+        }
+        const Vec3 d = p - Vec3{ 30, 30, 0 };
+        closest = Vec3{ 30, 30, 0 } + d * (15.0 / Length(d));
+        onFace = closest.z >= -1e-9;
+        return true;
+    };
+    const ToolpathResult result = GenerateParallelFinishToolpath(input);
+    REQUIRE(result.ok);
+    for (const ToolpathMove& move : result.toolpath.moves)
+    {
+        // Over the plate the ball can't be lower than resting on it.
+        if (move.kind == MoveKind::Feed && std::fabs(move.to.y - 30) < 0.5 && std::fabs(move.to.x - 30) < 5)
+            CHECK(move.to.z >= 15.2 - 1e-6);
+    }
 }
 
 TEST_CASE("the drop cutter is exact for flat, ball, V and stock to leave")

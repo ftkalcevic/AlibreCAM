@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include <memory>
+
 #include "Boundary.h"
 #include "Features.h"
 #include "Origin.h"
@@ -94,3 +96,28 @@ bool ReadFaceFacets(IADSession* pAssembly, const camcore::PickedGeometry& featur
 // part could be read.
 bool ReadAssemblyPartFacets(IADSession* pAssembly, const std::wstring& leaveOutPath,
                             std::vector<camcore::Vec3>& triangles, std::wstring& problem);
+
+// Every visible part's faces, each read with its own facets and kept with its
+// true surface, so a tool's contacts can be moved onto the surface.
+class PartSurfaces
+{
+public:
+    PartSurfaces();
+    ~PartSurfaces();
+
+    // Reads every visible, unsuppressed part (less leaveOutPath's) face by face:
+    // triangles in the assembly's coordinates in mm, and the face each is on (-1
+    // where a part could only be read whole). Returns false and sets problem if
+    // no part could be read.
+    bool Read(IADSession* pAssembly, const std::wstring& leaveOutPath, std::vector<camcore::Vec3>& triangles,
+              std::vector<int>& faces, std::wstring& problem);
+
+    // The closest point on a face's true surface to p, both in the assembly's
+    // coordinates in mm, and whether it's on the face itself. False if Alibre
+    // can't say.
+    bool ClosestPoint(int face, const camcore::Vec3& p, camcore::Vec3& closest, bool& onFace) const;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
+};

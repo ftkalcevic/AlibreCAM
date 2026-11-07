@@ -11,6 +11,7 @@ namespace camcore
     namespace
     {
         const double kLowest = std::numeric_limits<double>::lowest();
+        const double kOtherFaceRange = 0.5;     // how far below the best another face is still reported
 
         // Where the point (x, y) is inside the triangle seen from above.
         bool InsideXY(const Vec3 p[3], double x, double y)
@@ -25,14 +26,16 @@ namespace camcore
         }
     }
 
-    DropCutter::DropCutter(const std::vector<Vec3>& triangles, const ToolProfile& profile, double stockToLeave)
-        : m_profile(profile), m_s(stockToLeave), m_reach(profile.radius + stockToLeave)
+    DropCutter::DropCutter(const std::vector<Vec3>& triangles, const ToolProfile& profile, double stockToLeave,
+                           const std::vector<int>& faces)
+        : m_profile(profile), m_s(stockToLeave), m_reach(profile.radius + stockToLeave), m_haveFaces(!faces.empty())
     {
         bool any = false;
         double xHigh = 0.0, yHigh = 0.0;
         for (size_t i = 0; i + 2 < triangles.size(); i += 3)
         {
             Triangle t;
+            t.face = (i / 3 < faces.size()) ? faces[i / 3] : -1;
             for (int k = 0; k < 3; ++k)
                 t.p[k] = triangles[i + k];
             t.lowX = (std::min)({ t.p[0].x, t.p[1].x, t.p[2].x });
@@ -174,8 +177,9 @@ namespace camcore
         return (std::max)({ value(t0), value(t1), v1, v2 });
     }
 
-    double DropCutter::Against(const Triangle& t, double x, double y, double best) const
+    double DropCutter::Against(const Triangle& t, double x, double y) const
     {
+        double best = kLowest;
         // Its face: the plane touches the tool where the tool slopes as steeply,
         // straight uphill from the axis, if that's on the triangle.
         if (t.flat)
@@ -198,6 +202,15 @@ namespace camcore
     }
 
     bool DropCutter::TipAt(double x, double y, double& tip) const
+    {
+        Contact contact;
+        if (!ContactAt(x, y, contact))
+            return false;
+        tip = contact.tip;
+        return true;
+    }
+
+    bool DropCutter::ContactAt(double x, double y, Contact& contact) const
     {
         if (m_buckets.empty())
             return false;
@@ -248,16 +261,40 @@ namespace camcore
         if (near.empty())
             return false;
         std::sort(near.begin(), near.end(), [](const Near& a, const Near& b) { return a.bound > b.bound; });
-        double best = kLowest;
+        // The best, its face, and the best on any other face.
+        double best = kLowest, other = kLowest;
+        int face = -1;
+        // Another face matters only within the half millimetre a refined contact may
+        // move; without faces, only the best does.
         for (const Near& n : near)
         {
-            if (n.bound <= best)
+            const double needed = m_haveFaces ? (std::max)(other, best - kOtherFaceRange) : best;
+            if (n.bound <= needed)
                 break;
-            best = Against(m_triangles[static_cast<size_t>(n.index)], x, y, best);
+            const Triangle& t = m_triangles[static_cast<size_t>(n.index)];
+            const double value = Against(t, x, y);
+            if (value == kLowest)
+                continue;
+            if (best != kLowest && t.face == face)
+            {
+                best = (std::max)(best, value);
+            }
+            else if (value > best)
+            {
+                other = best;
+                best = value;
+                face = t.face;
+            }
+            else
+            {
+                other = (std::max)(other, value);
+            }
         }
         if (best == kLowest)
             return false;
-        tip = best;
+        contact.tip = best;
+        contact.face = face;
+        contact.others = other;
         return true;
     }
 }

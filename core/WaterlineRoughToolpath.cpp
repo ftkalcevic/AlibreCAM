@@ -1343,10 +1343,64 @@ namespace camcore
 
         // How low the tip may go at p: the tool dropped onto the parts' triangles,
         // exactly for its shape (not the grid, which would make the rows step).
-        const DropCutter cutter(input.partTriangles, ProfileOf(*input.tool), w.s);
+        const DropCutter cutter(input.partTriangles, ProfileOf(*input.tool), w.s, input.partTriangleFaces);
         const auto surfaceAt = [&](double x, double y) {
             double tip = 0.0;
             return cutter.TipAt(x, y, tip) ? (std::max)(tip, floorZ) : floorZ;
+        };
+
+        // A ball's contact moved onto the face's true surface: its centre straight
+        // up or down until it's the ball's radius plus the stock to leave from the
+        // surface, by Newton's method. Kept only if it settles on the face near the
+        // triangles' answer, and never below another face's.
+        const bool refine = input.tool->type == ToolType::BallMill && input.closestPoint &&
+                            !input.partTriangleFaces.empty();
+        const double ballRadius = input.tool->diameter / 2.0;
+        size_t refined = 0, refineTries = 0, refineCalls = 0;
+        const auto refineAt = [&](double x, double y, const DropCutter::Contact& contact) {
+            if (contact.face < 0)
+                return contact.tip;
+            ++refineTries;
+            const double gap = ballRadius + w.s;
+            double centreZ = contact.tip + ballRadius;
+            bool settled = false;
+            Vec3 closest;
+            bool onFace = false;
+            for (int k = 0; k < 8; ++k)
+            {
+                const Vec3 centre{ x, y, centreZ };
+                ++refineCalls;
+                if (!input.closestPoint(contact.face, centre, closest, onFace))
+                    return contact.tip;
+                const Vec3 d = centre - closest;
+                const double distance = Length(d);
+                if (distance < 1e-9)
+                    return contact.tip;
+                const double nz = d.z / distance;
+                const double error = distance - gap;
+                if (std::fabs(error) < 1e-5)
+                {
+                    settled = true;
+                    break;
+                }
+                if (nz < 0.05)
+                    return contact.tip;     // a contact on the ball's side: leave it to the triangles
+                centreZ -= error / nz;
+            }
+            if (!settled || !onFace)
+                return contact.tip;
+            const double tip = centreZ - ballRadius;
+            if (std::fabs(tip - contact.tip) > 0.5)
+                return contact.tip;
+            ++refined;
+            return (std::max)(tip, contact.others);
+        };
+        // The height at (x, y), refined when it can be: one thread only.
+        const auto exactAt = [&](double x, double y) {
+            DropCutter::Contact contact;
+            if (!cutter.ContactAt(x, y, contact))
+                return floorZ;
+            return (std::max)(refine ? refineAt(x, y, contact) : contact.tip, floorZ);
         };
         const double tolerance = (std::min)(w.cell / 4.0, 0.01);
         const auto inArea = [&](double x, double y) {
@@ -1442,8 +1496,28 @@ namespace camcore
                     samples.push_back(&p);
             }
         }
-        std::for_each(std::execution::par, samples.begin(), samples.end(),
-                      [&](Vec3* p) { p->z = surfaceAt(p->x, p->y); });
+        if (refine)
+        {
+            // The triangles' contacts on all cores, then each refined on one thread.
+            std::vector<DropCutter::Contact> contacts(samples.size());
+            std::vector<char> found(samples.size(), 0);
+            std::vector<size_t> order(samples.size());
+            for (size_t k = 0; k < order.size(); ++k)
+                order[k] = k;
+            std::for_each(std::execution::par, order.begin(), order.end(), [&](size_t k) {
+                found[k] = cutter.ContactAt(samples[k]->x, samples[k]->y, contacts[k]) ? 1 : 0;
+            });
+            for (size_t k = 0; k < samples.size(); ++k)
+            {
+                Vec3& p = *samples[k];
+                p.z = found[k] ? (std::max)(refineAt(p.x, p.y, contacts[k]), floorZ) : floorZ;
+            }
+        }
+        else
+        {
+            std::for_each(std::execution::par, samples.begin(), samples.end(),
+                          [&](Vec3* p) { p->z = surfaceAt(p->x, p->y); });
+        }
 
         // Each level's passes: the surface, but no lower than the level, trimmed
         // to where the level above left something.
@@ -1516,7 +1590,7 @@ namespace camcore
                     const double f = static_cast<double>(k) / samples;
                     const double x = from.x + (start.x - from.x) * f, y = from.y + (start.y - from.y) * f;
                     stay = inArea(x, y);
-                    link.push_back({ x, y, (std::max)(surfaceAt(x, y), levels[pass.level]) });
+                    link.push_back({ x, y, (std::max)(refine ? exactAt(x, y) : surfaceAt(x, y), levels[pass.level]) });
                 }
             }
             if (stay)
@@ -1541,6 +1615,9 @@ namespace camcore
         if (result.toolpath.moves.empty())
             return Failure("There's nothing to cut in the area between the top and the bottom.");
         result.ok = true;
+        result.refinedPoints = refined;
+        result.refineTries = refineTries;
+        result.refineCalls = refineCalls;
         return result;
     }
 }
