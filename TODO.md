@@ -24,7 +24,8 @@ these belong in the spec (`docs\SPEC.md`) once they're made.
 - 🔴 More details in tool
 - New dialogs should inherit speed/feeds for the last (?)  copy/paste(?)
 - Performance
-  - Parallel Finishing on spline faces: read each face's NURBS with
+  - Parallel Finishing and Waterline Finishing on spline faces (Waterline
+    Finishing took 6 minutes on `Rough 3`): read each face's NURBS with
     `IADFace::GetBSplineCurvesData` and find closest points in CamCore on all
     cores, as spheres, cylinders, cones and tori already are, instead of asking
     Alibre (`GetClosestPoint` takes about 0.8 ms a point on a spline: 46 s for

@@ -616,8 +616,10 @@ namespace camcore
             std::rotate(points.begin(), points.begin() + static_cast<std::ptrdiff_t>(nearest), points.end());
         }
 
-        // A contour split where it leaves the cells `keep` allows, each piece simplified.
-        std::vector<Piece> ClipContour(Polyline loop, const WaterlineSetup& w, const std::vector<char>& keep, bool clip)
+        // A contour split where it leaves the cells `keep` allows, each piece simplified
+        // (unless simplify is false).
+        std::vector<Piece> ClipContour(Polyline loop, const WaterlineSetup& w, const std::vector<char>& keep, bool clip,
+                                       bool simplify = true)
         {
             std::vector<Piece> pieces;
             const auto inside = [&](const Vec3& p) {
@@ -636,7 +638,7 @@ namespace camcore
             if (outsideAt == loop.size())
             {
                 Piece piece;
-                piece.points = SimplifyLoop(loop, w.cell / 4.0);
+                piece.points = simplify ? SimplifyLoop(loop, w.cell / 4.0) : loop;
                 pieces.push_back(std::move(piece));
                 return pieces;
             }
@@ -652,7 +654,7 @@ namespace camcore
                 if (run.size() >= 2)
                 {
                     Piece piece;
-                    piece.points = SimplifyRun(run, w.cell / 4.0);
+                    piece.points = simplify ? SimplifyRun(run, w.cell / 4.0) : run;
                     piece.closed = false;
                     pieces.push_back(std::move(piece));
                 }
@@ -1008,6 +1010,634 @@ namespace camcore
         return result;
     }
 
+    namespace
+    {
+        // How many points were moved onto the true surface, and why others weren't.
+        struct RefineCounts
+        {
+            size_t refined = 0, tries = 0, calls = 0, noAnswer = 0, onSurface = 0, sideContact = 0, unsettled = 0,
+                   offFace = 0, tooFar = 0, shared = 0;
+            void Add(const RefineCounts& o)
+            {
+                refined += o.refined;
+                tries += o.tries;
+                calls += o.calls;
+                noAnswer += o.noAnswer;
+                onSurface += o.onSurface;
+                sideContact += o.sideContact;
+                unsettled += o.unsettled;
+                offFace += o.offFace;
+                tooFar += o.tooFar;
+                shared += o.shared;
+            }
+            void Into(ToolpathResult& result) const
+            {
+                result.refinedPoints = refined;
+                result.refineTries = tries;
+                result.refineCalls = calls;
+                result.refineNoAnswer = noAnswer;
+                result.refineOnSurface = onSurface;
+                result.refineSideContact = sideContact;
+                result.refineUnsettled = unsettled;
+                result.refineOffFace = offFace;
+                result.refineTooFar = tooFar;
+                result.refineShared = shared;
+            }
+        };
+
+        // The lowest the tool's tip may go with its axis through a point: the tool
+        // dropped exactly onto the parts' triangles, and for a ball mill, moved onto
+        // the face's true surface (its centre straight up or down until it's the
+        // ball's radius plus the stock to leave from the surface, by Newton's
+        // method; kept only if it settles on the face near the triangles' answer,
+        // and never below another face's). Spheres, cylinders, cones and tori are
+        // worked out here, on any thread; other faces are asked of Alibre
+        // (closestPoint), on the calling thread only.
+        class ExactHeights
+        {
+        public:
+            ExactHeights(const WaterlineRoughToolpathInput& input, double stockToLeave, double floorZ)
+                : m_input(input)
+                , m_cutter(input.partTriangles, ProfileOf(*input.tool), stockToLeave, input.partTriangleFaces)
+                , m_s(stockToLeave)
+                , m_floor(floorZ)
+                , m_ball(input.tool->diameter / 2.0)
+            {
+                m_refine = input.tool->type == ToolType::BallMill && !input.partTriangleFaces.empty() &&
+                           (static_cast<bool>(input.closestPoint) || !input.faceSurfaces.empty());
+            }
+
+            const DropCutter& Cutter() const { return m_cutter; }
+            bool Refines() const { return m_refine; }
+            double Floor() const { return m_floor; }
+
+            bool Analytic(int face) const
+            {
+                return face >= 0 && static_cast<size_t>(face) < m_input.faceSurfaces.size() &&
+                       m_input.faceSurfaces[static_cast<size_t>(face)].kind != SurfaceKind::None;
+            }
+
+            // Whether refining this contact means asking Alibre (so the calling thread only).
+            bool AsksAlibre(const DropCutter::Contact& contact) const
+            {
+                return m_refine && contact.face >= 0 && !Analytic(contact.face) && m_input.closestPoint;
+            }
+
+            // The triangles' answer only.
+            double TriangleHeight(double x, double y) const
+            {
+                double tip = 0.0;
+                return m_cutter.TipAt(x, y, tip) ? (std::max)(tip, m_floor) : m_floor;
+            }
+
+            // Refines one contact, starting with the centre moved by guess from the
+            // triangles' answer. Each step squares the error, so once the next would
+            // be under 0.01 microns it stops without asking again. False, keeping the
+            // triangles' answer, if it can't be done.
+            bool RefineOnce(double x, double y, const DropCutter::Contact& contact, double guess, double& tip,
+                            RefineCounts& n) const
+            {
+                if (!m_refine || contact.face < 0)
+                    return false;
+                const bool here = Analytic(contact.face);
+                if (!here && !m_input.closestPoint)
+                    return false;
+                ++n.tries;
+                const double gap = m_ball + m_s;
+                double centreZ = contact.tip + m_ball + guess;
+                bool settled = false;
+                Vec3 closest;
+                bool onFace = false;
+                double normalZ = 1.0;
+                for (int k = 0; k < 8 && !settled; ++k)
+                {
+                    const Vec3 centre{ x, y, centreZ };
+                    bool answered = false;
+                    if (here)
+                    {
+                        answered =
+                            ClosestPointOn(m_input.faceSurfaces[static_cast<size_t>(contact.face)], centre, closest);
+                    }
+                    else
+                    {
+                        ++n.calls;
+                        answered = m_input.closestPoint(contact.face, centre, closest, onFace);
+                    }
+                    if (!answered)
+                    {
+                        ++n.noAnswer;
+                        return false;
+                    }
+                    const Vec3 d = centre - closest;
+                    const double distance = Length(d);
+                    if (distance < 1e-9)
+                    {
+                        ++n.onSurface;
+                        return false;
+                    }
+                    const double nz = d.z / distance;
+                    normalZ = nz;
+                    const double error = distance - gap;
+                    if (std::fabs(error) < 1e-5)
+                    {
+                        settled = true;
+                        break;
+                    }
+                    if (nz < 0.05)
+                    {
+                        ++n.sideContact;
+                        return false;   // a contact on the ball's side: leave it to the triangles
+                    }
+                    const double step = error / nz;
+                    centreZ -= step;
+                    // How far off the next answer would be, from the distance's curvature.
+                    const double next = (1.0 - nz * nz) / (2.0 * gap * nz * nz * nz) * step * step;
+                    settled = next < 1e-5;
+                }
+                // A worked out point is on the face if it's near the face's own facets.
+                if (settled && here)
+                    onFace = m_cutter.NearFace(
+                        contact.face, closest, m_input.faceSurfaces[static_cast<size_t>(contact.face)].onFaceTolerance);
+                if (!settled || !onFace)
+                {
+                    ++(settled ? n.offFace : n.unsettled);
+                    return false;
+                }
+                tip = centreZ - m_ball;
+                // Measured across the surface (along its normal), as on a steep side a
+                // small move across is a big one up or down.
+                if (std::fabs(tip - contact.tip) * std::fabs(normalZ) > 0.5)
+                {
+                    ++n.tooFar;
+                    return false;
+                }
+                ++n.refined;
+                return true;
+            }
+
+            // The height at (x, y), refined when it can be. False if that needs
+            // Alibre and allowAlibre is false (on another thread).
+            bool Height(double x, double y, RefineCounts& n, bool allowAlibre, double& height) const
+            {
+                DropCutter::Contact contact;
+                if (!m_cutter.ContactAt(x, y, contact))
+                {
+                    height = m_floor;
+                    return true;
+                }
+                if (!allowAlibre && AsksAlibre(contact))
+                    return false;
+                double tip = 0.0;
+                if (RefineOnce(x, y, contact, 0.0, tip, n))
+                    height = (std::max)({ tip, contact.others, m_floor });
+                else
+                    height = (std::max)(contact.tip, m_floor);
+                return true;
+            }
+
+        private:
+            const WaterlineRoughToolpathInput& m_input;
+            DropCutter m_cutter;
+            double m_s;
+            double m_floor;
+            double m_ball;
+            bool m_refine = false;
+        };
+        // Glitches left in the laps (not the links between them): turns of more than
+        // 120 degrees between moves at least 0.02 long, and S-bends within 1 mm with
+        // a turn of more than 90 degrees.
+        void CountLapGlitches(const std::vector<std::vector<Piece>>& levelLaps, size_t& turnBacks, size_t& zigzags)
+        {
+            turnBacks = zigzags = 0;
+            for (const std::vector<Piece>& pieces : levelLaps)
+            {
+                for (const Piece& piece : pieces)
+                {
+                    const Polyline& p = piece.points;
+                    const size_t n = p.size();
+                    if (n < 3)
+                        continue;
+                    if (piece.closed)
+                    {
+                        // A closed sliver (under 0.2 mm wide on average, as where the
+                        // area's corner cuts a lap off) turns right round at its tips.
+                        double area = 0.0, perimeter = 0.0;
+                        for (size_t k = 0; k < n; ++k)
+                        {
+                            const Vec3& a = p[k];
+                            const Vec3& b = p[(k + 1) % n];
+                            area += a.x * b.y - b.x * a.y;
+                            perimeter += std::hypot(b.x - a.x, b.y - a.y);
+                        }
+                        if (std::fabs(area) / 2.0 < 0.1 * perimeter)
+                            continue;
+                    }
+                    const size_t segments = piece.closed ? n : n - 1;
+                    const auto segment = [&](size_t k) { return p[(k + 1) % n] - p[k]; };
+                    for (size_t k = 0; k + 1 < segments || (piece.closed && k < segments); ++k)
+                    {
+                        const Vec3 u = segment(k), v = segment((k + 1) % segments);
+                        const double lu = Length(u), lv = Length(v);
+                        if (lu >= 0.02 && lv >= 0.02 && Dot(u, v) < -0.5 * lu * lv)
+                            ++turnBacks;
+                        if (k + 2 >= segments && !piece.closed)
+                            continue;
+                        const Vec3 x = segment((k + 2) % segments);
+                        const double c0 = u.x * v.y - u.y * v.x, c1 = v.x * x.y - v.y * x.x;
+                        if (lu + lv + Length(x) < 1.0 && c0 * c1 < 0.0 && std::fabs(c0) > 1e-4 &&
+                            std::fabs(c1) > 1e-4 && (std::min)(Dot(u, v), Dot(v, x)) < 0.0)
+                            ++zigzags;
+                    }
+                }
+            }
+        }
+
+        // Moves every point of the laps sideways, along the lap's normal (laps have
+        // the part on their right), to where the tip's exact height is the level:
+        // first on the triangles by a bracketed root search, on all cores, then for
+        // a ball onto the true surface by secant steps, faces worked out here on all
+        // cores and those asked of Alibre afterwards on this thread. A point whose
+        // level can't be bracketed near it stays where the grid put it.
+        void MoveLapsOntoLevels(const WaterlineRoughToolpathInput& input, const WaterlineSetup& w,
+                                const std::vector<double>& levels, std::vector<std::vector<Piece>>& levelLaps,
+                                RefineCounts& totals, size_t& smoothed)
+        {
+            const ExactHeights heights(input, w.s, w.bottom - 1.0);
+            struct Target
+            {
+                Vec3* point;
+                Vec3 normal;
+                double z;           // the height the tip's lowest must be at
+                double s = 0.0;     // how far along the normal it moves
+                bool pending = false;
+                bool moved = false;
+                Vec3 local;             // square to the lap from its next points, a fallback
+                bool between = false;   // it may go to the middle of its neighbours
+                bool middle = false;    // it does
+                size_t before = 0, after = 0;
+            };
+            std::vector<Target> targets;
+            struct LapSpan
+            {
+                size_t first, count;
+                bool closed;
+            };
+            std::vector<LapSpan> spans;
+            for (size_t li = 0; li < levelLaps.size(); ++li)
+            {
+                for (Piece& piece : levelLaps[li])
+                {
+                    Polyline& points = piece.points;
+                    const size_t n = points.size();
+                    if (n < 2)
+                        continue;
+                    const size_t first = targets.size();
+                    spans.push_back({ first, n, piece.closed });
+                    // Square to the lap, from points `span` either side (the lap's left,
+                    // away from the part); far enough apart to smooth the grid's jaggedness.
+                    const auto across = [&](size_t k, size_t span) {
+                        const size_t b = (k >= span) ? k - span : (piece.closed ? (k + n - span % n) % n : 0);
+                        const size_t a = (k + span < n) ? k + span : (piece.closed ? (k + span) % n : n - 1);
+                        const Vec3 tangent{ points[a].x - points[b].x, points[a].y - points[b].y, 0.0 };
+                        Vec3 normal;
+                        if (!Normalise(Vec3{ -tangent.y, tangent.x, 0.0 }, normal))
+                            normal = Vec3{ 0.0, 0.0, 0.0 };
+                        return normal;
+                    };
+                    for (size_t k = 0; k < n; ++k)
+                    {
+                        const Vec3 local = across(k, 1);
+                        Vec3 normal = (n >= 7) ? across(k, 3) : local;
+                        if (normal.x == 0.0 && normal.y == 0.0)
+                            normal = local;     // stays put if that's none either
+                        Target t{ &points[k], normal, levels[li] + kHeightTolerance };
+                        t.local = local;
+                        // Every second point (not an open lap's last) takes the middle of its neighbours'.
+                        t.between = (k % 2 == 1) && (k + 1 < n || piece.closed) && n >= 3;
+                        t.before = first + (k > 0 ? k - 1 : n - 1);
+                        t.after = first + (k + 1 < n ? k + 1 : 0);
+                        targets.push_back(t);
+                    }
+                }
+            }
+            if (targets.empty())
+                return;
+
+            // The grid's laps are within about a cell of the true ones.
+            const double reach = w.cell;
+            const auto triangles = [&](const Target& t, double s) {
+                return heights.TriangleHeight(t.point->x + t.normal.x * s, t.point->y + t.normal.y * s) - t.z;
+            };
+            // On the triangles: the height falls going out from the part, so look for
+            // a change of sign within a few cells, then close in (Illinois).
+            const auto onTriangles = [&](Target& t) {
+                double low = -reach, high = reach;
+                double fLow = triangles(t, low), fHigh = triangles(t, high);
+                for (int widen = 0; widen < 3 && !(fLow > 0.0 && fHigh <= 0.0); ++widen)
+                {
+                    low *= 2.0;
+                    high *= 2.0;
+                    fLow = triangles(t, low);
+                    fHigh = triangles(t, high);
+                }
+                if (!(fLow > 0.0 && fHigh <= 0.0))
+                    return false;
+                int side = 0;
+                double found = 0.5 * (low + high);
+                for (int k = 0; k < 40 && high - low > 1e-5; ++k)
+                {
+                    const double mid = (low * fHigh - high * fLow) / (fHigh - fLow);
+                    const double f = triangles(t, mid);
+                    found = mid;
+                    if (std::fabs(f) < 1e-4)
+                        break;      // close enough: this point, not the bracket's middle
+                    if (f > 0.0)
+                    {
+                        low = mid;
+                        fLow = f;
+                        if (side == -1)
+                            fHigh *= 0.5;
+                        side = -1;
+                    }
+                    else
+                    {
+                        high = mid;
+                        fHigh = f;
+                        if (side == 1)
+                            fLow *= 0.5;
+                        side = 1;
+                    }
+                    found = 0.5 * (low + high);
+                }
+                t.s = found;
+                return true;
+            };
+            // Onto the true surface: secant steps on the exact height, the slope from
+            // the triangles. False if that needs Alibre and this isn't its thread.
+            // The first step takes its slope from the triangles; after that, secant
+            // steps on the exact heights themselves, which are smooth, so it settles
+            // quickly even where the facets are coarse and their slope rough. It keeps
+            // the best point found.
+            const auto onSurface = [&](Target& t, bool allowAlibre, RefineCounts& n) {
+                const double start = t.s, d = w.cell / 4.0;
+                const auto clamp = [&](double s) {
+                    return (std::max)(start - 8.0 * reach, (std::min)(start + 8.0 * reach, s));
+                };
+                const auto exactError = [&](double s, double& error) {
+                    double height = 0.0;
+                    if (!heights.Height(t.point->x + t.normal.x * s, t.point->y + t.normal.y * s, n, allowAlibre,
+                                        height))
+                        return false;
+                    error = height - t.z;
+                    return true;
+                };
+                double s0 = t.s, e0 = 0.0;
+                if (!exactError(s0, e0))
+                    return false;
+                if (std::fabs(e0) < 1e-4)
+                    return true;
+                const double slope = (triangles(t, s0 - d) - triangles(t, s0 + d)) / (2.0 * d);
+                if (slope < 0.05)
+                    return true;    // flat here: the level doesn't say where across
+                double best = s0, bestError = std::fabs(e0);
+                double s1 = clamp(s0 + e0 / slope);
+                for (int k = 0; k < 6; ++k)
+                {
+                    double e1 = 0.0;
+                    if (!exactError(s1, e1))
+                    {
+                        t.s = best;     // Alibre is needed from here: carry on later from the best
+                        return false;
+                    }
+                    if (std::fabs(e1) < bestError)
+                    {
+                        best = s1;
+                        bestError = std::fabs(e1);
+                    }
+                    if (std::fabs(e1) < 1e-4 || std::fabs(e1 - e0) < 1e-12)
+                        break;
+                    const double s2 = clamp(s1 - e1 * (s1 - s0) / (e1 - e0));
+                    s0 = s1;
+                    e0 = e1;
+                    s1 = s2;
+                }
+                t.s = best;
+                return true;
+            };
+
+            // A point moved in full: on the triangles, then the true surface where
+            // that's worked out here; those Alibre is asked about are left pending.
+            const auto moveFully = [&](Target& t, RefineCounts& n) {
+                if (t.normal.x == 0.0 && t.normal.y == 0.0)
+                    return;
+                // Square to the lap (smoothed over a few points), so the point moves
+                // across it and keeps its place along it. Failing that, straight downhill
+                // (the exact height's slope), then square to the lap from its next points.
+                bool found = onTriangles(t);
+                if (!found)
+                {
+                    const double d = w.cell / 2.0, x = t.point->x, y = t.point->y;
+                    const double gx =
+                        (heights.TriangleHeight(x + d, y) - heights.TriangleHeight(x - d, y)) / (2.0 * d);
+                    const double gy =
+                        (heights.TriangleHeight(x, y + d) - heights.TriangleHeight(x, y - d)) / (2.0 * d);
+                    const double slope = std::hypot(gx, gy);
+                    if (slope >= 0.05)
+                    {
+                        t.normal = Vec3{ -gx / slope, -gy / slope, 0.0 };
+                        found = onTriangles(t);
+                    }
+                }
+                if (!found && (t.local.x != 0.0 || t.local.y != 0.0))
+                {
+                    t.normal = t.local;
+                    found = onTriangles(t);
+                }
+                if (!found)
+                    return;
+                t.moved = true;
+                if (heights.Refines() && !onSurface(t, false, n))
+                    t.pending = true;
+            };
+            // Over the targets on all cores, a chunk at a time.
+            const auto inParallel = [&](const char* stage, const auto& work) {
+                const size_t chunk = 16;
+                const size_t chunks = (targets.size() + chunk - 1) / chunk;
+                std::vector<RefineCounts> counts(chunks);
+                std::vector<size_t> order;
+                const size_t slices = 10;
+                for (size_t slice = 0; slice < slices; ++slice)
+                {
+                    order.clear();
+                    for (size_t c = chunks * slice / slices; c < chunks * (slice + 1) / slices; ++c)
+                        order.push_back(c);
+                    std::for_each(std::execution::par, order.begin(), order.end(), [&](size_t c) {
+                        for (size_t k = c * chunk; k < (std::min)(targets.size(), (c + 1) * chunk); ++k)
+                            work(targets[k], counts[c]);
+                    });
+                    if (input.progress)
+                        input.progress(static_cast<double>(slice + 1) / slices, stage);
+                }
+                for (const RefineCounts& c : counts)
+                    totals.Add(c);
+            };
+            // Those Alibre is asked about, on this thread.
+            const auto askPending = [&]() {
+                size_t asked = 0, pendingCount = 0;
+                for (const Target& t : targets)
+                    pendingCount += t.pending ? 1 : 0;
+                for (Target& t : targets)
+                {
+                    if (!t.pending)
+                        continue;
+                    t.pending = false;
+                    onSurface(t, true, totals);
+                    if (input.progress && ++asked % 200 == 0)
+                        input.progress(static_cast<double>(asked) / pendingCount,
+                                       "Asking Alibre for points on the true surface");
+                }
+            };
+
+            // Every second point in full, then each between takes the middle of its
+            // neighbours' moves where they agree (the move changes smoothly along a lap).
+            inParallel("Moving the laps onto the parts", [&](Target& t, RefineCounts& n) {
+                if (!t.between)
+                    moveFully(t, n);
+            });
+            askPending();
+            inParallel("Filling in between", [&](Target& t, RefineCounts& n) {
+                if (!t.between)
+                    return;
+                const Target& before = targets[t.before];
+                const Target& after = targets[t.after];
+                if (before.moved && after.moved && std::fabs(before.s - after.s) < w.cell / 2.0)
+                {
+                    t.middle = true;
+                    t.moved = true;
+                    ++n.shared;
+                }
+                else
+                {
+                    moveFully(t, n);
+                }
+            });
+            askPending();
+            // Where each point ends up: its own move, or for a point between, the
+            // middle of its neighbours' (the grid's points are jagged by up to a cell,
+            // so their moves aren't smooth even though the true lap is). A point that
+            // would leave the area stays where the grid put it.
+            const auto final = [&](const Target& t) {
+                return Vec3{ t.point->x + t.normal.x * t.s, t.point->y + t.normal.y * t.s, t.point->z };
+            };
+            const auto inArea = [&](const Vec3& p) {
+                size_t q = 0;
+                return w.CellAt(p, q) && w.inArea[q] != 0;
+            };
+            std::vector<Vec3> ends(targets.size());
+            for (size_t k = 0; k < targets.size(); ++k)
+            {
+                const Target& t = targets[k];
+                if (t.middle)
+                    ends[k] = (final(targets[t.before]) + final(targets[t.after])) * 0.5;
+                else
+                    ends[k] = t.moved ? final(t) : *t.point;
+                if (!inArea(ends[k]))
+                    ends[k] = *t.point;
+            }
+
+            // Then each lap is cleaned up, on all cores, a lap at a time:
+            // - A point that turns back on its neighbours (more than 135 degrees), or
+            //   is more than a cell off the line between them, goes to their middle: a
+            //   closest point Alibre found on the wrong part of a surface, or a step
+            //   along a poor slope, would otherwise leave a spike or a little loop.
+            // - A point that turns more than 45 degrees goes to its neighbours' middle
+            //   if the tool's height there is within 0.01 mm (the moves' own
+            //   tolerance) of where it was moved to (on the facets): on a shallow
+            //   slope a tiny difference in height, as between Alibre's answers on a
+            //   spline and its facets, moves a point a long way sideways, which leaves
+            //   little hooks; on a steep side the height check keeps it put.
+            // - An open lap's end that turns back onto the lap goes onto its neighbour.
+            const std::vector<Vec3> moved = ends;
+            std::vector<size_t> counts(spans.size(), 0);
+            std::vector<size_t> spanOrder(spans.size());
+            for (size_t k = 0; k < spans.size(); ++k)
+                spanOrder[k] = k;
+            std::for_each(std::execution::par, spanOrder.begin(), spanOrder.end(), [&](size_t si) {
+                const LapSpan& span = spans[si];
+                if (span.count < 3)
+                    return;
+                const auto at = [&](size_t k) -> Vec3& { return ends[span.first + k]; };
+                for (int pass = 0; pass < 20; ++pass)
+                {
+                    bool changed = false;
+                    const size_t from = span.closed ? 0 : 1, to = span.closed ? span.count : span.count - 1;
+                    for (size_t k = from; k < to; ++k)
+                    {
+                        const Vec3& before = at(k > 0 ? k - 1 : span.count - 1);
+                        const Vec3& after = at(k + 1 < span.count ? k + 1 : 0);
+                        Vec3& p = at(k);
+                        const Vec3 u = p - before, v = after - p;
+                        const double lu = Length(u), lv = Length(v);
+                        if (lu < 1e-6 || lv < 1e-6)
+                            continue;
+                        const double turn = Dot(u, v) / (lu * lv);    // the cosine of the turn
+                        const Vec3 middle = (before + after) * 0.5;
+                        bool move = turn < -0.7;
+                        if (!move)
+                        {
+                            const Vec3 chord = after - before;
+                            const double length = Length(chord);
+                            if (length > 1e-9)
+                            {
+                                // Past one of its neighbours along their chord (it overtook
+                                // one), or well off it (an outlier).
+                                const double along = Dot(p - before, chord) / (length * length);
+                                const double t = (std::max)(0.0, (std::min)(1.0, along));
+                                move = along < 0.0 || along > 1.0 ||
+                                       Length(p - (before + chord * t)) > (std::min)(w.cell, 0.05);
+                            }
+                        }
+                        if (!move && turn < 0.7 && Length(p - middle) > 0.001)
+                        {
+                            const Vec3& was = moved[span.first + k];
+                            move = std::fabs(heights.TriangleHeight(middle.x, middle.y) -
+                                             heights.TriangleHeight(was.x, was.y)) <= 0.01;
+                        }
+                        if (move && inArea(middle))
+                        {
+                            p = middle;
+                            ++counts[si];
+                            changed = true;
+                        }
+                    }
+                    if (!span.closed && span.count >= 3)
+                    {
+                        // The ends: back onto the lap if they turn back on it.
+                        for (int end = 0; end < 2; ++end)
+                        {
+                            const size_t e = end == 0 ? 0 : span.count - 1;
+                            const size_t n1 = end == 0 ? 1 : span.count - 2;
+                            const size_t n2 = end == 0 ? 2 : span.count - 3;
+                            const Vec3 u = at(n1) - at(n2), v = at(e) - at(n1);
+                            if (Length(u) > 1e-6 && Length(v) > 1e-6 && Dot(u, v) < 0.0)
+                            {
+                                at(e) = at(n1);
+                                ++counts[si];
+                                changed = true;
+                            }
+                        }
+                    }
+                    if (!changed)
+                        break;
+                }
+            });
+            for (size_t c : counts)
+                smoothed += c;
+            for (size_t k = 0; k < targets.size(); ++k)
+                *targets[k].point = ends[k];
+        }
+    }
+
     ToolpathResult GenerateWaterlineFinishToolpath(const WaterlineRoughToolpathInput& input)
     {
         if (input.progress)
@@ -1180,6 +1810,33 @@ namespace camcore
             return pieces;
         };
 
+        // Each level's laps from the grid, each point then moved sideways onto the
+        // level exactly (as Parallel Finishing's rows are), and only then simplified.
+        std::vector<std::vector<Piece>> levelLaps(levels.size());
+        for (size_t li = 0; li < levels.size(); ++li)
+        {
+            if (input.progress)
+                input.progress(static_cast<double>(li) / levels.size(),
+                               "Level " + std::to_string(li + 1) + " of " + std::to_string(levels.size()));
+            for (Polyline& loop :
+                 IsoContours(lowness, nx, ny, w.xLow, w.yLow, w.cell, -(levels[li] + kHeightTolerance), levels[li]))
+            {
+                for (Piece& piece : ClipContour(loop, w, w.inArea, true, false))
+                    levelLaps[li].push_back(std::move(piece));
+            }
+        }
+        RefineCounts totals;
+        size_t smoothed = 0;
+        MoveLapsOntoLevels(input, w, levels, levelLaps, totals, smoothed);
+        const double tolerance = (std::min)(w.cell / 4.0, 0.01);
+        for (std::vector<Piece>& pieces : levelLaps)
+        {
+            for (Piece& piece : pieces)
+                piece.points = piece.closed ? SimplifyLoop(piece.points, tolerance) : SimplifyRun(piece.points, tolerance);
+        }
+        size_t turnBacks = 0, zigzags = 0;
+        CountLapGlitches(levelLaps, turnBacks, zigzags);
+
         struct Lap
         {
             size_t level;
@@ -1190,10 +1847,7 @@ namespace camcore
         bool flip = false;
         for (size_t li = 0; li < levels.size(); ++li)
         {
-            if (input.progress)
-                input.progress(static_cast<double>(li) / levels.size(),
-                               "Level " + std::to_string(li + 1) + " of " + std::to_string(levels.size()));
-            for (Piece& piece : laps(levels[li]))
+            for (Piece& piece : levelLaps[li])
             {
                 bool reverse = settings.direction == CutDirection::Conventional;
                 if (settings.direction == CutDirection::Mixed)
@@ -1278,6 +1932,10 @@ namespace camcore
                            "the bottom.");
 
         result.ok = true;
+        totals.Into(result);
+        result.lapPointsSmoothed = smoothed;
+        result.lapTurnBacks = turnBacks;
+        result.lapZigzags = zigzags;
         return result;
     }
 
@@ -1372,132 +2030,21 @@ namespace camcore
         const double floorZ = w.bottom - 1.0;   // below anything a level reaches
 
         // How low the tip may go at p: the tool dropped onto the parts' triangles,
-        // exactly for its shape (not the grid, which would make the rows step).
-        const DropCutter cutter(input.partTriangles, ProfileOf(*input.tool), w.s, input.partTriangleFaces);
-        const auto surfaceAt = [&](double x, double y) {
-            double tip = 0.0;
-            return cutter.TipAt(x, y, tip) ? (std::max)(tip, floorZ) : floorZ;
-        };
-
-        // A ball's contact moved onto the face's true surface: its centre straight
-        // up or down until it's the ball's radius plus the stock to leave from the
-        // surface, by Newton's method. Kept only if it settles on the face near the
-        // triangles' answer, and never below another face's. Spheres, cylinders,
-        // cones and tori are worked out here, on any thread; other faces are asked
-        // of Alibre (closestPoint), on this thread only.
-        const bool refine = input.tool->type == ToolType::BallMill && !input.partTriangleFaces.empty() &&
-                            (static_cast<bool>(input.closestPoint) || !input.faceSurfaces.empty());
-        const double ballRadius = input.tool->diameter / 2.0;
-        const auto analytic = [&](int face) {
-            return face >= 0 && static_cast<size_t>(face) < input.faceSurfaces.size() &&
-                   input.faceSurfaces[static_cast<size_t>(face)].kind != SurfaceKind::None;
-        };
-        struct RefineCounts
-        {
-            size_t refined = 0, tries = 0, calls = 0, noAnswer = 0, onSurface = 0, sideContact = 0, unsettled = 0,
-                   offFace = 0, tooFar = 0, shared = 0;
-            void Add(const RefineCounts& o)
-            {
-                refined += o.refined;
-                tries += o.tries;
-                calls += o.calls;
-                noAnswer += o.noAnswer;
-                onSurface += o.onSurface;
-                sideContact += o.sideContact;
-                unsettled += o.unsettled;
-                offFace += o.offFace;
-                tooFar += o.tooFar;
-                shared += o.shared;
-            }
-        };
+        // exactly for its shape (not the grid, which would make the rows step), and
+        // for a ball, moved onto the true surface.
+        const ExactHeights heights(input, w.s, floorZ);
+        const DropCutter& cutter = heights.Cutter();
+        const bool refine = heights.Refines();
+        const auto surfaceAt = [&](double x, double y) { return heights.TriangleHeight(x, y); };
+        const auto analytic = [&](int face) { return heights.Analytic(face); };
         RefineCounts totals;
-        // Refines one contact, starting with the centre moved by guess from the
-        // triangles' answer (a neighbour's correction, as it changes slowly). Each
-        // step squares the error, so once the next would be under 0.01 microns
-        // it stops without asking again. False, keeping the triangles' answer, if
-        // it can't be done.
-        const auto refineOnce = [&](double x, double y, const DropCutter::Contact& contact, double guess,
-                                    double& tip, RefineCounts& n) {
-            if (contact.face < 0)
-                return false;
-            const bool here = analytic(contact.face);
-            if (!here && !input.closestPoint)
-                return false;
-            ++n.tries;
-            const double gap = ballRadius + w.s;
-            double centreZ = contact.tip + ballRadius + guess;
-            bool settled = false;
-            Vec3 closest;
-            bool onFace = false;
-            for (int k = 0; k < 8 && !settled; ++k)
-            {
-                const Vec3 centre{ x, y, centreZ };
-                bool answered = false;
-                if (here)
-                {
-                    answered = ClosestPointOn(input.faceSurfaces[static_cast<size_t>(contact.face)], centre, closest);
-                }
-                else
-                {
-                    ++n.calls;
-                    answered = input.closestPoint(contact.face, centre, closest, onFace);
-                }
-                if (!answered)
-                {
-                    ++n.noAnswer;
-                    return false;
-                }
-                const Vec3 d = centre - closest;
-                const double distance = Length(d);
-                if (distance < 1e-9)
-                {
-                    ++n.onSurface;
-                    return false;
-                }
-                const double nz = d.z / distance;
-                const double error = distance - gap;
-                if (std::fabs(error) < 1e-5)
-                {
-                    settled = true;
-                    break;
-                }
-                if (nz < 0.05)
-                {
-                    ++n.sideContact;
-                    return false;   // a contact on the ball's side: leave it to the triangles
-                }
-                const double step = error / nz;
-                centreZ -= step;
-                // How far off the next answer would be, from the distance's curvature.
-                const double next = (1.0 - nz * nz) / (2.0 * gap * nz * nz * nz) * step * step;
-                settled = next < 1e-5;
-            }
-            // A worked out point is on the face if it's near the face's own facets.
-            if (settled && here)
-                onFace = cutter.NearFace(contact.face, closest, 0.1);
-            if (!settled || !onFace)
-            {
-                ++(settled ? n.offFace : n.unsettled);
-                return false;
-            }
-            tip = centreZ - ballRadius;
-            if (std::fabs(tip - contact.tip) > 0.5)
-            {
-                ++n.tooFar;
-                return false;
-            }
-            ++n.refined;
-            return true;
-        };
+        const auto refineOnce = [&](double x, double y, const DropCutter::Contact& contact, double guess, double& tip,
+                                    RefineCounts& n) { return heights.RefineOnce(x, y, contact, guess, tip, n); };
         // The height at (x, y), refined when it can be: this thread only.
         const auto exactAt = [&](double x, double y) {
-            DropCutter::Contact contact;
-            if (!cutter.ContactAt(x, y, contact))
-                return floorZ;
-            double tip = 0.0;
-            if (refine && refineOnce(x, y, contact, 0.0, tip, totals))
-                return (std::max)({ tip, contact.others, floorZ });
-            return (std::max)(contact.tip, floorZ);
+            double height = floorZ;
+            heights.Height(x, y, totals, true, height);
+            return height;
         };
         const double tolerance = (std::min)(w.cell / 4.0, 0.01);
         const auto inArea = [&](double x, double y) {
@@ -1823,16 +2370,7 @@ namespace camcore
         if (result.toolpath.moves.empty())
             return Failure("There's nothing to cut in the area between the top and the bottom.");
         result.ok = true;
-        result.refinedPoints = totals.refined;
-        result.refineTries = totals.tries;
-        result.refineCalls = totals.calls;
-        result.refineNoAnswer = totals.noAnswer;
-        result.refineOnSurface = totals.onSurface;
-        result.refineSideContact = totals.sideContact;
-        result.refineUnsettled = totals.unsettled;
-        result.refineOffFace = totals.offFace;
-        result.refineTooFar = totals.tooFar;
-        result.refineShared = totals.shared;
+        totals.Into(result);
         Report(1.0, "Writing the moves");
         return result;
     }

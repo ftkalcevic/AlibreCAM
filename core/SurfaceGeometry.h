@@ -27,6 +27,9 @@ namespace camcore
         double radius = 0.0;
         double minorRadius = 0.0;
         double slope = 0.0;
+        // How far a point may be from the face's own facets and still be on the
+        // face: twice Alibre's 0.05 mm facets.
+        double onFaceTolerance = 0.1;
     };
 
     // The closest point on the (unbounded) surface to p. False where there's no

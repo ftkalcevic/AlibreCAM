@@ -63,5 +63,8 @@ namespace camcore
         size_t refineOffFace = 0;       // it settled past the face's edges
         size_t refineTooFar = 0;        // it settled more than 0.5 mm from the triangles' answer
         size_t refineShared = 0;        // between two refined points, sharing their correction
+        size_t lapPointsSmoothed = 0;   // Waterline Finishing: lap points put back between their neighbours
+        size_t lapTurnBacks = 0;        // and in the laps left, turns of more than 120 degrees
+        size_t lapZigzags = 0;          // and S-bends within 1 mm with a turn of more than 90
     };
 }

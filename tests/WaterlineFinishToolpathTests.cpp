@@ -128,10 +128,50 @@ TEST_CASE("a ball nose's laps follow a half sphere at the ball's true distance")
     {
         // The ball's centre is 3 above the tip, and 15 + 3 from the sphere's centre.
         const double expected = std::sqrt((std::max)(0.0, 18.0 * 18.0 - (p.z + 3.0) * (p.z + 3.0)));
-        CHECK(std::hypot(p.x - 30, p.y - 30) == doctest::Approx(expected).epsilon(0.03));
+        // Exact on the triangles: within the facets' sag (0.008) and the 0.01
+        // simplifying, both across the surface, so more sideways where it's flatter
+        // (the normal's sideways part is expected / 18).
+        if (expected > 1.0)
+            CHECK(std::fabs(std::hypot(p.x - 30, p.y - 30) - expected) < 0.025 * 18.0 / expected);
         levels.insert(std::llround(p.z * 1000));
     }
     CHECK(levels.size() >= 10);     // a lap at each level the sphere reaches
+}
+
+TEST_CASE("with the sphere known exactly, a ball's laps are on the true surface despite coarse facets")
+{
+    const SequenceStep step = FinishStep();
+    const Tool tool = Ball(6);
+    WaterlineRoughToolpathInput input = Input(step, tool);
+    input.partTriangles = HalfSphere(30, 30, 15, 24, 12);   // facets up to 0.13 inside
+    const auto worst = [&](const ToolpathResult& result) {
+        double error = 0.0;
+        for (const Vec3& p : Cuts(result.toolpath))
+        {
+            const double expected = std::sqrt((std::max)(0.0, 18.0 * 18.0 - (p.z + 3.0) * (p.z + 3.0)));
+            // Measured across the surface (the normal's sideways part is expected / 18).
+            if (expected > 1.0)
+                error = (std::max)(error, std::fabs(std::hypot(p.x - 30, p.y - 30) - expected) * expected / 18.0);
+        }
+        return error;
+    };
+    const ToolpathResult facets = GenerateWaterlineFinishToolpath(input);
+    REQUIRE(facets.ok);
+    CHECK(worst(facets) > 0.05);
+
+    input.partTriangleFaces.assign(input.partTriangles.size() / 3, 0);
+    AnalyticSurface sphere;
+    sphere.kind = SurfaceKind::Sphere;
+    sphere.centre = { 30, 30, 0 };
+    sphere.radius = 15;
+    sphere.onFaceTolerance = 0.2;   // these facets are up to 0.13 from the sphere
+    input.faceSurfaces = { sphere };
+    const ToolpathResult exact = GenerateWaterlineFinishToolpath(input);
+    REQUIRE(exact.ok);
+    CHECK(exact.refinedPoints > 100);
+    CHECK(exact.refineCalls == 0);
+    CHECK(worst(exact) < 0.005);
+    MESSAGE("laps: facets off by " << worst(facets) << ", exact off by " << worst(exact));
 }
 
 TEST_CASE("climb goes round the part clockwise, conventional anticlockwise")
@@ -393,4 +433,225 @@ TEST_CASE("waterline finishing timing on a half sphere" * doctest::skip())
     REQUIRE(result.ok);
     MESSAGE("waterline finishing: " << result.toolpath.moves.size() << " moves in "
             << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms");
+}
+
+
+namespace
+{
+    // How many times a cut turns back on itself (more than 120 degrees) along a
+    // level, with both moves at least 0.02 long: spikes and little loops.
+    int Reversals(const Toolpath& toolpath)
+    {
+        int count = 0;
+        for (size_t i = 2; i < toolpath.moves.size(); ++i)
+        {
+            const ToolpathMove& a = toolpath.moves[i - 2];
+            const ToolpathMove& b = toolpath.moves[i - 1];
+            const ToolpathMove& c = toolpath.moves[i];
+            if (b.kind != MoveKind::Feed || c.kind != MoveKind::Feed || b.feed != 1200 || c.feed != 1200)
+                continue;
+            if (std::fabs(a.to.z - b.to.z) > 1e-9 || std::fabs(b.to.z - c.to.z) > 1e-9)
+                continue;
+            const Vec3 u = b.to - a.to, v = c.to - b.to;
+            const double lu = Length(u), lv = Length(v);
+            if (lu < 0.02 || lv < 0.02)
+                continue;
+            if (Dot(u, v) / (lu * lv) < -0.5)
+                ++count;
+        }
+        return count;
+    }
+}
+
+TEST_CASE("laps over a shallow saddle between two domes have no spikes")
+{
+    SequenceStep step = FinishStep();
+    step.waterlineFinishing.stepDown = 0.5;
+    const Tool tool = Ball(6);
+    WaterlineRoughToolpathInput input = Input(step, tool);
+    // Two low domes overlapping, so the ground between them is a shallow saddle.
+    input.partTriangles = HalfSphere(22, 30, 14, 48, 24);
+    for (Vec3& p : input.partTriangles)
+        p.z *= 0.4;
+    std::vector<Vec3> second = HalfSphere(38, 30, 14, 48, 24);
+    for (Vec3& p : second)
+        p.z *= 0.4;
+    input.partTriangles.insert(input.partTriangles.end(), second.begin(), second.end());
+    input.partMaxZ = 5.6;
+    const ToolpathResult result = GenerateWaterlineFinishToolpath(input);
+    REQUIRE(result.ok);
+    const int reversals = Reversals(result.toolpath);
+    MESSAGE("saddle: " << result.toolpath.moves.size() << " moves, " << reversals << " reversals");
+    CHECK(reversals == 0);
+}
+
+TEST_CASE("laps moved onto two overlapping spheres' true surfaces have no spikes")
+{
+    SequenceStep step = FinishStep();
+    step.waterlineFinishing.stepDown = 0.5;
+    const Tool tool = Ball(6);
+    WaterlineRoughToolpathInput input = Input(step, tool);
+    input.partTriangles = HalfSphere(22, 30, 12, 24, 12);
+    input.partTriangleFaces.assign(input.partTriangles.size() / 3, 0);
+    const std::vector<Vec3> second = HalfSphere(38, 30, 12, 24, 12);
+    input.partTriangles.insert(input.partTriangles.end(), second.begin(), second.end());
+    input.partTriangleFaces.resize(input.partTriangles.size() / 3, 1);
+    input.partMaxZ = 12;
+    for (double cx : { 22.0, 38.0 })
+    {
+        AnalyticSurface sphere;
+        sphere.kind = SurfaceKind::Sphere;
+        sphere.centre = { cx, 30, 0 };
+        sphere.radius = 12;
+        sphere.onFaceTolerance = 0.2;
+        input.faceSurfaces.push_back(sphere);
+    }
+    const ToolpathResult result = GenerateWaterlineFinishToolpath(input);
+    REQUIRE(result.ok);
+    const int reversals = Reversals(result.toolpath);
+    MESSAGE("spheres: " << result.toolpath.moves.size() << " moves, " << reversals << " reversals, "
+                        << result.refinedPoints << " refined");
+    CHECK(reversals == 0);
+}
+
+
+namespace
+{
+    // The top of a sphere of radius r centred at (cx, cy, cz), above z = 0, facets outward.
+    std::vector<Vec3> Cap(double cx, double cy, double cz, double r, int around = 96, int up = 24)
+    {
+        std::vector<Vec3> mesh;
+        const double low = std::asin((std::max)(-1.0, (std::min)(1.0, -cz / r)));
+        const auto at = [&](int a, int u) {
+            const double theta = 2.0 * kPi * a / around;
+            const double phi = low + (0.5 * kPi - low) * u / up;
+            return Vec3{ cx + r * std::cos(phi) * std::cos(theta), cy + r * std::cos(phi) * std::sin(theta),
+                         cz + r * std::sin(phi) };
+        };
+        for (int u = 0; u < up; ++u)
+        {
+            for (int a = 0; a < around; ++a)
+            {
+                const Vec3 p00 = at(a, u), p10 = at(a + 1, u), p01 = at(a, u + 1), p11 = at(a + 1, u + 1);
+                mesh.insert(mesh.end(), { p00, p10, p11 });
+                if (u + 1 < up)
+                    mesh.insert(mesh.end(), { p00, p11, p01 });
+            }
+        }
+        return mesh;
+    }
+}
+
+TEST_CASE("laps on a shallow surface whose true answers wobble a little have no hooks")
+{
+    // A shallow cap (radius 60, 8 high), its closest points wobbling by up to 0.002
+    // along the normal, as Alibre's answers on a spline might against its coarse facets.
+    SequenceStep step = FinishStep();
+    step.waterlineFinishing.stepDown = 0.25;
+    const Tool tool = Ball(6);
+    WaterlineRoughToolpathInput input = Input(step, tool);
+    const Vec3 centre{ 30, 30, -52 };
+    input.partTriangles = Cap(30, 30, -52, 60, 48, 12);
+    input.partTriangleFaces.assign(input.partTriangles.size() / 3, 0);
+    input.partMaxZ = 8;
+    input.closestPoint = [&](int, const Vec3& p, Vec3& closest, bool& onFace) {
+        const Vec3 d = p - centre;
+        const double length = Length(d);
+        const double wobble = 0.002 * std::sin(p.x * 37.0) * std::cos(p.y * 41.0);
+        closest = centre + d * ((60.0 + wobble) / length);
+        onFace = closest.z >= 0.0;
+        return true;
+    };
+    const ToolpathResult result = GenerateWaterlineFinishToolpath(input);
+    REQUIRE(result.ok);
+    CHECK(result.refinedPoints > 100);
+    const int reversals = Reversals(result.toolpath);
+    // Hooks: a turn of more than 90 degrees between two short moves.
+    int hooks = 0;
+    for (size_t i = 2; i < result.toolpath.moves.size(); ++i)
+    {
+        const ToolpathMove& a = result.toolpath.moves[i - 2];
+        const ToolpathMove& b = result.toolpath.moves[i - 1];
+        const ToolpathMove& c = result.toolpath.moves[i];
+        if (b.kind != MoveKind::Feed || c.kind != MoveKind::Feed || b.feed != 1200 || c.feed != 1200)
+            continue;
+        if (std::fabs(a.to.z - b.to.z) > 1e-9 || std::fabs(b.to.z - c.to.z) > 1e-9)
+            continue;
+        const Vec3 u = b.to - a.to, v = c.to - b.to;
+        if (Length(u) < 0.5 && Length(v) < 0.5 && Dot(u, v) < 0.0)
+        {
+            ++hooks;
+        }
+    }
+    CHECK(result.lapTurnBacks == 0);
+    CHECK(result.lapZigzags == 0);
+    MESSAGE("wobbly cap: " << result.toolpath.moves.size() << " moves, " << reversals << " reversals, " << hooks
+                           << " hooks, " << result.lapPointsSmoothed << " smoothed");
+    CHECK(reversals == 0);
+    CHECK(hooks == 0);
+}
+
+namespace
+{
+    // Short zigzags: an S-bend within 1 mm at one level with a turn of more than 90 degrees.
+    int Zigzags(const Toolpath& toolpath)
+    {
+        int count = 0;
+        const auto& m = toolpath.moves;
+        for (size_t i = 3; i < m.size(); ++i)
+        {
+            bool ok = true;
+            for (size_t k = i - 2; k <= i; ++k)
+                ok = ok && m[k].kind == MoveKind::Feed && m[k].feed == 1200;
+            for (size_t k = i - 2; k <= i; ++k)
+                ok = ok && std::fabs(m[k].to.z - m[i - 3].to.z) < 1e-9;
+            if (!ok)
+                continue;
+            Vec3 d[3];
+            double total = 0.0;
+            for (int k = 0; k < 3; ++k)
+            {
+                d[k] = m[i - 2 + k].to - m[i - 3 + k].to;
+                total += Length(d[k]);
+            }
+            const double c0 = d[0].x * d[1].y - d[0].y * d[1].x, c1 = d[1].x * d[2].y - d[1].y * d[2].x;
+            if (total < 1.0 && c0 * c1 < 0.0 && std::fabs(c0) > 1e-4 && std::fabs(c1) > 1e-4 &&
+                (std::min)(Dot(d[0], d[1]), Dot(d[1], d[2])) < 0.0)
+                ++count;
+        }
+        return count;
+    }
+}
+
+TEST_CASE("laps on a nearly flat surface with coarse facets and wobbling answers have no glitches")
+{
+    // A cap of radius 120 only 6 high, on 24 x 6 facets (well inside the sphere),
+    // its true-surface answers wobbling by up to 0.01: points move far sideways.
+    SequenceStep step = FinishStep();
+    step.waterlineFinishing.stepDown = 0.25;
+    const Tool tool = Ball(6);
+    WaterlineRoughToolpathInput input = Input(step, tool);
+    const Vec3 centre{ 30, 30, -114 };
+    input.partTriangles = Cap(30, 30, -114, 120, 24, 6);
+    input.partTriangleFaces.assign(input.partTriangles.size() / 3, 0);
+    input.partMaxZ = 6;
+    input.closestPoint = [&](int, const Vec3& p, Vec3& closest, bool& onFace) {
+        const Vec3 d = p - centre;
+        const double wobble = 0.01 * std::sin(p.x * 37.0) * std::cos(p.y * 41.0);
+        closest = centre + d * ((120.0 + wobble) / Length(d));
+        onFace = closest.z >= 0.0;
+        return true;
+    };
+    const ToolpathResult result = GenerateWaterlineFinishToolpath(input);
+    REQUIRE(result.ok);
+    CHECK(result.refinedPoints > 100);
+    const int reversals = Reversals(result.toolpath);
+    const int zigzags = Zigzags(result.toolpath);
+    MESSAGE("flat cap: " << result.toolpath.moves.size() << " moves, in the moves " << reversals << " turn-backs and "
+                         << zigzags << " zigzags (links between pieces included), in the laps " << result.lapTurnBacks
+                         << " and " << result.lapZigzags << ", " << result.lapPointsSmoothed << " put back");
+    // The laps themselves; the moves also turn round at the tip of a thin sliver
+    // of a lap where the area's corner cuts one off, which isn't counted.
+    CHECK(result.lapTurnBacks == 0);
+    CHECK(result.lapZigzags == 0);
 }

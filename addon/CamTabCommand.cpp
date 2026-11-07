@@ -2264,10 +2264,11 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
             m_pProgress->Update(-1.0, L"Reading the parts");
         std::vector<camcore::Vec3> partTriangles;
         std::wstring partProblem;
-        // Parallel Finishing with a ball mill reads each face with its true surface,
-        // to move the ball's contacts onto it.
-        const bool exactSurfaces = operation.type == camcore::StepType::ParallelFinishing && pTool != nullptr &&
-                                   tool.type == camcore::ToolType::BallMill;
+        // Parallel Finishing and Waterline Finishing with a ball mill read each face
+        // with its true surface, to move the ball's contacts onto it.
+        const bool exactSurfaces = (operation.type == camcore::StepType::ParallelFinishing ||
+                                    operation.type == camcore::StepType::WaterlineFinishing) &&
+                                   pTool != nullptr && tool.type == camcore::ToolType::BallMill;
         PartSurfaces surfaces;
         std::vector<int> partTriangleFaces;
         if (exactSurfaces)
@@ -2381,6 +2382,9 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
                 roughResult.refineUnsettled, roughResult.refineOffFace, roughResult.refineTooFar);
             surfaces.LogFailures();
         }
+        if (operation.type == camcore::StepType::WaterlineFinishing)
+            Log(L"[generate] laps: %zu points put back between their neighbours; %zu turn-backs and %zu zigzags left",
+                roughResult.lapPointsSmoothed, roughResult.lapTurnBacks, roughResult.lapZigzags);
         if (!roughResult.ok)
         {
             problem = roughResult.problem;

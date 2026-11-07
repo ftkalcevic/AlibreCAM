@@ -7130,6 +7130,229 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Both builds are clean. Installing:
 
+> I've fixed it, and the new build is installed (the installed add-on matches the Release build). I haven't seen where it lands in Alibre, so that's for you to check.
+>
+> It ended up in the top left corner because it was centred on the window handle Alibre gives the add-on at startup, which evidently isn't the design window you're working in. It now centres on the top-level window holding the CAM tab, the one you're looking at. If that window can't be read, or is minimised, it uses the middle of the screen the mouse is on.
+>
+> Restart Alibre, then test:
+> 1. Generate Parallel Finishing on `Rough 2` or `Rough 3`: the Generating window should appear in the middle of the Alibre window.
+> 2. Generate from an operation dialog's Generate button: the window should appear in the same place.
+
+### 🧑 Frank · 21:31
+
+> Update the waterline finishing operation to use the same algorithm as the parallel finishing to generate a smoother, more accurate path.
+
+### 🤖 Claude
+
+> This needs a different approach from Parallel Finishing, though it shares the same parts. Waterline Finishing's laps are contour lines of the grid, at the height where the tool just reaches each level. So the plan is to keep the grid laps as a first guess, then move each lap point sideways, along the lap's normal, to where the exact tool height (dropped on the triangles, then the ball refined onto the true surface) equals the level. First I'll pull the exact-height code out of Parallel Finishing so both operations can share it.
+
+> I'll now read the current Waterline Finishing generator in full before changing it.
+
+> The refactor passes every Parallel Finishing test. Now the laps. Next I'll read the part of Waterline Finishing that builds them.
+
+> The dome test now fails near the top, with laps about 0.23 mm out. Something in this last change is wrong. To narrow it down, I'll turn off the in-between averaging for one run.
+
+> The averaging isn't the cause, so the problem is in moving the points themselves. To see which points go wrong, I'll print each failing point's height alongside its radius.
+
+> Debug and Release build cleanly with every test passing. Now the docs and the install:
+
+> Waterline Finishing now uses the same exact method as Parallel Finishing, and it's installed (the add-on and help match the Release build). All tests pass in Debug and Release; I haven't run it in Alibre yet.
+>
+> **How it works:** the laps are still found on the grid first. Then every lap point is moved sideways onto its level exactly:
+> - **On the facets:** each point slides across the lap until the tool, dropped onto the parts' triangles, is exactly at the level. This runs on all cores.
+> - **For a ball mill:** each point is then moved onto the face's true surface. Spheres, cylinders, cones and tori are worked out by AlibreCAM on all cores; other curved faces go through Alibre, one at a time.
+> - **Every second point:** only half the points are worked out in full. Each point between goes to the midpoint of its two neighbours' final positions.
+> - **Afterwards:** the laps are simplified to within 0.01 mm.
+>
+> The levels, the extra levels for the stepover, Finish Flats and the order of cutting are unchanged.
+>
+> **In the tests:**
+> - On a dome with deliberately coarse facets (up to 0.13 mm inside the sphere), the laps are within **0.001 mm** of the true sphere. From the facets alone they're 0.15 mm off.
+> - On the normal test dome, the laps are now checked within about 0.02 mm, where the old check allowed 3%.
+> - The heavy timing case (about 80 levels) takes 2.5 s, against 0.44 s with the grid alone.
+>
+> **Bugs found and fixed along the way:**
+> - The search sometimes returned the middle of its bracket instead of the point it had found, which left some lap points up to 0.23 mm off.
+> - My first version averaged the neighbours' sideways moves rather than their positions. The grid's points are jagged by up to a cell, so that left the laps 0.026 mm off.
+> - A refined contact used to be refused if it moved more than 0.5 mm *up or down*, which wrongly refused steep sides. It's now measured *across* the surface. This also affects Parallel Finishing.
+>
+> The help, spec (rev 199), `CLAUDE.md` and `Discussion.md` are updated.
+>
+> Restart Alibre, then test:
+> 1. On `Rough 2` (the dome), Generate Waterline Finishing with a ball mill. The laps should look smooth, and the Generating window should show "Moving the laps onto the parts".
+> 2. Check the log: the `[surfaces]` line should count the dome as worked out in AlibreCAM, and the `true surface` line should show about 0 asked of Alibre. Note the time.
+> 3. Try `Rough 3` (the spline face): it will be slower, because each point goes through Alibre.
+> 4. Try a flat end mill: the laps should still follow the facets exactly, with no true-surface step.
+> 5. Check that Finish Flats and Depth First still behave as before.
+
+### 🧑 Frank · 22:02
+
+> *[picture]*
+>
+> Rough 3 had problems.  It looks smooth mostly, but there are strange random walks...
+
+### 🤖 Claude
+
+> The spikes are in the lap-moving step, at places where the part's slope is shallow (the saddle and flat-topped areas between the hills). There a small height error means a large sideways move, so neighbouring points can land well apart or even swap order, which draws the little loops. First I'll check the log for what that run did.
+
+> It's the downhill direction, not the cleanup. To find the failing point, I'll print it and the lap points around it, temporarily.
+
+> `sed` turned this file's line endings to LF, which is why my pattern didn't match. I'll put CRLF back once debugging is done. Applying the debug lines with LF:
+
+> The heredoc turned the `\n` inside the string into a real line break (the same trap as before). I'll fix those lines with a script file, building the backslash with `chr(92)`.
+
+> The downhill direction is coming out as zero (gx = gy = 0) at that point, which means the four nearby heights are all equal. I'll print them.
+
+> The drop cutter is exact there on its own (−0.93 at r = 17.88), so the difference is in how the Waterline Finishing step calls it. I'll print the raw result inside the generator.
+
+> Debug lines are gone. Turning the cleanup pass back on, then rebuilding and running everything:
+
+> I've added a fix for the spikes, but I couldn't reproduce them in the tests, so I can't yet say it removes them on `Rough 3`. All tests pass in Debug and Release. **Not installed:** the administrator prompt was cancelled.
+>
+> **Why I couldn't reproduce them:** I built two test cases, two low domes with a shallow saddle between them, and two overlapping spheres with their exact surfaces. Neither gave a single spike. So the spikes most likely come from Alibre's answers on `Rough 3`'s spline face (it went through Alibre for every point), which I can't recreate here. I've made the lap step robust whatever the cause:
+> - **Straight downhill:** each lap point now moves along the exact height's downhill direction, rather than across the grid's jagged lap.
+> - **Cleanup pass:** any point that doubles back by more than 135°, or sits more than a cell off the line between its neighbours, goes back to their midpoint. This repeats three times.
+> - **New log line:** `[generate] laps: n points put back between their neighbours`. If that's well above 0 on `Rough 3`, the cleanup is what's catching the spikes.
+>
+> **A bug the new tests found:** my first downhill version left a few points 0.19 mm off at the dome's rim. Just past a steep rim, the four nearby heights all fall below the floor, so the ground looks flat and the point was left where the grid put it. In that case it now falls back to the direction across the grid's lap and still searches for the level. The dome is back to within 0.001 mm of the true sphere.
+>
+> **Speed:** the log shows Waterline Finishing on `Rough 3` took **6 minutes** (372 s, 425,562 Alibre calls), because every lap point on the spline face goes through Alibre. I've added Waterline Finishing to the spline-speed-up item in `TODO.md`.
+>
+> After installing, test:
+> 1. Generate Waterline Finishing on `Rough 3` again. Check that the spikes and little loops are gone, and read the new `laps: … put back` line in the log.
+> 2. Check that `Rough 2` still looks smooth.
+
+### 🧑 Frank · 22:25
+
+> Install it
+
+### 🤖 Claude
+
+> It's installed, and the add-on and help match the Release build. Start Alibre and generate Waterline Finishing on `Rough 3`; expect it to take around 6 minutes again. When it's done, check whether the spikes are gone, then say "check the logs" and I'll read the new `laps: … put back` line.
+
+### 🧑 Frank · 22:36
+
+> check the logs.  Check the .cam file too
+
+### 🤖 Claude
+
+> Reproduced: 15 hooks on the wobbly cap, and the existing cleanup caught none of them. Next I'll look at the current end-of-step code to rewrite it.
+
+> Only 4 points were smoothed and 13 hooks remain, so the hooks may not be where I think. I'll print where they are, with the moves around them.
+
+> The test lines I appended through the heredoc have LF endings, so the file is now mixed. I'll match on LF and normalise the whole file afterwards.
+
+> I checked the log and `Rough 3.cam`. Last time's cleanup only partly worked, and I've now fixed the causes. All tests pass in Debug and Release. **Not installed:** the administrator prompt was cancelled.
+>
+> **What the log and the saved toolpath showed**
+> - **The run:** Waterline Finishing on `Rough 3` took 368 s, with 425,398 Alibre calls. The cleanup put back 502 points.
+> - **What was left:** the saved toolpath still had 47 sharp turn-backs and 86 short zigzags. Most were small hooks of 0.03–0.2 mm, on shallow parts of the spline face, plus some at the open ends of laps by the area's edge (x ≈ −24.6).
+>
+> **Causes and fixes**
+> 1. **The step onto the true surface was mine to blame.** It took its slope from the coarse facets on every step and gave up after four. On shallow slopes it left points short of the level, scattered sideways. It's now a secant search on the exact heights themselves, which converges reliably.
+> 2. **Remaining jitter is smoothed.** A point that turns more than 45° goes to its neighbours' midpoint, as long as the tool's height there stays within 0.01 mm of where it was. That's the same allowance the moves are simplified to, so the laps can't drift off their level on steep sides.
+> 3. **Lap ends:** an open lap's end that doubles back is pulled onto its neighbour. A point that would land outside the area stays where the grid put it.
+>
+> **New test:** a shallow cap (radius 60) whose "true surface" answers wobble slightly, as Alibre's might on a spline. Before these fixes it had 15 hooks; now it has none. Even with five times the wobble there are none, with 99 points smoothed. The exact-dome accuracy is unchanged (within 0.001 mm).
+>
+> After installing, regenerate Waterline Finishing on `Rough 3` (about 6 minutes) and save. Then say "check the logs" and I'll rescan the `.cam` file for turn-backs and zigzags, and compare with the 47 and 86 from last time.
+
+## 2026-11-08
+
+### 🧑 Frank · 05:35
+
+> Install it
+
+### 🤖 Claude
+
+> It's installed, and the add-on and help match the Release build. Start Alibre, regenerate Waterline Finishing on `Rough 3` (about 6 minutes) and save the job. Then say "check the logs" and I'll rescan `Rough 3.cam` against last time's 47 turn-backs and 86 zigzags.
+
+### 🧑 Frank · 05:43
+
+> check the logs again.  I still see glitches.
+
+### 🤖 Claude
+
+> Plan:
+>
+> # Waterline Finishing: the last glitches on `Rough 3`
+>
+> ## Context
+>
+> Frank still sees glitches in Waterline Finishing on `Rough 3`, a shallow spline face read through Alibre. The saved toolpath (05:41 run) has fewer than before but not none:
+>
+> | Scan of `Rough 3.cam` | 22:32 run | 05:41 run |
+> |---|---|---|
+> | Sharp turn-backs | 47 | 20 |
+> | Short zigzags | 86 | 15 |
+> | Points put back by the cleanup | 502 | 1,231 |
+>
+> The ones left come in two shapes:
+>
+> - **A point that overtakes its neighbour.** For example (0.845, 20.061) → (0.702, 19.927) → (0.821, 20.041): the lap steps back 0.2 mm along itself and then carries on.
+>   - **Why:** since the last change, each point moves straight downhill (the exact height's gradient). On a shallow slope a point can move a long way, up to 8 cells. Downhill isn't square to the lap, so the move has a part along the lap, and the point slips past its neighbour.
+>   - **Why the cleanup misses it:** it judges a point by the turn at it, after the laps are formed. A point that has slipped can leave a turn that gets past it, or leave a cluster of slipped points that taking midpoints can't untangle.
+> - **A single point sticking out.** For example (10.901, 23.898), 0.3 mm out and back. That's an outlier the chord test (more than a cell off its neighbours' line) doesn't catch when the cell is large.
+>
+> ## Changes, all in `MoveLapsOntoLevels` (`core\WaterlineRoughToolpath.cpp`)
+>
+> 1. **Move square to the lap.**
+>    - The direction is perpendicular to the grid lap, taken from points k−3 and k+3 rather than k±1. That smooths out the grid's cell-sized jaggedness.
+>    - Only if no level is found along that line is the downhill direction tried, and then the local perpendicular.
+>    - So points move across the lap, not along it, and keep their order.
+> 2. **Catch points that overtake.** In the cleanup, a point also counts as bad when its projection onto its neighbours' chord falls outside the chord, meaning it lies past one of them. That's in addition to the 135° turn and the chord distance.
+> 3. **Catch outliers.** Lower the chord-distance limit from one cell to `min(cell, 0.05 mm)`.
+> 4. **More passes.** Run the cleanup until nothing changes, up to 20 passes rather than 6, so clusters untangle.
+> 5. **Log the scan in Generate.** After Waterline Finishing, count sharp turn-backs (more than 120° between two moves at least 0.02 mm long, at one level) and short zigzags, the same measures as my scan of the `.cam`. Log them as `[generate] laps: n turn-backs, m zigzags left`, so a run shows its quality without reading the file. The count goes in `ToolpathResult` (`lapTurnBacks`, `lapZigzags`), filled in by the core, so it's tested too.
+>
+> ## Tests (`tests\WaterlineFinishToolpathTests.cpp`)
+>
+> - **A harder version of the wobbly-cap test:**
+>   - coarse facets (24 around, 6 up), so points move far sideways;
+>   - a wobble of 0.01 mm;
+>   - a slope close to flat: a cap of radius 120, 6 high.
+>   
+>   Check first that it fails the way `Rough 3` does: turn-backs or zigzags above 0, with points overtaking. Then fix until both are 0. Check `lapTurnBacks` and `lapZigzags` against the test's own `Reversals` count.
+> - Keep all the existing waterline tests passing:
+>   - the exact sphere within 0.001 mm;
+>   - the dome within 0.02 × 18 / r mm;
+>   - the saddle and the two spheres with no reversals.
+> - Rerun the timing test; it should stay about 3.5 s.
+>
+> ## Verification
+>
+> 1. Build Debug and Release, and run `CamCoreTests.exe`.
+> 2. Close Alibre, install, and check the hashes.
+> 3. Frank regenerates Waterline Finishing on `Rough 3` (about 6 minutes) and saves.
+> 4. I read the new `[generate] laps:` line and rescan `Rough 3.cam` with the scan script, hoping for 0 turn-backs and 0 zigzags. If any are left, I print their surroundings again.
+> 5. Frank looks at it in Alibre.
+> 6. Docs: `CLAUDE.md` (the direction, the cleanup and the new log line), and `Discussion.md`.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Nothing changed: the old script failed on its first check, before writing anything, and `FacingToolpath.cpp` is untouched. I'll save my script under a new name and run it.
+
+> Big improvement on the flat cap: no zigzags, and one turn-back where there were two. I'll print where that last one is, temporarily.
+
+> I've done what the plan set out, and all tests pass in Debug and Release. **Not installed:** the administrator prompt was cancelled.
+>
+> **What the logs showed from your 05:41 run on `Rough 3`:** 331 s, 1,231 points put back, and in the saved toolpath 20 turn-backs and 15 zigzags, down from 47 and 86. Most of what was left were points that had slipped along the lap past a neighbour.
+>
+> **What changed:**
+> 1. **Points move across the lap, not along it.** Each lap point now moves square to the lap, with the lap's direction taken over three points either side to smooth out the grid's jaggedness. It only falls back to "straight downhill" if no level is found that way. Moving downhill was what let points on shallow slopes slide past their neighbours.
+> 2. **A wider cleanup.** It now also catches a point that lies past one of its neighbours, and any point more than 0.05 mm off the line between its neighbours. It repeats until nothing changes, up to 20 times.
+> 3. **A glitch count in the log.** After each Waterline Finishing, the log says how many turn-backs and zigzags are left in the laps themselves. It leaves out the links between lap pieces, and closed slivers under 0.2 mm wide, which have to turn right round at their tips. You won't need to send me the `.cam` file to check a run.
+>
+> **New test:** a nearly flat cap (radius 120, only 6 mm high) on coarse facets, with its true-surface answers wobbling. It had 2 turn-backs and 8 zigzags before these changes and none now. The other waterline tests are unchanged, including the exact sphere within 0.001 mm.
+>
+> After installing, regenerate Waterline Finishing on `Rough 3` (about 6 minutes), then look at it in Alibre. The log line `[generate] laps: … turn-backs and … zigzags left` should show 0 and 0. If you still see glitches, save and say "check the logs", and I'll scan the `.cam` again.
+
+### 🧑 Frank · 06:15
+
+> Install it
+
 ---
 
 # Side conversation
