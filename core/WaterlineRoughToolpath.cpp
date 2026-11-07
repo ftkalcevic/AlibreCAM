@@ -5,10 +5,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <execution>
 #include <limits>
 #include <unordered_map>
 
 #include "Clearance.h"
+#include "DropCutter.h"
 #include "FacingToolpath.h"     // PassDirection
 #include "WaterlineRoughing.h"
 
@@ -373,14 +375,16 @@ namespace camcore
             bool Blocked(size_t q, double z) const { return tips[q] > z + kHeightTolerance; }
         };
 
-        bool PrepareWaterline(const WaterlineRoughToolpathInput& input, bool roughing, WaterlineSetup& w,
+        bool PrepareWaterline(const WaterlineRoughToolpathInput& input, StepType type, WaterlineSetup& w,
                               std::string& problem)
         {
             const SequenceStep* pOperation = input.operation;
-            const StepType type = roughing ? StepType::WaterlineRoughing : StepType::WaterlineFinishing;
+            const bool roughing = type == StepType::WaterlineRoughing;
             if (pOperation == nullptr || pOperation->type != type)
             {
-                problem = roughing ? "This isn't a waterline roughing operation." : "This isn't a waterline finishing operation.";
+                problem = roughing                              ? "This isn't a waterline roughing operation."
+                          : type == StepType::WaterlineFinishing ? "This isn't a waterline finishing operation."
+                                                                 : "This isn't a parallel finishing operation.";
                 return false;
             }
             if (input.tool == nullptr)
@@ -449,14 +453,18 @@ namespace camcore
                 problem = "The clearance plane must be at least 1 mm above the top of the cut.";
                 return false;
             }
-            if (settings.stepdownMode == WaterlineStepdownMode::Scallop && tool.type != ToolType::BallMill)
+            // Parallel Finishing is one pass over the whole depth: it has no stepdown.
+            const bool singlePass = type == StepType::ParallelFinishing;
+            if (!singlePass && settings.stepdownMode == WaterlineStepdownMode::Scallop &&
+                tool.type != ToolType::BallMill)
             {
                 problem = "A stepdown by scallop height needs a ball nose end mill. Choose another stepdown on the "
                           "Cut Levels tab, or a ball mill.";
                 return false;
             }
-            const double step = WaterlineStepdown(settings, tool.diameter, w.top, w.bottom,
-                                                  tool.type == ToolType::BallMill ? w.radius : 0.0);
+            const double step = singlePass ? (w.top - w.bottom)
+                                           : WaterlineStepdown(settings, tool.diameter, w.top, w.bottom,
+                                                               tool.type == ToolType::BallMill ? w.radius : 0.0);
             if (!(step > 0.0))
             {
                 problem = "The stepdown must be more than 0.";
@@ -490,7 +498,7 @@ namespace camcore
                 for (const Vec3& p : face)
                     grow(p.x, p.x, p.y, p.y);
             }
-            const double extension = roughing ? settings.extension : 0.0;
+            const double extension = (type == StepType::WaterlineFinishing) ? 0.0 : settings.extension;
             const double margin = reach + extension + 1.0;
             PlungeArea area;
             area.Reset(boxLowX, boxLowY, boxHighX, boxHighY, (std::min)(0.25, (std::max)(0.02, tool.diameter / 40.0)),
@@ -535,10 +543,13 @@ namespace camcore
             }
 
             // Finish Flats needs a level at each flat, with Clear Flats or not.
-            const bool flatLevels = settings.clearFlats || (!roughing && settings.finishFlats);
-            w.levels = WaterlineLevels(w.top, w.bottom,
-                                       flatLevels ? FlatHeights(input.partTriangles) : std::vector<double>(),
-                                       w.s, step);
+            const bool flatLevels = settings.clearFlats || (type == StepType::WaterlineFinishing && settings.finishFlats);
+            if (singlePass)
+                w.levels = { w.bottom };
+            else
+                w.levels = WaterlineLevels(w.top, w.bottom,
+                                           flatLevels ? FlatHeights(input.partTriangles) : std::vector<double>(),
+                                           w.s, step);
             return true;
         }
 
@@ -655,7 +666,7 @@ namespace camcore
     {
         WaterlineSetup w;
         std::string problem;
-        if (!PrepareWaterline(input, true, w, problem))
+        if (!PrepareWaterline(input, StepType::WaterlineRoughing, w, problem))
             return Failure(problem);
         const WaterlineRoughingSettings& settings = *w.pSettings;
         const int nx = w.nx, ny = w.ny;
@@ -996,7 +1007,7 @@ namespace camcore
     {
         WaterlineSetup w;
         std::string problem;
-        if (!PrepareWaterline(input, false, w, problem))
+        if (!PrepareWaterline(input, StepType::WaterlineFinishing, w, problem))
             return Failure(problem);
         const WaterlineRoughingSettings& settings = *w.pSettings;
         const int nx = w.nx, ny = w.ny;
@@ -1256,6 +1267,279 @@ namespace camcore
             return Failure("There's nothing to finish: no part comes within reach in the area between the top and "
                            "the bottom.");
 
+        result.ok = true;
+        return result;
+    }
+
+    namespace
+    {
+        // The distance from p to the segment a-b, in 3D.
+        double SegmentDistance3(const Vec3& p, const Vec3& a, const Vec3& b)
+        {
+            const Vec3 e = b - a;
+            const double lengthSquared = e.x * e.x + e.y * e.y + e.z * e.z;
+            double t = 0.0;
+            if (lengthSquared > 1e-18)
+                t = (std::min)(1.0, (std::max)(0.0, ((p.x - a.x) * e.x + (p.y - a.y) * e.y + (p.z - a.z) * e.z) /
+                                                        lengthSquared));
+            const Vec3 d = p - (a + e * t);
+            return std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+        }
+
+        void Simplify3(const Polyline& points, size_t first, size_t last, double tolerance, std::vector<char>& keep)
+        {
+            if (last <= first + 1)
+                return;
+            double worst = -1.0;
+            size_t at = first;
+            for (size_t i = first + 1; i < last; ++i)
+            {
+                const double d = SegmentDistance3(points[i], points[first], points[last]);
+                if (d > worst)
+                {
+                    worst = d;
+                    at = i;
+                }
+            }
+            if (worst > tolerance)
+            {
+                keep[at] = 1;
+                Simplify3(points, first, at, tolerance, keep);
+                Simplify3(points, at, last, tolerance, keep);
+            }
+        }
+
+        // An open run with fewer points, none further than tolerance in 3D from the line kept.
+        Polyline SimplifyRun3(const Polyline& run, double tolerance)
+        {
+            if (run.size() < 3)
+                return run;
+            std::vector<char> keep(run.size(), 0);
+            keep.front() = keep.back() = 1;
+            Simplify3(run, 0, run.size() - 1, tolerance, keep);
+            Polyline result;
+            for (size_t i = 0; i < run.size(); ++i)
+            {
+                if (keep[i])
+                    result.push_back(run[i]);
+            }
+            return result;
+        }
+    }
+
+    ToolpathResult GenerateParallelFinishToolpath(const WaterlineRoughToolpathInput& input)
+    {
+        WaterlineSetup w;
+        std::string problem;
+        if (!PrepareWaterline(input, StepType::ParallelFinishing, w, problem))
+            return Failure(problem);
+        const WaterlineRoughingSettings& settings = *w.pSettings;
+        if (settings.stepoverMode == WaterlineStepoverMode::Scallop && input.tool->type != ToolType::BallMill)
+            return Failure("A stepover by scallop height needs a ball nose end mill. Choose another stepover on the "
+                           "Parallel Finishing tab, or a ball mill.");
+        const int nx = w.nx, ny = w.ny;
+        const size_t cells = w.cells;
+        const double floorZ = w.bottom - 1.0;   // below anything a level reaches
+
+        // How low the tip may go at p: the tool dropped onto the parts' triangles,
+        // exactly for its shape (not the grid, which would make the rows step).
+        const DropCutter cutter(input.partTriangles, ProfileOf(*input.tool), w.s);
+        const auto surfaceAt = [&](double x, double y) {
+            double tip = 0.0;
+            return cutter.TipAt(x, y, tip) ? (std::max)(tip, floorZ) : floorZ;
+        };
+        const double tolerance = (std::min)(w.cell / 4.0, 0.01);
+        const auto inArea = [&](double x, double y) {
+            size_t q = 0;
+            return w.CellAt({ x, y, 0.0 }, q) && w.inArea[q] != 0;
+        };
+
+        // The rows, across the area along the angle of cuts, as Waterline Roughing's Linear.
+        const Vec3 along = PassDirection(settings.cutAngle);
+        const Vec3 across{ -along.y, along.x, 0.0 };
+        double low = 0.0, high = 0.0, uLow = 0.0, uHigh = 0.0;
+        bool found = false;
+        for (int j = 0; j < ny; ++j)
+        {
+            for (int i = 0; i < nx; ++i)
+            {
+                if (!w.inArea[static_cast<size_t>(j) * nx + i])
+                    continue;
+                const double x = w.xLow + (i + 0.5) * w.cell, y = w.yLow + (j + 0.5) * w.cell;
+                const double v = x * across.x + y * across.y;
+                const double u = x * along.x + y * along.y;
+                low = found ? (std::min)(low, v) : v;
+                high = found ? (std::max)(high, v) : v;
+                uLow = found ? (std::min)(uLow, u) : u;
+                uHigh = found ? (std::max)(uHigh, u) : u;
+                found = true;
+            }
+        }
+        if (!found)
+            return Failure("The picked geometry covers no area seen from above.");
+        const int intervals = (std::max)(1, static_cast<int>(std::ceil((high - low) / w.pitch - 1e-9)));
+        if (intervals > 200000)
+            return Failure("The toolpath would be too long. Make the stepover larger.");
+        const double spacing = (high - low) / intervals;
+        const bool acrossGoesUp = std::fabs(across.y) > 1e-9 ? across.y > 0.0 : across.x < 0.0;
+        const bool fromLow = (settings.linearStart == PocketLinearStart::Bottom) == acrossGoesUp;
+        const double stepSign = fromLow ? 1.0 : -1.0;
+        // As Pocketing: the uncut side is the way the rows step, and climb keeps it on the right.
+        const bool climbForward = stepSign < 0.0;
+        const double sample = w.cell / 2.0;
+
+        // Each row's runs inside the area, in XY, with their surface heights, cut
+        // the row's own way.
+        struct Run
+        {
+            Polyline points;            // z is the surface's height
+            int component = 0;
+        };
+        std::vector<int> components;
+        LabelComponents(w.inArea, nx, ny, components);
+        std::vector<std::vector<Run>> rows;
+        bool forward = (settings.direction == CutDirection::Conventional) ? !climbForward : climbForward;
+        for (int r = 0; r <= intervals; ++r)
+        {
+            const double v = fromLow ? low + r * spacing : high - r * spacing;
+            std::vector<Run> runs;
+            Run run;
+            const auto finish = [&]() {
+                if (run.points.size() >= 2)
+                {
+                    size_t q = 0;
+                    run.component = (w.CellAt(run.points.front(), q) && components[q] >= 0) ? components[q] : 0;
+                    runs.push_back(std::move(run));
+                }
+                run = Run();
+            };
+            for (double u = uLow - w.cell; u <= uHigh + w.cell + 1e-9; u += sample)
+            {
+                const Vec3 p = along * u + across * v;
+                if (inArea(p.x, p.y))
+                    run.points.push_back({ p.x, p.y, 0.0 });
+                else
+                    finish();
+            }
+            finish();
+            if (!forward)
+            {
+                std::reverse(runs.begin(), runs.end());
+                for (Run& each : runs)
+                    std::reverse(each.points.begin(), each.points.end());
+            }
+            rows.push_back(std::move(runs));
+            if (settings.direction == CutDirection::Mixed)
+                forward = !forward;
+        }
+        // The surface under every point, on all cores.
+        std::vector<Vec3*> samples;
+        for (std::vector<Run>& runs : rows)
+        {
+            for (Run& run : runs)
+            {
+                for (Vec3& p : run.points)
+                    samples.push_back(&p);
+            }
+        }
+        std::for_each(std::execution::par, samples.begin(), samples.end(),
+                      [&](Vec3* p) { p->z = surfaceAt(p->x, p->y); });
+
+        // Each level's passes: the surface, but no lower than the level, trimmed
+        // to where the level above left something.
+        struct Pass
+        {
+            size_t level;
+            int component;
+            Polyline points;
+        };
+        std::vector<Pass> passes;
+        const std::vector<double>& levels = w.levels;
+        for (size_t li = 0; li < levels.size(); ++li)
+        {
+            const double z = levels[li];
+            const double above = (li > 0) ? levels[li - 1] : w.top;
+            for (const std::vector<Run>& runs : rows)
+            {
+                for (const Run& run : runs)
+                {
+                    size_t first = run.points.size(), last = 0;
+                    for (size_t k = 0; k < run.points.size(); ++k)
+                    {
+                        if (run.points[k].z < above - kHeightTolerance)
+                        {
+                            first = (std::min)(first, k);
+                            last = k;
+                        }
+                    }
+                    if (first > last)
+                        continue;
+                    Polyline points;
+                    for (size_t k = first; k <= last; ++k)
+                        points.push_back({ run.points[k].x, run.points[k].y, (std::max)(run.points[k].z, z) });
+                    if (points.size() < 2)
+                        continue;
+                    passes.push_back({ li, run.component, SimplifyRun3(points, tolerance) });
+                    if (passes.size() > kMostMoves)
+                        return Failure("The toolpath would be too long. Make the stepdown or stepover larger.");
+                }
+            }
+        }
+        if (settings.order == CutLevelOrder::DepthFirst)
+        {
+            std::stable_sort(passes.begin(), passes.end(), [](const Pass& a, const Pass& b) {
+                return a.component < b.component || (a.component == b.component && a.level < b.level);
+            });
+        }
+        (void)cells;
+
+        const FeedSettings& feeds = input.operation->feeds;
+        ToolpathResult result;
+        MoveWriter writer(result.toolpath, w.clearance);
+        size_t lastLevel = 0;
+        bool down = false;
+        for (const Pass& pass : passes)
+        {
+            const Vec3 start = pass.points.front();
+            // Mixed steps over from row to row staying down, following the surface,
+            // when the step is short, inside the area, and at the same level.
+            Polyline link;
+            bool stay = settings.direction == CutDirection::Mixed && down && pass.level == lastLevel;
+            if (stay)
+            {
+                const Vec3 from = writer.At();
+                const double length = std::hypot(start.x - from.x, start.y - from.y);
+                stay = length <= 3.0 * w.pitch;
+                const int samples = (std::max)(1, static_cast<int>(std::ceil(length / sample)));
+                for (int k = 1; stay && k < samples; ++k)
+                {
+                    const double f = static_cast<double>(k) / samples;
+                    const double x = from.x + (start.x - from.x) * f, y = from.y + (start.y - from.y) * f;
+                    stay = inArea(x, y);
+                    link.push_back({ x, y, (std::max)(surfaceAt(x, y), levels[pass.level]) });
+                }
+            }
+            if (stay)
+            {
+                for (const Vec3& p : SimplifyRun3(link, tolerance))
+                    writer.Add(MoveKind::Feed, p, feeds.cut);
+                writer.Add(MoveKind::Feed, start, feeds.cut);
+            }
+            else
+            {
+                const double above = (pass.level > 0) ? levels[pass.level - 1] : w.top;
+                writer.Enter(start, (std::min)((std::max)(above, start.z) + 1.0, w.clearance), feeds.plunge);
+            }
+            down = true;
+            lastLevel = pass.level;
+            for (size_t p = 1; p < pass.points.size(); ++p)
+                writer.Add(MoveKind::Feed, pass.points[p], feeds.cut);
+            if (writer.Count() > kMostMoves)
+                return Failure("The toolpath would be too long. Make the stepdown or stepover larger.");
+        }
+        writer.Lift();
+        if (result.toolpath.moves.empty())
+            return Failure("There's nothing to cut in the area between the top and the bottom.");
         result.ok = true;
         return result;
     }

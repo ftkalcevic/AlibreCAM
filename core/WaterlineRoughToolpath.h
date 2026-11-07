@@ -76,4 +76,13 @@ namespace camcore
     // each part's laps down to the bottom first. The tool stays down from one lap
     // to the next round the same part when the move is short and clear.
     ToolpathResult GenerateWaterlineFinishToolpath(const WaterlineRoughToolpathInput& input);
+
+    // Parallel Finishing: straight rows a stepover apart along the angle of cuts,
+    // the tool following the parts' surface with its own shape, over the area (its
+    // centre up to the edge, and past it by the overtravel), in one pass down to the
+    // bottom: the Cut Levels tab's stepdown isn't used, only its Top and Bottom
+    // (rows only where the surface is below the top). Climb and Conventional cut every
+    // row the same way, lifting between; Mixed zigzags, staying down from row to
+    // row when the step is short and in the area. A Scallop stepover needs a ball mill.
+    ToolpathResult GenerateParallelFinishToolpath(const WaterlineRoughToolpathInput& input);
 }

@@ -1554,6 +1554,12 @@ namespace camcore
                          { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
                          { "holePocketing", WriteHolePocketing(step.holePocketing) } };
 
+            if (step.type == StepType::ParallelFinishing)
+                return { { "type", "parallelFinishing" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
+                         { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
+                         { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
+                         { "parallelFinishing", WriteWaterlineRoughing(step.parallelFinishing) } };
+
             if (step.type == StepType::WaterlineFinishing)
                 return { { "type", "waterlineFinishing" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
                          { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
@@ -1679,6 +1685,16 @@ namespace camcore
                        ReadClearance(item, step.clearance);
             }
 
+            if (type == "parallelFinishing")
+            {
+                step.type = StepType::ParallelFinishing;
+                return ReadTool(item, step.toolId) && ReadFeeds(item, step.feeds) && ReadToolpath(item, step.toolpath) &&
+                       ReadFeatures(item, step.features) &&
+                       ReadWaterlineRoughing(item, step.parallelFinishing, "parallelFinishing",
+                                             ParallelFinishingDefaults()) &&
+                       ReadClearance(item, step.clearance);
+            }
+
             if (type == "waterlineFinishing")
             {
                 step.type = StepType::WaterlineFinishing;
@@ -1768,17 +1784,21 @@ namespace camcore
         return type == StepType::Drill || type == StepType::Facing || type == StepType::Profiling ||
                type == StepType::Pocketing || type == StepType::HolePocketing || type == StepType::Chamfer ||
                type == StepType::Engrave || type == StepType::PlungeRoughing || type == StepType::WaterlineRoughing ||
-               type == StepType::WaterlineFinishing;
+               type == StepType::WaterlineFinishing || type == StepType::ParallelFinishing;
     }
 
     WaterlineRoughingSettings& WaterlineSettingsOf(SequenceStep& step)
     {
-        return (step.type == StepType::WaterlineFinishing) ? step.waterlineFinishing : step.waterlineRoughing;
+        return (step.type == StepType::WaterlineFinishing) ? step.waterlineFinishing
+               : (step.type == StepType::ParallelFinishing) ? step.parallelFinishing
+                                                            : step.waterlineRoughing;
     }
 
     const WaterlineRoughingSettings& WaterlineSettingsOf(const SequenceStep& step)
     {
-        return (step.type == StepType::WaterlineFinishing) ? step.waterlineFinishing : step.waterlineRoughing;
+        return (step.type == StepType::WaterlineFinishing) ? step.waterlineFinishing
+               : (step.type == StepType::ParallelFinishing) ? step.parallelFinishing
+                                                            : step.waterlineRoughing;
     }
 
     std::string NewStableId()

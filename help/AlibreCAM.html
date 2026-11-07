@@ -92,6 +92,7 @@
   <a href="#tab-plunge-roughing">Plunge Roughing</a>
   <a href="#tab-waterline-roughing">Waterline Roughing</a>
   <a href="#tab-waterline-finishing">Waterline Finishing</a>
+  <a href="#tab-parallel-finishing">Parallel Finishing</a>
   <a href="#tab-waterline-levels">Waterline Cut Levels</a>
   <a href="#tab-drilling">Drilling</a>
 </nav>
@@ -172,6 +173,8 @@
   <dd>Adds a Waterline Roughing operation: roughs out a 3D shape level by level, pocketing round the parts at each level.</dd>
   <dt>Add 3 Axis ▸ Waterline Finishing</dt>
   <dd>Adds a Waterline Finishing operation: finishes the sides of a 3D shape with one lap round the parts at each level.</dd>
+  <dt>Add 3 Axis ▸ Parallel Finishing</dt>
+  <dd>Adds a Parallel Finishing operation: finishes a 3D shape with straight rows that follow its surface.</dd>
   <dt>Add 3 Axis ▸ Plunge Roughing</dt>
   <dd>Adds a Plunge Roughing operation: roughs out a 3D shape inside closed areas by feeding straight down, on a packed grid of plunges, each stopping above the parts.</dd>
   <dt>Edit</dt>
@@ -381,7 +384,7 @@
   <dt>Number</dt>
   <dd>The tool number (T number) the machine knows the tool by. It's written at tool changes.</dd>
   <dt>Type</dt>
-  <dd>Flat end mill, Ball mill, Corner radius mill, V-mill, Chamfer mill, Taper mill, Thread mill or Drill. Only the chosen type's own size fields can be changed. Toolpaths treat every mill as a flat-ended cylinder of its diameter for now, except Waterline Roughing and Waterline Finishing, which use its true shape.</dd>
+  <dd>Flat end mill, Ball mill, Corner radius mill, V-mill, Chamfer mill, Taper mill, Thread mill or Drill. Only the chosen type's own size fields can be changed. Toolpaths treat every mill as a flat-ended cylinder of its diameter for now, except Waterline Roughing, Waterline Finishing and Parallel Finishing, which use its true shape.</dd>
   <dt>Name</dt>
   <dd>A description of the tool, shown in lists and written in the program.</dd>
   <dt>Units</dt>
@@ -512,7 +515,7 @@
 
 <section id="tab-features">
 <h2>Features tab</h2>
-<p>The geometry the operation machines, in the order it's machined. Each operation takes its own kinds of geometry: Drill and Hole Pocketing take circles, arcs, hole faces and design points; Facing, Profiling and Pocketing take flat faces and edges, including spline curves; Plunge Roughing, Waterline Roughing and Waterline Finishing take any faces, curved ones too, and edges. For the 2 1/2 axis operations only the geometry's position in the origin's XY plane matters: the heights come from the Cut Levels tab. Plunge Roughing and Waterline Roughing project their geometry onto the origin's XY plane to make the area they rough; their depths come from the parts. Each face is an area of its own, and edges whose ends meet are grouped into one.</p>
+<p>The geometry the operation machines, in the order it's machined. Each operation takes its own kinds of geometry: Drill and Hole Pocketing take circles, arcs, hole faces and design points; Facing, Profiling and Pocketing take flat faces and edges, including spline curves; Plunge Roughing, Waterline Roughing, Waterline Finishing and Parallel Finishing take any faces, curved ones too, and edges. For the 2 1/2 axis operations only the geometry's position in the origin's XY plane matters: the heights come from the Cut Levels tab. Plunge Roughing and Waterline Roughing project their geometry onto the origin's XY plane to make the area they rough; their depths come from the parts. Each face is an area of its own, and edges whose ends meet are grouped into one.</p>
 <dl>
   <dt>Feature list</dt>
   <dd>Each feature's type, part, diameter, and X, Y and Z in the operation's origin. Drag rows to reorder them. Choosing rows selects them in the view. Press Delete to remove the chosen rows.</dd>
@@ -828,9 +831,29 @@
 </dl>
 </section>
 
+<section id="tab-parallel-finishing">
+<h2>Parallel Finishing tab</h2>
+<p>Parallel Finishing finishes a 3D shape with straight rows a stepover apart, the tool rising and falling to follow the parts' surface with its own shape (a ball mill's ball, a corner radius, a flat end), so it never cuts into them. It suits gently curved and sloping surfaces; on steep walls the rows are far apart along the wall, so use Waterline Finishing there. Its tabs are Features, Tool, Feeds &amp; Speeds, Clearance, <a href="#tab-waterline-levels">Cut Levels</a> (the waterline operations' tab, showing only Top and Bottom) and this one.</p>
+<p>The area comes from the Features tab as for the waterline operations. The tool's centre runs right up to the area's edge, and past it by the Overtravel. Where there's no part under the tool, it goes down to the bottom of the cut. It's always a single finishing pass over the whole depth: its Cut Levels tab has only Top and Bottom. Rows are cut only where the surface is below the Top, and go no lower than the Bottom. Rows are entered at the plunge feed from 1 mm above the top. The surface is worked out on a fine grid (the tool's diameter / 40, between 0.02 and 0.25 mm). On a slope the rows can sit up to about one grid cell times the slope above the true surface: about 0.1 mm on a 40&deg; slope with a 6 mm tool.</p>
+<dl>
+  <dt>Stock to Leave</dt>
+  <dd>Material left covering the parts: the tool stays this far from them. 0 (the default) cuts to the parts' surface. 0 or more.</dd>
+  <dt>Overtravel</dt>
+  <dd>How far past the area's edge the tool's centre travels, so the edge is finished cleanly. 0 (the default) stops the centre on the edge. The parts are always kept clear.</dd>
+  <dt>Cut Direction</dt>
+  <dd>Climb keeps the uncut material on the tool's right (clockwise spindle), Conventional on its left; both cut every row the same way, lifting to the clearance plane between rows. Mixed (the default) zigzags, staying down and following the surface from one row to the next when the step is short and inside the area.</dd>
+  <dt>Start Side: Bottom / Top</dt>
+  <dd>Start the rows at the origin's -Y side or +Y side, as Pocketing's Linear Cuts do.</dd>
+  <dt>Angle of Cuts</dt>
+  <dd>The rows' direction in degrees: 90 runs along the origin's X, 0 (the default) along its Y.</dd>
+  <dt>Stepover: % Tool Dia / Distance / Scallop</dt>
+  <dd>How far apart the rows are: a percentage of the tool's diameter (10% by default), a distance (0.5 mm by default), or from the scallop height h, the ridge left between two rows: 2 &times; &radic;(h(2r &minus; h)) for a ball mill of radius r. Scallop needs a ball mill; Generate refuses it with any other tool.</dd>
+</dl>
+</section>
+
 <section id="tab-waterline-levels">
 <h2>Waterline: Cut Levels tab</h2>
-<p>The levels Waterline Roughing and Waterline Finishing cut at. This tab is the waterline operations' own, not the Cut Levels tab of the 2 1/2 axis operations. Waterline Finishing may add levels between these for its stepover.</p>
+<p>The levels Waterline Roughing, Waterline Finishing and Parallel Finishing cut at. This tab is these operations' own, not the Cut Levels tab of the 2 1/2 axis operations. Waterline Finishing may add levels between these for its stepover. Parallel Finishing cuts a single pass, so for it this tab shows only Top and Bottom.</p>
 <dl>
   <dt>Stepdown: % Tool Dia / Distance / Number of Levels / Scallop</dt>
   <dd>The deepest any level may be below the one above it: a percentage of the tool's diameter, a distance (2 mm by default for roughing, 0.5 mm for finishing), the whole depth from the top to the bottom divided into this many levels, or from a scallop height h, the ridge a ball mill of radius r leaves between two levels on a steep side: 2 &times; &radic;(h(2r &minus; h)). Scallop needs a ball mill; Generate refuses it with any other tool.</dd>

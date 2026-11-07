@@ -92,4 +92,8 @@ namespace camcore
     // Waterline Finishing's settings for a new operation: nothing left, and
     // finer steps than roughing.
     WaterlineRoughingSettings WaterlineFinishingDefaults();
+
+    // Parallel Finishing's defaults: the same settings, with no stock to leave, a
+    // fine stepover, zigzag rows, and the whole depth in one pass.
+    WaterlineRoughingSettings ParallelFinishingDefaults();
 }

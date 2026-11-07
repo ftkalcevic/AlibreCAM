@@ -79,6 +79,7 @@
     <ClCompile Include="PlungeRoughToolpathTests.cpp" />
     <ClCompile Include="WaterlineRoughToolpathTests.cpp" />
     <ClCompile Include="WaterlineFinishToolpathTests.cpp" />
+    <ClCompile Include="ParallelFinishToolpathTests.cpp" />
     <ClCompile Include="SimulationTests.cpp" />
     <ClCompile Include="SourceTests.cpp" />
     <ClCompile Include="FeatureTests.cpp" />

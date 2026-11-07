@@ -36,6 +36,7 @@ namespace
         case StepType::PlungeRoughing: return L"Plunge Roughing";
         case StepType::WaterlineRoughing: return L"Waterline Roughing";
         case StepType::WaterlineFinishing: return L"Waterline Finishing";
+        case StepType::ParallelFinishing: return L"Parallel Finishing";
         default:               return L"Operation";
         }
     }
@@ -2221,6 +2222,99 @@ void CWaterlineFinishingPage::OnChoiceChanged()
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// CParallelFinishingPage
+
+BEGIN_MESSAGE_MAP(CParallelFinishingPage, COperationPage)
+    ON_BN_CLICKED(IDC_WL_STEP_PERCENT_RADIO, &CParallelFinishingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_WL_STEP_DISTANCE_RADIO, &CParallelFinishingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_WL_SCALLOP_RADIO, &CParallelFinishingPage::OnChoiceChanged)
+END_MESSAGE_MAP()
+
+CParallelFinishingPage::CParallelFinishingPage(COperationDlg* pOwner)
+    : COperationPage(IDD_OP_PARALLEL_FINISHING, pOwner)
+{
+}
+
+void CParallelFinishingPage::Load(const SequenceStep& step)
+{
+    const WaterlineRoughingSettings& w = step.parallelFinishing;
+    SetNumber(IDC_WATERLINE_STOCK, w.stockToLeave);
+    SetNumber(IDC_WATERLINE_EXTENSION, w.extension);
+    CheckRadioButton(IDC_WL_CLIMB, IDC_WL_MIXED,
+                     w.direction == CutDirection::Conventional ? IDC_WL_CONVENTIONAL
+                     : w.direction == CutDirection::Mixed      ? IDC_WL_MIXED
+                                                               : IDC_WL_CLIMB);
+    CheckRadioButton(IDC_WL_LINEAR_BOTTOM, IDC_WL_LINEAR_TOP,
+                     w.linearStart == PocketLinearStart::Top ? IDC_WL_LINEAR_TOP : IDC_WL_LINEAR_BOTTOM);
+    SetNumber(IDC_WL_ANGLE, w.cutAngle);
+    CheckRadioButton(IDC_WL_STEP_PERCENT_RADIO, IDC_WL_SCALLOP_RADIO,
+                     w.stepoverMode == WaterlineStepoverMode::Distance  ? IDC_WL_STEP_DISTANCE_RADIO
+                     : w.stepoverMode == WaterlineStepoverMode::Scallop ? IDC_WL_SCALLOP_RADIO
+                                                                        : IDC_WL_STEP_PERCENT_RADIO);
+    SetNumber(IDC_WL_STEP_PERCENT, w.stepoverPercent);
+    SetNumber(IDC_WL_STEP_DISTANCE, w.stepoverDistance);
+    SetNumber(IDC_WL_SCALLOP, w.scallop);
+    UpdateFields();
+}
+
+bool CParallelFinishingPage::Save(SequenceStep& step, std::wstring& problems)
+{
+    WaterlineRoughingSettings w = step.parallelFinishing;
+    std::wstring found;
+    ReadNumber(IDC_WATERLINE_STOCK, L"The stock to leave", w.stockToLeave, found);
+    ReadNumber(IDC_WATERLINE_EXTENSION, L"The overtravel", w.extension, found);
+    w.direction = IsDlgButtonChecked(IDC_WL_CONVENTIONAL) == BST_CHECKED ? CutDirection::Conventional
+                  : IsDlgButtonChecked(IDC_WL_MIXED) == BST_CHECKED      ? CutDirection::Mixed
+                                                                         : CutDirection::Climb;
+    w.linearStart = IsDlgButtonChecked(IDC_WL_LINEAR_TOP) == BST_CHECKED ? PocketLinearStart::Top
+                                                                         : PocketLinearStart::Bottom;
+    ReadNumber(IDC_WL_ANGLE, L"The angle of cuts", w.cutAngle, found);
+    w.stepoverMode = IsDlgButtonChecked(IDC_WL_STEP_DISTANCE_RADIO) == BST_CHECKED ? WaterlineStepoverMode::Distance
+                     : IsDlgButtonChecked(IDC_WL_SCALLOP_RADIO) == BST_CHECKED     ? WaterlineStepoverMode::Scallop
+                                                                                   : WaterlineStepoverMode::Percent;
+    if (w.stepoverMode == WaterlineStepoverMode::Percent)
+        ReadNumber(IDC_WL_STEP_PERCENT, L"The stepover percentage", w.stepoverPercent, found);
+    else if (w.stepoverMode == WaterlineStepoverMode::Distance)
+        ReadNumber(IDC_WL_STEP_DISTANCE, L"The stepover distance", w.stepoverDistance, found);
+    else
+        ReadNumber(IDC_WL_SCALLOP, L"The scallop height", w.scallop, found);
+    if (found.empty())
+    {
+        for (const std::string& problem : ValidateWaterlineRoughing(w))
+            AppendProblem(found, FromUtf8(problem));
+    }
+    if (!found.empty())
+    {
+        AppendProblem(problems, found);
+        return false;
+    }
+    // The Cut Levels tab's settings are its own.
+    WaterlineRoughingSettings& saved = step.parallelFinishing;
+    saved.stockToLeave = w.stockToLeave;
+    saved.extension = w.extension;
+    saved.direction = w.direction;
+    saved.linearStart = w.linearStart;
+    saved.cutAngle = w.cutAngle;
+    saved.stepoverMode = w.stepoverMode;
+    saved.stepoverPercent = w.stepoverPercent;
+    saved.stepoverDistance = w.stepoverDistance;
+    saved.scallop = w.scallop;
+    return true;
+}
+
+void CParallelFinishingPage::UpdateFields()
+{
+    GetDlgItem(IDC_WL_STEP_PERCENT)->EnableWindow(IsDlgButtonChecked(IDC_WL_STEP_PERCENT_RADIO) == BST_CHECKED);
+    GetDlgItem(IDC_WL_STEP_DISTANCE)->EnableWindow(IsDlgButtonChecked(IDC_WL_STEP_DISTANCE_RADIO) == BST_CHECKED);
+    GetDlgItem(IDC_WL_SCALLOP)->EnableWindow(IsDlgButtonChecked(IDC_WL_SCALLOP_RADIO) == BST_CHECKED);
+}
+
+void CParallelFinishingPage::OnChoiceChanged()
+{
+    UpdateFields();
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // CWaterlineLevelsPage
 
 BEGIN_MESSAGE_MAP(CWaterlineLevelsPage, COperationPage)
@@ -2259,7 +2353,45 @@ void CWaterlineLevelsPage::Load(const SequenceStep& step)
     CheckDlgButton(IDC_WL_USE_BOTTOM, w.useBottom ? BST_CHECKED : BST_UNCHECKED);
     SetNumber(IDC_WL_BOTTOM, w.bottom);
     CheckDlgButton(IDC_WL_CLEAR_FLATS, w.clearFlats ? BST_CHECKED : BST_UNCHECKED);
+    if (step.type == StepType::ParallelFinishing && !m_singlePass)
+        ShowSinglePass();
     UpdateFields();
+}
+
+// Parallel Finishing cuts one pass, so only the Top and Bottom are shown, moved
+// to where the Stepdown group was.
+void CWaterlineLevelsPage::ShowSinglePass()
+{
+    m_singlePass = true;
+    for (int id : { IDC_WL_STEPDOWN_GROUP, IDC_WL_DOWN_PERCENT_RADIO, IDC_WL_DOWN_PERCENT, IDC_WL_DOWN_DISTANCE_RADIO,
+                    IDC_WATERLINE_STEP, IDC_WL_LEVELS_RADIO, IDC_WL_LEVELS, IDC_WL_DOWN_SCALLOP_RADIO,
+                    IDC_WL_DOWN_SCALLOP, IDC_WL_ORDER_GROUP, IDC_WL_LEVEL_FIRST, IDC_WL_DEPTH_FIRST,
+                    IDC_WL_CLEAR_FLATS })
+    {
+        if (CWnd* pControl = GetDlgItem(id))
+            pControl->ShowWindow(SW_HIDE);
+    }
+    CRect from, to;
+    GetDlgItem(IDC_WL_LEVELS_GROUP)->GetWindowRect(&from);
+    GetDlgItem(IDC_WL_STEPDOWN_GROUP)->GetWindowRect(&to);
+    const int shift = to.left - from.left;
+    for (int id : { IDC_WL_LEVELS_GROUP, IDC_WL_USE_TOP, IDC_WL_TOP, IDC_WL_USE_BOTTOM, IDC_WL_BOTTOM })
+    {
+        CWnd* pControl = GetDlgItem(id);
+        CRect rect;
+        pControl->GetWindowRect(&rect);
+        ScreenToClient(&rect);
+        rect.OffsetRect(shift, 0);
+        if (id == IDC_WL_LEVELS_GROUP)
+        {
+            // Without Clear Flats the group ends under Bottom.
+            CRect bottom;
+            GetDlgItem(IDC_WL_BOTTOM)->GetWindowRect(&bottom);
+            ScreenToClient(&bottom);
+            rect.bottom = bottom.bottom + (bottom.top - rect.top) / 4;
+        }
+        pControl->MoveWindow(&rect);
+    }
 }
 
 bool CWaterlineLevelsPage::Save(SequenceStep& step, std::wstring& problems)
@@ -2987,6 +3119,7 @@ void COperationDlg::OnHelpButton()
                              : (page == IDD_OP_WATERLINE_ROUGHING) ? L"tab-waterline-roughing"
                              : (page == IDD_OP_WATERLINE_LEVELS) ? L"tab-waterline-levels"
                              : (page == IDD_OP_WATERLINE_FINISHING) ? L"tab-waterline-finishing"
+                             : (page == IDD_OP_PARALLEL_FINISHING) ? L"tab-parallel-finishing"
                              : (page == IDD_OP_DRILLING)       ? L"tab-drilling"
                                                                : L"operation";
     ShowHelp(section);
@@ -3034,6 +3167,7 @@ std::unique_ptr<COperationPage> COperationDlg::MakePage(UINT templateId)
     case IDD_OP_WATERLINE_ROUGHING: return std::make_unique<CWaterlineRoughingPage>(this);
     case IDD_OP_WATERLINE_LEVELS: return std::make_unique<CWaterlineLevelsPage>(this);
     case IDD_OP_WATERLINE_FINISHING: return std::make_unique<CWaterlineFinishingPage>(this);
+    case IDD_OP_PARALLEL_FINISHING: return std::make_unique<CParallelFinishingPage>(this);
     default:                    return std::make_unique<COperationPage>(templateId, this);
     }
 }
@@ -3111,6 +3245,7 @@ BOOL COperationDlg::OnInitDialog()
         m_step.type != StepType::Profiling && m_step.type != StepType::Pocketing && m_step.type != StepType::Chamfer &&
         m_step.type != StepType::Engrave && m_step.type != StepType::PlungeRoughing &&
         m_step.type != StepType::WaterlineRoughing && m_step.type != StepType::WaterlineFinishing &&
+        m_step.type != StepType::ParallelFinishing &&
         m_step.type != StepType::HolePocketing)
         AddPage(L"Sorting", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
 
@@ -3167,6 +3302,11 @@ BOOL COperationDlg::OnInitDialog()
     {
         AddPage(L"Cut Levels", std::make_unique<CWaterlineLevelsPage>(this));
         AddPage(L"Waterline Finishing", std::make_unique<CWaterlineFinishingPage>(this));
+    }
+    else if (m_step.type == StepType::ParallelFinishing)
+    {
+        AddPage(L"Cut Levels", std::make_unique<CWaterlineLevelsPage>(this));
+        AddPage(L"Parallel Finishing", std::make_unique<CParallelFinishingPage>(this));
     }
     else if (m_step.type == StepType::HolePocketing)
     {
@@ -3353,7 +3493,7 @@ FeatureFilter COperationDlg::GetFeatureFilter() const
                       m_step.type == StepType::Pocketing || m_step.type == StepType::Chamfer ||
                       m_step.type == StepType::Engrave;
     if (m_step.type == StepType::PlungeRoughing || m_step.type == StepType::WaterlineRoughing ||
-        m_step.type == StepType::WaterlineFinishing)
+        m_step.type == StepType::WaterlineFinishing || m_step.type == StepType::ParallelFinishing)
         return FeatureFilter::ProjectedArea;
     return area ? FeatureFilter::FacingArea : FeatureFilter::Points;
 }

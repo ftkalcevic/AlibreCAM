@@ -6490,6 +6490,119 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Everything passes. Installing now, if Alibre is closed:
 
+> Yes, that is the definition: waterline finishing only finishes walls, one lap round the parts at each level. Facing wasn't the answer either, because it would cut into the dome standing on the face. So I've added the option you chose: a **Finish Flats** check box on the Waterline Finishing tab, off by default. Debug and Release both build, all the tests pass including two new ones, and the Release build and help are installed. I haven't tried it in Alibre, and nothing is committed.
+>
+> With Finish Flats ticked, each up-facing flat in the area is also cleared at its height plus the Stock to Leave:
+> - **Where it cuts:** loops a stepover apart, from the flat's edge inwards, only where the tool's tip sits on the flat. That keeps the tool clear of the walls and of anything standing on the flat.
+> - **When:** right after the laps round that level's walls, staying with the same part under Depth First.
+> - **Spacing and direction:** the tab's own Stepover and Cut Direction. A ball mill with a Scallop stepover leaves the same scallop on the flats as on the walls.
+> - **Levels:** each flat gets a level at its height even when Clear Flats is off on the Cut Levels tab.
+>
+> On the 40 × 40 shelf round a dome in the new test, with a 6 mm flat end mill, every reachable point on the shelf was within half a stepover of a pass. No pass came closer to the dome than the tool's radius. The half sphere timing is the same as before (0.47 s).
+>
+> Restart Alibre, then test:
+> 1. On your 55 × 55 base with the half sphere, generate Waterline Finishing with Finish Flats ticked. The 5 mm shelf should be cleared with loops out to the edge, without cutting into the sphere.
+> 2. Untick it: there should be only the wall laps.
+> 3. Try a ball mill with a Scallop stepover, then a flat end mill.
+> 4. Set a Stock to Leave and check that the flat passes sit that far above the shelf.
+> 5. With two separate parts that each have a top flat, compare Depth First and Level First.
+> 6. Save and reopen the job: the tick should stay.
+> 7. The help's Waterline Finishing section now describes Finish Flats.
+
+### 🧑 Frank · 18:29
+
+> Create a new operation, Parallel Finishing.
+> The dialog has tabs Features, Tool, Feeds and speeds, clearance, Cut Levels.
+> A Parallel Finishing tab contains - 
+> Stock to leave edit,
+> Group Cut Direction
+> 	radios Climb, Conventional, Mixed
+> Group Start Side
+> 	radios Bottom, Top
+> Group Angle of Cuts 
+> 	Edit 
+> Group stepover
+> 	radio/edits
+> 		% Tool Dia
+> 		Distance
+> 		Scallop (for ball mill only)
+
+### 🤖 Claude
+
+> Questions:
+> - Parallel Finishing follows the surface along straight rows. What should its Cut Levels tab do?
+>   - Waterline's tab (Recommended): Reuse the waterline Cut Levels tab. Its Stepdown splits a deep cut into several surface-following passes, none deeper than the stepdown below the one before. Top and Bottom limit the cut, and Order applies.
+>   - Top and Bottom only: A single surface-following pass. The tab has only the Top and Bottom check boxes, which clip the cut to a height range.
+> - For Parallel Finishing's rows, what should Climb, Conventional and Mixed mean?
+>   - One-way, lift between (Recommended): As Pocketing's Linear cuts do: Climb and Conventional cut every row the same way, lifting to the clearance plane to go back to the start. Mixed zigzags, staying down from row to row.
+>   - One-way, return low: As above, but the tool goes back to the next row's start at a safe height just above the part instead of the clearance plane.
+> - If Scallop stepover is chosen and the tool isn't a ball mill, what should happen?
+>   - Generate refuses (Recommended): Generate refuses and says Scallop needs a ball mill, as the waterline Scallop stepdown does.
+>   - Fall back to 90%: Use 90% of the tool's diameter, as Waterline Roughing does for a flat end mill.
+> - How far may the tool go at the edges of the area?
+>   - Centre to the edge (Recommended): The tool's centre runs right up to the area's edge, as the waterline operations do. The parts are always kept clear by the tool's true shape.
+>   - Whole tool inside: The tool's centre stops its radius in from the area's edge.
+
+### 🧑 Frank · 18:31
+
+> Answers:
+> - Parallel Finishing follows the surface along straight rows. What should its Cut Levels tab do?
+>   **Waterline's tab (Recommended)**
+> - For Parallel Finishing's rows, what should Climb, Conventional and Mixed mean?
+>   **One-way, lift between (Recommended)**
+> - If Scallop stepover is chosen and the tool isn't a ball mill, what should happen?
+>   **Generate refuses (Recommended)**
+> - How far may the tool go at the edges of the area?
+>   **#1, but add a parameter to specify how far to travel over**
+
+### 🤖 Claude
+
+> The new icon (vertical passes over the dome) sits before the warning. Building:
+
+> The edit didn't apply, because the file has CRLF line endings. Retrying:
+
+> On the diagonal the offset can reach √2 cells, so I'm widening the allowance to match:
+
+> Everything passes in Debug and Release. Now the docs, then install.
+
+> The spec doc's new item goes after the Waterline Finishing item (`.90820`):
+
+> I've added Parallel Finishing: straight rows a stepover apart that rise and fall with the parts' surface, using the tool's true shape so they don't cut into the parts. Debug and Release both build, all tests pass, and the Release build and help are installed. I haven't tried it in Alibre, and nothing is committed.
+>
+> What's in it:
+> - **Menu:** Add 3 Axis ▸ Parallel Finishing, with a new tree icon (straight passes over a dome).
+> - **Tabs:** Features, Tool, Feeds & Speeds, Clearance, Cut Levels and Parallel Finishing.
+> - **Parallel Finishing tab:** everything from your spec. The extra field you asked for is called **Overtravel**: the tool's centre runs to the area's edge and this far past it.
+> - **Cut Levels tab:** the waterline operations' tab, as you chose. It starts at Number of Levels 1, so the whole depth is cut in one pass. With more levels, each level follows the surface but goes no lower than that level, and only where the level above left material.
+> - **Cut Direction:** Climb and Conventional cut every row the same way and lift between rows. Mixed zigzags, staying down from row to row when the step is short and inside the area.
+> - **Scallop stepover:** Generate refuses it unless the tool is a ball mill.
+> - **Speed:** a half sphere at a 0.3 mm stepover took 0.1 s.
+> - **Format:** `.cam` files are now version 12, so older builds can't open jobs saved by this one.
+> - **Defaults** (my choices): Mixed, 10% stepover (0.5 mm if you switch to Distance), Stock to Leave 0, angle 0.
+>
+> **Accuracy limit:** on slopes, the rows can sit slightly above the true surface. The shared tool-shape grid keeps each cell's highest point, which is safe but on a slope costs up to about one cell × the slope. With a 6 mm ball on a 41° slope that's about 0.13 mm of material left. The test checks the rows never go below the surface by more than 0.05 mm, and the help explains the limit. Waterline Finishing has the same limit. If 0.13 mm is too much for finishing, the fix is to calculate the tool's height directly from the part's triangles (a "drop cutter") instead of from the grid.
+>
+> Restart Alibre, then test:
+> 1. Add 3 Axis ▸ Parallel Finishing appears, with its icon.
+> 2. Its tabs are there, and each Stepover choice enables only its own box.
+> 3. On the half sphere job with a ball mill, Generate gives rows following the dome without cutting into it. Try angles 0, 90 and 45.
+> 4. Compare Climb or Conventional (lift between rows) with Mixed (zigzag), and Start Side Bottom with Top.
+> 5. Set an Overtravel of about 3 mm: the rows should run past the stock's edge.
+> 6. Pick a Scallop stepover with a flat end mill: Generate should refuse it.
+> 7. On the Cut Levels tab, set a Distance stepdown of about 5 mm: the dome should be finished in steps.
+> 8. Save and reopen the job: the settings should stay.
+> 9. The help's ? button on the new tab opens its section.
+
+### 🧑 Frank · 18:50
+
+> Parallel finishing is supposed to only cut one finishing pass.  It is currently doing horizontal layers
+
+### 🤖 Claude
+
+> Both builds pass every test. Now the docs:
+
+> Good. Now the spec doc, the install and the discussion file:
+
 ---
 
 # Side conversation

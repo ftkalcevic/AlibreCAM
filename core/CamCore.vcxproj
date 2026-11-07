@@ -83,6 +83,7 @@
     <ClCompile Include="Profiling.cpp" />
     <ClCompile Include="ProgramSettings.cpp" />
     <ClCompile Include="Stock.cpp" />
+    <ClCompile Include="DropCutter.cpp" />
     <ClCompile Include="Simulation.cpp" />
     <ClCompile Include="EngraveToolpath.cpp" />
     <ClCompile Include="PlungeRoughing.cpp" />
@@ -114,6 +115,7 @@
     <ClInclude Include="Profiling.h" />
     <ClInclude Include="ProgramSettings.h" />
     <ClInclude Include="Stock.h" />
+    <ClInclude Include="DropCutter.h" />
     <ClInclude Include="Simulation.h" />
     <ClInclude Include="Engraving.h" />
     <ClInclude Include="EngraveToolpath.h" />

@@ -29,7 +29,7 @@ namespace camcore
 {
     // The newest .cam format this build can read and the one it writes.
     // Version 2 added Set Origin steps and groups to the sequence.
-    constexpr int kCamFormatVersion = 11;
+    constexpr int kCamFormatVersion = 12;
 
     // Which assembly a job belongs to. The GUID comes from the assembly file,
     // and is empty if it couldn't be read.
@@ -52,7 +52,8 @@ namespace camcore
         Engrave,        // an operation: the tool's centre follows lines
         PlungeRoughing, // an operation, 3 axis: plunges straight down on a packed grid
         WaterlineRoughing,  // an operation, 3 axis: pockets level by level down round the parts
-        WaterlineFinishing  // an operation, 3 axis: one lap round the parts at each level
+        WaterlineFinishing, // an operation, 3 axis: one lap round the parts at each level
+        ParallelFinishing   // an operation, 3 axis: straight rows following the parts' surface
     };
 
     bool IsOperation(StepType type);
@@ -128,6 +129,10 @@ namespace camcore
         // Waterline Finishing operations only: the same settings, less the pattern,
         // start points and linear extension.
         WaterlineRoughingSettings waterlineFinishing = WaterlineFinishingDefaults();
+
+        // Parallel Finishing operations only: the same settings, the linear start,
+        // angle of cuts and extension (its overtravel) used, the pattern not.
+        WaterlineRoughingSettings parallelFinishing = ParallelFinishingDefaults();
         std::vector<Path> boundaries;
 
         // Groups only. Operations run in this order. Groups don't nest, and a

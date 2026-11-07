@@ -461,6 +461,26 @@ private:
     void UpdateFields();
 };
 
+// The Parallel Finishing operation's own tab.
+class CParallelFinishingPage : public COperationPage
+{
+public:
+    explicit CParallelFinishingPage(COperationDlg* pOwner);
+
+    void Load(const camcore::SequenceStep& step) override;
+    bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
+
+    enum { IDD = IDD_OP_PARALLEL_FINISHING };
+
+protected:
+    afx_msg void OnChoiceChanged();
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    void UpdateFields();
+};
+
 // The waterline operations' own Cut Levels tab.
 class CWaterlineLevelsPage : public COperationPage
 {
@@ -479,6 +499,9 @@ protected:
 
 private:
     void UpdateFields();
+    void ShowSinglePass();
+
+    bool m_singlePass = false;      // Parallel Finishing: Top and Bottom only
 };
 
 // The Plunge Roughing operation's own tab.

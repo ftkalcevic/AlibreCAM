@@ -112,4 +112,18 @@ namespace camcore
         settings.stepDown = 0.5;
         return settings;
     }
+
+    WaterlineRoughingSettings ParallelFinishingDefaults()
+    {
+        WaterlineRoughingSettings settings;
+        settings.stockToLeave = 0.0;
+        settings.direction = CutDirection::Mixed;
+        settings.stepoverPercent = 10.0;
+        settings.stepoverDistance = 0.5;
+        settings.stepdownMode = WaterlineStepdownMode::Levels;
+        settings.levels = 1;
+        settings.stepDown = 0.5;
+        settings.clearFlats = false;
+        return settings;
+    }
 }
