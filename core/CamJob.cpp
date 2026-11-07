@@ -973,7 +973,7 @@ namespace camcore
             { "scallop", WaterlineStepoverMode::Scallop } };
         const std::vector<std::pair<const char*, WaterlineStepdownMode>> kStepdownModes = {
             { "percent", WaterlineStepdownMode::Percent }, { "distance", WaterlineStepdownMode::Distance },
-            { "levels", WaterlineStepdownMode::Levels } };
+            { "levels", WaterlineStepdownMode::Levels }, { "scallop", WaterlineStepdownMode::Scallop } };
 
         template <typename T>
         const char* NameOf(const std::vector<std::pair<const char*, T>>& names, T value)
@@ -1005,21 +1005,25 @@ namespace camcore
                 { "stepdownPercent", w.stepdownPercent },
                 { "stepDown", w.stepDown },
                 { "levels", w.levels },
+                { "stepdownScallop", w.stepdownScallop },
                 { "order", w.order == CutLevelOrder::LevelFirst ? "levelFirst" : "depthFirst" },
                 { "useTop", w.useTop },
                 { "top", w.top },
                 { "useBottom", w.useBottom },
                 { "bottom", w.bottom },
-                { "clearFlats", w.clearFlats }
+                { "clearFlats", w.clearFlats },
+                { "finishFlats", w.finishFlats }
             };
         }
 
         // Waterline Roughing missing its settings has the defaults, and those saved
-        // before the Cut Levels tab keep their stepdown distance.
-        bool ReadWaterlineRoughing(const json& step, WaterlineRoughingSettings& w)
+        // before the Cut Levels tab keep their stepdown distance. Finishing's are
+        // the same, under their own key, with their own defaults.
+        bool ReadWaterlineRoughing(const json& step, WaterlineRoughingSettings& w, const char* key = "waterlineRoughing",
+                                   const WaterlineRoughingSettings& defaults = WaterlineRoughingSettings())
         {
-            w = WaterlineRoughingSettings();
-            const auto found = step.find("waterlineRoughing");
+            w = defaults;
+            const auto found = step.find(key);
             if (found == step.end())
                 return true;
             if (!found->is_object())
@@ -1045,11 +1049,13 @@ namespace camcore
                    ReadNamed(item, "stepdownBy", kStepdownModes, w.stepdownMode) &&
                    ReadOptionalNumber(item, "stepdownPercent", w.stepdownPercent) &&
                    ReadOptionalNumber(item, "stepDown", w.stepDown) &&
+                   ReadOptionalNumber(item, "stepdownScallop", w.stepdownScallop) &&
                    ReadChoice(item, "order", "levelFirst", CutLevelOrder::LevelFirst, "depthFirst",
                               CutLevelOrder::DepthFirst, w.order) &&
                    ReadOptionalBool(item, "useTop", w.useTop) && ReadOptionalNumber(item, "top", w.top) &&
                    ReadOptionalBool(item, "useBottom", w.useBottom) && ReadOptionalNumber(item, "bottom", w.bottom) &&
-                   ReadOptionalBool(item, "clearFlats", w.clearFlats);
+                   ReadOptionalBool(item, "clearFlats", w.clearFlats) &&
+                   ReadOptionalBool(item, "finishFlats", w.finishFlats);
         }
 
         json WriteChamfer(const ChamferSettings& chamfer)
@@ -1548,6 +1554,12 @@ namespace camcore
                          { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
                          { "holePocketing", WriteHolePocketing(step.holePocketing) } };
 
+            if (step.type == StepType::WaterlineFinishing)
+                return { { "type", "waterlineFinishing" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
+                         { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
+                         { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
+                         { "waterlineFinishing", WriteWaterlineRoughing(step.waterlineFinishing) } };
+
             if (step.type == StepType::WaterlineRoughing)
                 return { { "type", "waterlineRoughing" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
                          { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
@@ -1667,6 +1679,16 @@ namespace camcore
                        ReadClearance(item, step.clearance);
             }
 
+            if (type == "waterlineFinishing")
+            {
+                step.type = StepType::WaterlineFinishing;
+                return ReadTool(item, step.toolId) && ReadFeeds(item, step.feeds) && ReadToolpath(item, step.toolpath) &&
+                       ReadFeatures(item, step.features) &&
+                       ReadWaterlineRoughing(item, step.waterlineFinishing, "waterlineFinishing",
+                                             WaterlineFinishingDefaults()) &&
+                       ReadClearance(item, step.clearance);
+            }
+
             if (type == "waterlineRoughing")
             {
                 step.type = StepType::WaterlineRoughing;
@@ -1745,7 +1767,18 @@ namespace camcore
     {
         return type == StepType::Drill || type == StepType::Facing || type == StepType::Profiling ||
                type == StepType::Pocketing || type == StepType::HolePocketing || type == StepType::Chamfer ||
-               type == StepType::Engrave || type == StepType::PlungeRoughing || type == StepType::WaterlineRoughing;
+               type == StepType::Engrave || type == StepType::PlungeRoughing || type == StepType::WaterlineRoughing ||
+               type == StepType::WaterlineFinishing;
+    }
+
+    WaterlineRoughingSettings& WaterlineSettingsOf(SequenceStep& step)
+    {
+        return (step.type == StepType::WaterlineFinishing) ? step.waterlineFinishing : step.waterlineRoughing;
+    }
+
+    const WaterlineRoughingSettings& WaterlineSettingsOf(const SequenceStep& step)
+    {
+        return (step.type == StepType::WaterlineFinishing) ? step.waterlineFinishing : step.waterlineRoughing;
     }
 
     std::string NewStableId()
@@ -1803,7 +1836,8 @@ namespace camcore
         // to the setup section; older files have none. Version 5 added the
         // machine and material, and stopped saving the tool library. Version 6
         // added Chamfer operations, version 7 Engrave, version 8 Plunge Roughing, version 9
-        // an operation's stock footprint, and version 10 Waterline Roughing.
+        // an operation's stock footprint, version 10 Waterline Roughing, and version 11
+        // Waterline Finishing.
 
         const auto assembly = root.find("assembly");
         if (assembly == root.end() || !assembly->is_object())

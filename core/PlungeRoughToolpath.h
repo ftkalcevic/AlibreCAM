@@ -49,6 +49,17 @@ namespace camcore
         void Build(const std::vector<Vec3>& triangles, double xLow, double yLow, double xHigh, double yHigh,
                    double cell);
 
+        // The same, on exactly this grid of nx by ny cells from (xLow, yLow).
+        void BuildGrid(const std::vector<Vec3>& triangles, double xLow, double yLow, int nx, int ny, double cell);
+
+        // For each cell of the grid, the lowest the tool's tip can go with its axis
+        // at the cell's middle, touching nothing within stockToLeave of the parts:
+        // TipHeight, worked out for every cell at once (on all cores) with the
+        // tool's shape precomputed. The lowest float where no part is near.
+        std::vector<float> TipHeights(const ToolProfile& profile, double stockToLeave) const;
+        int CellsX() const { return m_nx; }
+        int CellsY() const { return m_ny; }
+
         // The highest the tool's tip can go down to, centred at (x, y), touching
         // nothing within stockToLeave of the parts. False if no part is under it.
         bool TipHeight(const ToolProfile& profile, double stockToLeave, double x, double y, double& tip) const;

@@ -55,9 +55,9 @@ namespace camcore
     std::vector<Polyline> IsoContours(const std::vector<float>& values, int nx, int ny, double xLow, double yLow,
                                       double cell, double level, double z);
 
-    // At each level, the area the tool's centre may reach: inside the area, and at
-    // least the tool's radius plus the stock to leave from any part that comes
-    // within the stock to leave of the level. That's cleared with loops a stepover
+    // At each level, the area the tool's centre may reach: inside the area, where
+    // the tool (its own shape, grown by the stock to leave) can come down to the
+    // level without touching a part. That's cleared with loops a stepover
     // apart, the outermost hugging its edge, cut climb from the outside in.
     // Each level is entered from 1 mm above the one before (or the stock's top)
     // at the plunge feed. The tool stays down from one loop to the next when the
@@ -65,4 +65,15 @@ namespace camcore
     // clearance plane. Levels go down to the stock's bottom, or the parts'
     // lowest point without a stock.
     ToolpathResult GenerateWaterlineRoughToolpath(const WaterlineRoughToolpathInput& input);
+
+    // Waterline Finishing: one lap round the parts at each level, where the tool's
+    // own shape (a ball, a corner radius, a flat end) comes within the stock to
+    // leave of them, worked out from how low its tip can go at every place. The
+    // levels are Waterline Roughing's (its Cut Levels tab), and more are added
+    // between two wherever their laps would be further apart across than the
+    // stepover, as on a shallow slope. Laps are cut climb (the part on the right),
+    // conventional, or alternating level by level for mixed; level by level, or
+    // each part's laps down to the bottom first. The tool stays down from one lap
+    // to the next round the same part when the move is short and clear.
+    ToolpathResult GenerateWaterlineFinishToolpath(const WaterlineRoughToolpathInput& input);
 }

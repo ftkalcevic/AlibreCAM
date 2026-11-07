@@ -29,7 +29,7 @@ namespace camcore
 {
     // The newest .cam format this build can read and the one it writes.
     // Version 2 added Set Origin steps and groups to the sequence.
-    constexpr int kCamFormatVersion = 10;
+    constexpr int kCamFormatVersion = 11;
 
     // Which assembly a job belongs to. The GUID comes from the assembly file,
     // and is empty if it couldn't be read.
@@ -51,10 +51,17 @@ namespace camcore
         Chamfer,        // an operation: a chamfer along edges, with Profiling's settings too
         Engrave,        // an operation: the tool's centre follows lines
         PlungeRoughing, // an operation, 3 axis: plunges straight down on a packed grid
-        WaterlineRoughing   // an operation, 3 axis: pockets level by level down round the parts
+        WaterlineRoughing,  // an operation, 3 axis: pockets level by level down round the parts
+        WaterlineFinishing  // an operation, 3 axis: one lap round the parts at each level
     };
 
     bool IsOperation(StepType type);
+
+    struct SequenceStep;
+
+    // A waterline operation's settings: Roughing's or Finishing's.
+    WaterlineRoughingSettings& WaterlineSettingsOf(SequenceStep& step);
+    const WaterlineRoughingSettings& WaterlineSettingsOf(const SequenceStep& step);
 
     // One step in the ordered sequence under Operations.
     struct SequenceStep
@@ -117,6 +124,10 @@ namespace camcore
 
         // Waterline Roughing operations only.
         WaterlineRoughingSettings waterlineRoughing;
+
+        // Waterline Finishing operations only: the same settings, less the pattern,
+        // start points and linear extension.
+        WaterlineRoughingSettings waterlineFinishing = WaterlineFinishingDefaults();
         std::vector<Path> boundaries;
 
         // Groups only. Operations run in this order. Groups don't nest, and a

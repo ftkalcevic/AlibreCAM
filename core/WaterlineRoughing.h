@@ -39,10 +39,12 @@ namespace camcore
     {
         Percent,        // of the tool's diameter
         Distance,
-        Levels          // the depth from top to bottom divided into this many
+        Levels,         // the depth from top to bottom divided into this many
+        Scallop         // from the height of the ridge left on a steep wall (ball nose only)
     };
 
-    // The Waterline Roughing tab and its Cut Levels tab.
+    // The Waterline Roughing tab and its Cut Levels tab. Waterline Finishing uses
+    // them too, less the pattern, start points and linear extension.
     struct WaterlineRoughingSettings
     {
         // The Waterline Roughing tab.
@@ -63,12 +65,16 @@ namespace camcore
         double stepdownPercent = 50.0;
         double stepDown = 2.0;          // the stepdown distance (its name before the Cut Levels tab)
         int levels = 5;
+        double stepdownScallop = 0.05;
         CutLevelOrder order = CutLevelOrder::DepthFirst;
         bool useTop = false;            // force the top of the cut
         double top = 0.0;               // in the origin's frame
         bool useBottom = false;         // force the bottom of the cut
         double bottom = 0.0;
         bool clearFlats = true;         // a level at each flat face, as well as the stepdown's
+
+        // Waterline Finishing only: also clear each up-facing flat at its level.
+        bool finishFlats = false;
     };
 
     // Returns a sentence for each problem. Empty means the settings are valid.
@@ -78,7 +84,12 @@ namespace camcore
     // radius (a ball mill's radius); a flat end mill steps over 90% of its diameter.
     double WaterlineStepover(const WaterlineRoughingSettings& settings, double toolDiameter, double cornerRadius);
 
-    // The deepest step between levels in mm, for a cut from top to bottom.
+    // The deepest step between levels in mm, for a cut from top to bottom. Scallop
+    // needs a ball nose's radius, ballRadius; with 0 it gives 0.
     double WaterlineStepdown(const WaterlineRoughingSettings& settings, double toolDiameter, double top,
-                             double bottom);
+                             double bottom, double ballRadius = 0.0);
+
+    // Waterline Finishing's settings for a new operation: nothing left, and
+    // finer steps than roughing.
+    WaterlineRoughingSettings WaterlineFinishingDefaults();
 }

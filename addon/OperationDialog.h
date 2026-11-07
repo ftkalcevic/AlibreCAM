@@ -441,7 +441,27 @@ private:
     void UpdateFields();
 };
 
-// The Waterline Roughing operation's own Cut Levels tab.
+// The Waterline Finishing operation's own tab.
+class CWaterlineFinishingPage : public COperationPage
+{
+public:
+    explicit CWaterlineFinishingPage(COperationDlg* pOwner);
+
+    void Load(const camcore::SequenceStep& step) override;
+    bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
+
+    enum { IDD = IDD_OP_WATERLINE_FINISHING };
+
+protected:
+    afx_msg void OnChoiceChanged();
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    void UpdateFields();
+};
+
+// The waterline operations' own Cut Levels tab.
 class CWaterlineLevelsPage : public COperationPage
 {
 public:

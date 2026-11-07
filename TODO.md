@@ -8,7 +8,6 @@ these belong in the spec (`docs\SPEC.md`) once they're made.
   - 🔴 V-carve
   - 4th axis rotate(?), or do we just set the origin
   - 3D
-    - Horizontal roughing
     - Parallel finishing
     - Horizontal finishing
     - Project finishing

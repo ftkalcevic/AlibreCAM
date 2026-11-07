@@ -71,6 +71,7 @@ namespace
         ID_CAM_ADD_ENGRAVE,
         ID_CAM_ADD_PLUNGE_ROUGHING,
         ID_CAM_ADD_WATERLINE_ROUGHING,
+        ID_CAM_ADD_WATERLINE_FINISHING,
         ID_CAM_EDIT_STEP,
         ID_CAM_STOCK_BOX,
         ID_CAM_STOCK_PART_BOX,
@@ -1077,6 +1078,7 @@ void CCamTabCommand::AddOperation(size_t folder, camcore::StepType type)
                                              : type == camcore::StepType::HolePocketing ? "Hole Pocketing"
                                              : type == camcore::StepType::PlungeRoughing ? "Plunge Roughing"
                                              : type == camcore::StepType::WaterlineRoughing ? "Waterline Roughing"
+                                             : type == camcore::StepType::WaterlineFinishing ? "Waterline Finishing"
                                                                                     : "Drill");
 
     // A new operation starts with the tool selected in the tree.
@@ -1922,7 +1924,8 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         operation.type != camcore::StepType::Profiling && operation.type != camcore::StepType::Pocketing &&
         operation.type != camcore::StepType::Chamfer && operation.type != camcore::StepType::Engrave &&
         operation.type != camcore::StepType::HolePocketing && operation.type != camcore::StepType::PlungeRoughing &&
-        operation.type != camcore::StepType::WaterlineRoughing)
+        operation.type != camcore::StepType::WaterlineRoughing &&
+        operation.type != camcore::StepType::WaterlineFinishing)
     {
         problem = "Toolpaths for this operation aren't built yet.";
         return false;
@@ -2138,7 +2141,8 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
     // Plunge Roughing and Waterline Roughing project the picked faces and edges
     // onto the origin's XY plane, merge what touches, and rough inside, down to
     // the parts.
-    if (operation.type == camcore::StepType::PlungeRoughing || operation.type == camcore::StepType::WaterlineRoughing)
+    if (operation.type == camcore::StepType::PlungeRoughing || operation.type == camcore::StepType::WaterlineRoughing ||
+        operation.type == camcore::StepType::WaterlineFinishing)
     {
         if (operation.features.empty() && !operation.stockFootprint)
         {
@@ -2292,7 +2296,9 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
                 flatText += (flatText.empty() ? L"" : L", ") + std::to_wstring(h);
             Log(L"[generate] waterline: flat faces at %s (frame Z), stock %.3f to %.3f",
                 flatText.empty() ? L"none" : flatText.c_str(), stockMaxZ, stockMinZ);
-            roughResult = camcore::GenerateWaterlineRoughToolpath(waterlineInput);
+            roughResult = (operation.type == camcore::StepType::WaterlineFinishing)
+                              ? camcore::GenerateWaterlineFinishToolpath(waterlineInput)
+                              : camcore::GenerateWaterlineRoughToolpath(waterlineInput);
         }
         Log(L"[generate] roughing: %zu moves, in %llu ms", roughResult.toolpath.moves.size(), GetTickCount64() - start);
         if (!roughResult.ok)
@@ -3418,6 +3424,7 @@ namespace
         kImageEngrave,
         kImagePlungeRoughing,
         kImageWaterlineRoughing,
+        kImageWaterlineFinishing,
         kImageWarning       // drawn over another image, as overlay 1
     };
 
@@ -3453,6 +3460,7 @@ namespace
         case camcore::StepType::Engrave:       return kImageEngrave;
         case camcore::StepType::PlungeRoughing: return kImagePlungeRoughing;
         case camcore::StepType::WaterlineRoughing: return kImageWaterlineRoughing;
+        case camcore::StepType::WaterlineFinishing: return kImageWaterlineFinishing;
         default:                               return kImageOperations;
         }
     }
@@ -4137,6 +4145,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         threeAxis.CreatePopupMenu();
         threeAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_PLUNGE_ROUGHING, L"Plunge Roughing...");
         threeAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_WATERLINE_ROUGHING, L"Waterline Roughing...");
+        threeAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_WATERLINE_FINISHING, L"Waterline Finishing...");
         menu.AppendMenu(MF_POPUP | editable, reinterpret_cast<UINT_PTR>(threeAxis.GetSafeHmenu()), L"Add 3 Axis");
         menu.AppendMenu(MF_SEPARATOR);
         menu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
@@ -4202,6 +4211,9 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     case ID_CAM_ADD_PLUNGE_ROUGHING: m_pTab->AddOperation(ref.step, camcore::StepType::PlungeRoughing); break;
     case ID_CAM_ADD_WATERLINE_ROUGHING:
         m_pTab->AddOperation(ref.step, camcore::StepType::WaterlineRoughing);
+        break;
+    case ID_CAM_ADD_WATERLINE_FINISHING:
+        m_pTab->AddOperation(ref.step, camcore::StepType::WaterlineFinishing);
         break;
     case ID_CAM_EDIT_STEP:   m_pTab->EditStep(ref); break;
     case ID_CAM_RENAME_STEP: m_tree.EditLabel(hItem); break;

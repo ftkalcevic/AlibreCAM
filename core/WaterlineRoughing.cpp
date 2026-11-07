@@ -48,6 +48,10 @@ namespace camcore
             if (settings.levels < 1)
                 problems.push_back("There must be at least 1 level.");
             break;
+        case WaterlineStepdownMode::Scallop:
+            if (!positive(settings.stepdownScallop))
+                problems.push_back("The stepdown's scallop height must be more than 0.");
+            break;
         }
         if ((settings.useTop && !std::isfinite(settings.top)) || (settings.useBottom && !std::isfinite(settings.bottom)))
             problems.push_back("The top and bottom must be numbers.");
@@ -78,10 +82,18 @@ namespace camcore
     }
 
     double WaterlineStepdown(const WaterlineRoughingSettings& settings, double toolDiameter, double top,
-                             double bottom)
+                             double bottom, double ballRadius)
     {
         switch (settings.stepdownMode)
         {
+        case WaterlineStepdownMode::Scallop:
+        {
+            // Two levels dz apart leave a ridge h high on a steep wall when dz = 2 x sqrt(h(2r - h)).
+            if (!(ballRadius > 0.0))
+                return 0.0;
+            const double h = (std::min)(settings.stepdownScallop, ballRadius);
+            return 2.0 * std::sqrt(h * (2.0 * ballRadius - h));
+        }
         case WaterlineStepdownMode::Percent:
             return toolDiameter * settings.stepdownPercent / 100.0;
         case WaterlineStepdownMode::Levels:
@@ -89,5 +101,15 @@ namespace camcore
         default:
             return settings.stepDown;
         }
+    }
+
+    WaterlineRoughingSettings WaterlineFinishingDefaults()
+    {
+        WaterlineRoughingSettings settings;
+        settings.stockToLeave = 0.0;
+        settings.stepoverPercent = 10.0;
+        settings.stepoverDistance = 0.5;
+        settings.stepDown = 0.5;
+        return settings;
     }
 }

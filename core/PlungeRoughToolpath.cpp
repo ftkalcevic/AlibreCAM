@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <execution>
 #include <limits>
 
 #include "Boundary.h"
@@ -328,14 +329,23 @@ namespace camcore
                                 double yHigh, double cell)
     {
         // Coarser cells if the grid would be too big.
+        int nx = 1, ny = 1;
         for (;;)
         {
-            m_nx = (std::max)(1, static_cast<int>(std::ceil((xHigh - xLow) / cell)));
-            m_ny = (std::max)(1, static_cast<int>(std::ceil((yHigh - yLow) / cell)));
-            if (static_cast<size_t>(m_nx) * static_cast<size_t>(m_ny) <= kMostHeightCells)
+            nx = (std::max)(1, static_cast<int>(std::ceil((xHigh - xLow) / cell)));
+            ny = (std::max)(1, static_cast<int>(std::ceil((yHigh - yLow) / cell)));
+            if (static_cast<size_t>(nx) * static_cast<size_t>(ny) <= kMostHeightCells)
                 break;
             cell *= 1.5;
         }
+        BuildGrid(triangles, xLow, yLow, nx, ny, cell);
+    }
+
+    void PartHeightField::BuildGrid(const std::vector<Vec3>& triangles, double xLow, double yLow, int nx, int ny,
+                                    double cell)
+    {
+        m_nx = nx;
+        m_ny = ny;
         m_xLow = xLow;
         m_yLow = yLow;
         m_cell = cell;
@@ -387,6 +397,57 @@ namespace camcore
                 }
             }
         }
+    }
+
+    std::vector<float> PartHeightField::TipHeights(const ToolProfile& profile, double stockToLeave) const
+    {
+        // The tool grown by the stock to leave, as for TipHeight: for each cell
+        // within reach, how far above the tip the tool is at that distance, a
+        // cell taken at its nearest.
+        const double reach = profile.radius + stockToLeave;
+        const int span = static_cast<int>(std::ceil(reach / m_cell)) + 1;
+        struct Offset
+        {
+            int di, dj;
+            float rise;
+        };
+        std::vector<Offset> kernel;
+        for (int dj = -span; dj <= span; ++dj)
+        {
+            for (int di = -span; di <= span; ++di)
+            {
+                const double d = (std::max)(0.0, std::hypot(di, dj) * m_cell - m_cell * 0.7072);
+                if (d > reach)
+                    continue;
+                const double rise = profile.HeightForRadius((std::max)(0.0, d - stockToLeave));
+                if (rise < 0.0)
+                    continue;
+                kernel.push_back({ di, dj, static_cast<float>(rise - stockToLeave) });
+            }
+        }
+
+        std::vector<float> tips(m_height.size(), kNoHeight);
+        std::vector<int> rows(static_cast<size_t>(m_ny));
+        for (int j = 0; j < m_ny; ++j)
+            rows[static_cast<size_t>(j)] = j;
+        std::for_each(std::execution::par, rows.begin(), rows.end(), [&](int j) {
+            for (int i = 0; i < m_nx; ++i)
+            {
+                float best = kNoHeight;
+                for (const Offset& k : kernel)
+                {
+                    const int ii = i + k.di, jj = j + k.dj;
+                    if (ii < 0 || jj < 0 || ii >= m_nx || jj >= m_ny)
+                        continue;
+                    const float h = m_height[static_cast<size_t>(jj) * m_nx + ii];
+                    if (h == kNoHeight)
+                        continue;
+                    best = (std::max)(best, h - k.rise);
+                }
+                tips[static_cast<size_t>(j) * m_nx + i] = best;
+            }
+        });
+        return tips;
     }
 
     bool PartHeightField::HeightAt(double x, double y, double& height) const

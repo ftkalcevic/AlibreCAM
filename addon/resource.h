@@ -216,6 +216,7 @@
 #define IDD_OP_PLUNGE_ROUGHING          13042
 #define IDD_OP_WATERLINE_ROUGHING       13043
 #define IDD_OP_WATERLINE_LEVELS         13044
+#define IDD_OP_WATERLINE_FINISHING      13045
 #define IDD_SETTINGS                    13030
 #define IDD_STOCK_BOX                   13031
 #define IDD_STOCK_PART_BOX              13032
@@ -367,6 +368,9 @@
 #define IDC_WL_USE_BOTTOM               13436
 #define IDC_WL_BOTTOM                   13437
 #define IDC_WL_CLEAR_FLATS              13438
+#define IDC_WL_DOWN_SCALLOP_RADIO       13439
+#define IDC_WL_DOWN_SCALLOP             13440
+#define IDC_WL_FINISH_FLATS             13441
 #define IDC_HP_AT_TOP                   13266
 #define IDC_HP_AT_BOTTOM                13267
 #define IDC_HP_PICK_TOP                 13268
@@ -402,9 +406,9 @@
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13045
+#define _APS_NEXT_RESOURCE_VALUE        13046
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13439
+#define _APS_NEXT_CONTROL_VALUE         13442
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

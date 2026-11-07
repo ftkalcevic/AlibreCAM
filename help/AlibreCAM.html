@@ -91,6 +91,7 @@
   <a href="#tab-hole-pocketing">Hole Pocketing</a>
   <a href="#tab-plunge-roughing">Plunge Roughing</a>
   <a href="#tab-waterline-roughing">Waterline Roughing</a>
+  <a href="#tab-waterline-finishing">Waterline Finishing</a>
   <a href="#tab-waterline-levels">Waterline Cut Levels</a>
   <a href="#tab-drilling">Drilling</a>
 </nav>
@@ -169,6 +170,8 @@
   <dd>Adds an Engrave operation: the tool's centre follows lines, such as text or a scribed outline.</dd>
   <dt>Add 3 Axis ▸ Waterline Roughing</dt>
   <dd>Adds a Waterline Roughing operation: roughs out a 3D shape level by level, pocketing round the parts at each level.</dd>
+  <dt>Add 3 Axis ▸ Waterline Finishing</dt>
+  <dd>Adds a Waterline Finishing operation: finishes the sides of a 3D shape with one lap round the parts at each level.</dd>
   <dt>Add 3 Axis ▸ Plunge Roughing</dt>
   <dd>Adds a Plunge Roughing operation: roughs out a 3D shape inside closed areas by feeding straight down, on a packed grid of plunges, each stopping above the parts.</dd>
   <dt>Edit</dt>
@@ -378,7 +381,7 @@
   <dt>Number</dt>
   <dd>The tool number (T number) the machine knows the tool by. It's written at tool changes.</dd>
   <dt>Type</dt>
-  <dd>Flat end mill, Ball mill, Corner radius mill, V-mill, Chamfer mill, Taper mill, Thread mill or Drill. Only the chosen type's own size fields can be changed. Toolpaths treat every mill as a flat-ended cylinder of its diameter for now.</dd>
+  <dd>Flat end mill, Ball mill, Corner radius mill, V-mill, Chamfer mill, Taper mill, Thread mill or Drill. Only the chosen type's own size fields can be changed. Toolpaths treat every mill as a flat-ended cylinder of its diameter for now, except Waterline Roughing and Waterline Finishing, which use its true shape.</dd>
   <dt>Name</dt>
   <dd>A description of the tool, shown in lists and written in the program.</dd>
   <dt>Units</dt>
@@ -509,7 +512,7 @@
 
 <section id="tab-features">
 <h2>Features tab</h2>
-<p>The geometry the operation machines, in the order it's machined. Each operation takes its own kinds of geometry: Drill and Hole Pocketing take circles, arcs, hole faces and design points; Facing, Profiling and Pocketing take flat faces and edges, including spline curves; Plunge Roughing and Waterline Roughing take any faces, curved ones too, and edges. For the 2 1/2 axis operations only the geometry's position in the origin's XY plane matters: the heights come from the Cut Levels tab. Plunge Roughing and Waterline Roughing project their geometry onto the origin's XY plane to make the area they rough; their depths come from the parts. Each face is an area of its own, and edges whose ends meet are grouped into one.</p>
+<p>The geometry the operation machines, in the order it's machined. Each operation takes its own kinds of geometry: Drill and Hole Pocketing take circles, arcs, hole faces and design points; Facing, Profiling and Pocketing take flat faces and edges, including spline curves; Plunge Roughing, Waterline Roughing and Waterline Finishing take any faces, curved ones too, and edges. For the 2 1/2 axis operations only the geometry's position in the origin's XY plane matters: the heights come from the Cut Levels tab. Plunge Roughing and Waterline Roughing project their geometry onto the origin's XY plane to make the area they rough; their depths come from the parts. Each face is an area of its own, and edges whose ends meet are grouped into one.</p>
 <dl>
   <dt>Feature list</dt>
   <dd>Each feature's type, part, diameter, and X, Y and Z in the operation's origin. Drag rows to reorder them. Choosing rows selects them in the view. Press Delete to remove the chosen rows.</dd>
@@ -783,7 +786,7 @@
 <section id="tab-waterline-roughing">
 <h2>Waterline Roughing tab</h2>
 <p>Waterline Roughing roughs out a 3D shape in horizontal slices, from the top of the cut down to its bottom (see its <a href="#tab-waterline-levels">Cut Levels</a> tab). Its tabs are Features, Tool, Feeds &amp; Speeds, Clearance, Cut Levels and this one.</p>
-<p>The area comes from the Features tab as for Plunge Roughing: picked faces and closed loops of edges (and the stock box's footprint if ticked) seen from above and merged. At each level the tool's centre may go anywhere in the area that's at least the tool's radius plus the Stock to Leave from any part that comes within the Stock to Leave of the level, so the parts stand as islands with the Stock to Leave on their tops and sides. Where no part is beyond the area's edge, the tool's centre goes right up to the edge (and past it by the Linear Extension). A level is entered at the plunge feed from 1 mm above the level before (the first from 1 mm above the top). The tool stays down from one pass to the next when the move is short and stays in the cleared area, and otherwise lifts to the clearance plane, which must be at least 1 mm above the top. The tool is treated as a plain cylinder at each level. Everything is worked out on a fine grid, so the passes are accurate to a fraction of a millimetre.</p>
+<p>The area comes from the Features tab as for Plunge Roughing: picked faces and closed loops of edges (and the stock box's footprint if ticked) seen from above and merged. At each level the tool's centre may go anywhere in the area that's at least the tool's radius plus the Stock to Leave from any part that comes within the Stock to Leave of the level, so the parts stand as islands with the Stock to Leave on their tops and sides. Where no part is beyond the area's edge, the tool's centre goes right up to the edge (and past it by the Linear Extension). A level is entered at the plunge feed from 1 mm above the level before (the first from 1 mm above the top). The tool stays down from one pass to the next when the move is short and stays in the cleared area, and otherwise lifts to the clearance plane, which must be at least 1 mm above the top. The tool's true shape is used (a ball mill's ball, a corner radius, a V's point), so a curved or sloping part is roughed as closely as the tool can reach. Everything is worked out on a fine grid, so the passes are accurate to a fraction of a millimetre.</p>
 <dl>
   <dt>Stock to Leave</dt>
   <dd>Material left covering the parts, on their tops and their sides: the tool's bottom stays this far above them, and its side this far from them. It also raises each flat face's level by this much. 0 or more.</dd>
@@ -808,12 +811,29 @@
 </dl>
 </section>
 
-<section id="tab-waterline-levels">
-<h2>Waterline Roughing: Cut Levels tab</h2>
-<p>The levels Waterline Roughing cuts at. This tab is Waterline Roughing's own, not the Cut Levels tab of the 2 1/2 axis operations.</p>
+<section id="tab-waterline-finishing">
+<h2>Waterline Finishing tab</h2>
+<p>Waterline Finishing finishes the sides of a 3D shape with a single lap round the parts at each level, from the top of the cut down to its bottom (see its <a href="#tab-waterline-levels">Cut Levels</a> tab, which it shares with Waterline Roughing). Its tabs are Features, Tool, Feeds &amp; Speeds, Clearance, Cut Levels and this one. It's meant to follow a roughing operation, with a ball mill for curved shapes.</p>
+<p>The area comes from the Features tab as for Waterline Roughing. At each level the lap is where the tool, with its true shape, just touches the parts (less the Stock to Leave), and is cut off at the area's edge. Each separate part (island) gets its own lap. Where the parts slope gently, so that two levels' laps are further apart than the stepover, extra levels are added between them until no gap is wider than the stepover. A lap is entered at the plunge feed from 1 mm above the level before. The tool stays down from one lap to the next lap round the same part when the move is short and clear of the parts, and otherwise lifts to the clearance plane.</p>
+<p>The laps finish walls only: on a flat face they run round its edge but don't cover it. Tick Finish Flats to clear the flats as well.</p>
 <dl>
-  <dt>Stepdown: % Tool Dia / Distance / Number of Levels</dt>
-  <dd>The deepest any level may be below the one above it: a percentage of the tool's diameter, a distance (2 mm by default), or the whole depth from the top to the bottom divided into this many levels.</dd>
+  <dt>Stock to Leave</dt>
+  <dd>Material left covering the parts: the tool stays this far from them. 0 (the default) cuts to the parts' surface. 0 or more.</dd>
+  <dt>Cut Direction</dt>
+  <dd>Climb (the default) keeps the part on the tool's right (clockwise spindle), so each lap goes clockwise round the part from above; Conventional goes anticlockwise. Mixed alternates from one level to the next.</dd>
+  <dt>Finish Flats</dt>
+  <dd>Off by default. When ticked, each up-facing flat face of the parts in the area is also cleared at its height (plus the Stock to Leave), after the laps round its walls: loops a stepover apart from the flat's edge inwards, wherever the tool's tip rests on the flat, so the tool never cuts into the walls or anything standing on the flat. A level is added at each flat's height even with Clear Flats off on the Cut Levels tab. The loops follow the Cut Direction (Mixed alternates loop by loop) and the Stepover, so a ball mill's Scallop stepover gives the same scallop on the flats.</dd>
+  <dt>Stepover: % Tool Dia / Distance / Scallop</dt>
+  <dd>The widest the gap between two neighbouring laps may be, measured across, before an extra level is added between them. It matters where the parts' sides are shallow; on steep sides the stepdown sets the spacing. A percentage of the tool's diameter (10% by default), a distance (0.5 mm by default), or from the scallop height, the ridge left between two laps: 2 &times; &radic;(h(2r &minus; h)) for the tool's corner radius r (a ball mill's radius). A flat end mill leaves no scallop, so it uses 90% of its diameter.</dd>
+</dl>
+</section>
+
+<section id="tab-waterline-levels">
+<h2>Waterline: Cut Levels tab</h2>
+<p>The levels Waterline Roughing and Waterline Finishing cut at. This tab is the waterline operations' own, not the Cut Levels tab of the 2 1/2 axis operations. Waterline Finishing may add levels between these for its stepover.</p>
+<dl>
+  <dt>Stepdown: % Tool Dia / Distance / Number of Levels / Scallop</dt>
+  <dd>The deepest any level may be below the one above it: a percentage of the tool's diameter, a distance (2 mm by default for roughing, 0.5 mm for finishing), the whole depth from the top to the bottom divided into this many levels, or from a scallop height h, the ridge a ball mill of radius r leaves between two levels on a steep side: 2 &times; &radic;(h(2r &minus; h)). Scallop needs a ball mill; Generate refuses it with any other tool.</dd>
   <dt>Cut Levels Order: Level First / Depth First</dt>
   <dd>Where a level's area is in separate pieces (for example either side of a wall), Depth First (the default) cuts each piece down to the bottom before moving to the next; Level First cuts every piece at one level before going down to the next.</dd>
   <dt>Cut Levels: Top</dt>

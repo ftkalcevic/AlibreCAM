@@ -6295,6 +6295,201 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > That matches what's built. I'll record it as confirmed in `CLAUDE.md` and the spec:
 
+> Good, that's what's built: for every pattern, Linear Extension grows the area into empty space by that distance past any open edge, and parts still keep their clearance. No code needed to change.
+>
+> I've recorded it as your decision in the spec (Claude doc and `docs\SPEC.md`, now rev 191) and in `CLAUDE.md`. The help already describes it this way. Nothing is committed.
+
+### 🧑 Frank · 17:42
+
+> Create a new Operation, Waterline Finishing.  This is a finishing pass using waterline cutting.  There is only one lap on each level.
+> In the dialog, Features, Tool, Feeds and speeds, clearance, and cut levels the same as waterline roughing.
+> The waterline finishing tab has -
+> label/edit - Stock to Leave
+> Group - Cut Direction
+> 	- radio buttons
+> 		- Climb
+> 		- Conventional
+> 		- mixed
+> Group Stepover
+> 	- radio/edit
+> 		- % Tool Dia
+> 		- Distance
+> 		- Scallop
+> On the Cut Levels tab, in the Stepdown group, add Scallop too.  This only applies for a ballnose endmill.
+
+### 🤖 Claude
+
+> Before planning, one thing worth knowing. For finishing, a single lap per level should follow the part's real 3D shape with the actual tool, not a cylinder. A ball nose must hug a sloped wall, not stand off it.
+>
+> I can do that by working out, once per operation, how low the tool's tip can go at every point of the grid without coming within Stock to Leave of any part, for the tool's own shape. Each level's lap is then simply the contour of that map at the level's height. That's the same calculation Plunge Roughing already uses at each plunge, done for every cell and spread over all cores.
+>
+> Two things in your spec I'm not sure of:
+
+> Questions:
+> - With only one lap per level, what should the Waterline Finishing tab's Stepover control?
+>   - Extra levels on shallow slopes: Where a slope is shallow, laps at the stepdown's levels end up far apart sideways. A level gets added between two levels wherever their laps are more than the stepover apart across, so the surface is finished evenly (Scallop works the stepover out from the ball's radius).
+>   - Not used yet: Keep the group on the tab, saved but not used, marked 'To be completed' in the help.
+> - Scallop in the Cut Levels tab's Stepdown (ball nose only) sets the step from a scallop height: 2 x sqrt(h(2r - h)), the step that leaves a ridge h high on a steep wall. The tab is shared with Waterline Roughing; should Scallop be there too?
+>   - Both operations: The same Cut Levels tab for both, with Scallop in each; with any tool but a ball nose, Generate says to choose another stepdown.
+>   - Finishing only: Scallop shows on Waterline Finishing's Cut Levels tab only.
+> - Should Waterline Roughing use the tool's true shape too, the same way, instead of treating the tool as a cylinder?
+>   - Yes, both: Both operations use the tool's real shape, so a ball or bull-nose roughs closer to slopes. Roughing gets a little slower.
+>   - Finishing only: Leave roughing as it is.
+
+### 🧑 Frank · 17:45
+
+> Answers:
+> - With only one lap per level, what should the Waterline Finishing tab's Stepover control?
+>   **Extra levels on shallow slopes**
+> - Scallop in the Cut Levels tab's Stepdown (ball nose only) sets the step from a scallop height: 2 x sqrt(h(2r - h)), the step that leaves a ridge h high on a steep wall. The tab is shared with Waterline Roughing; should Scallop be there too?
+>   **Both operations**
+> - Should Waterline Roughing use the tool's true shape too, the same way, instead of treating the tool as a cylinder?
+>   **Yes, both**
+
+### 🤖 Claude
+
+> The tip map is in. Now the settings: Scallop for the stepdown, and Waterline Finishing's own defaults.
+
+> Now the generators. I'll restructure them around a shared setup (the area, the tip map, the levels) used by both Roughing and Finishing:
+
+> The new declarations come before `SequenceStep` is defined in `CamJob.h`. A forward declaration fixes it:
+
+> The core builds. Running the existing tests against the new roughing:
+
+> The shell tripped on the heredocs again, so I'll write the test file directly:
+
+> The dome image reads well beside the roughing one. Now the add-on code:
+
+> Now the spec doc. I'll add one item after the Waterline Roughing tabs item (`.89058`), and update SPEC.md the same way.
+
+> Insert takes `source` rather than `with`:
+
+> Two older lines still say the tool is treated as a cylinder. I'll fix those, then install.
+
+> I've added Waterline Finishing. It cuts one lap round the parts at each level, and adds extra levels on shallow slopes until no two laps are further apart than the stepover. Debug and Release both build, all the core tests pass, and the Release build and help are installed. Nothing has been run in Alibre yet, and nothing is committed.
+>
+> What changed:
+> - **New operation:** Add 3 Axis ▸ Waterline Finishing has its own tree icon (a dome with contour lines). Its tabs are Features, Tool, Feeds & Speeds, Clearance, Cut Levels and Waterline Finishing. The Waterline Finishing tab has Stock to Leave, Cut Direction (Climb, Conventional, Mixed) and Stepover (% Tool Dia, Distance, Scallop).
+> - **Cut Levels tab:** both waterline operations share it. Stepdown has a fourth choice, Scallop, which Generate refuses for any tool except a ball mill.
+> - **True tool shape:** both waterline operations now use the tool's true shape instead of a cylinder. Waterline Roughing will therefore leave less material on curved or sloping parts than it did before.
+> - **Defaults** (my choices): Stock to Leave 0, stepover 10% of the tool diameter or 0.5 mm, stepdown 0.5 mm, Climb.
+> - **Ordering:** each separate part gets its own laps. With Depth First, one part is finished all the way down before the next starts.
+> - **Jobs:** the `.cam` format is now version 11, so older builds of the add-on won't open jobs saved by this one.
+> - **Docs:** I updated the help page, the Claude doc (now rev 192), `docs\SPEC.md`, `CLAUDE.md` and `Discussion.md`.
+>
+> Restart Alibre, then test:
+> 1. Add 3 Axis ▸ Waterline Finishing appears, with its icon in the tree.
+> 2. Its tabs and fields are as above, and each Stepover choice enables only its own edit box.
+> 3. With a ball mill on the half-sphere job, Generate gives one lap per level that hugs the sphere. Climb goes clockwise from above, and Conventional goes anticlockwise.
+> 4. A smaller stepover adds more levels near the top of the sphere, where the slope is shallow.
+> 5. Pick Scallop on the Cut Levels tab: with a flat end mill Generate should refuse it, and with a ball mill it should work.
+> 6. With two separate parts, compare Depth First and Level First.
+> 7. Waterline Roughing still generates. Its Cut Levels tab now has the Scallop row, and the Order group has moved down to make room.
+> 8. Save, close and reopen the job: the finishing settings should still be there.
+> 9. The help's ? buttons open the new Waterline Finishing section, and the Cut Levels section now mentions Scallop.
+
+### 🧑 Frank · 18:05
+
+> The waterline finishing isn't finishing a horizontal surface.  Is that the definition of the waterline finishing?  Should I use 2 1/2 axis facing?
+
+### 🤖 Claude
+
+> You're right: by definition, waterline finishing (also called Z-level finishing) only finishes walls. It cuts a single lap round the parts at each height, so it works well on steep sides. On a flat surface the lap only runs round the edge of the flat, and it can't cover the flat itself. Other CAM systems finish flats with a separate strategy, usually called flat area finishing.
+>
+> Facing won't do it here, at least not reliably. Facing and Pocketing ignore anything standing on the face, such as the half sphere on your 55 × 55 base, so they would cut into it.
+>
+> **Something that works today:** add a Waterline Roughing operation with these settings:
+> - Stock to Leave 0.
+> - On Cut Levels, tick Bottom and set it to the flat's height, and tick Top and set it just above that height, so there's only one level.
+> - Part Offset as the cut pattern.
+>
+> This clears the flat round the parts at exactly its height. It works with a flat end mill as well as a ball mill.
+>
+> There are two ways to build this in properly, so I need you to pick one.
+
+> Questions:
+> - Waterline finishing only cuts walls, so flat areas need their own toolpath. How should flats be finished?
+>   - Separate Flat Finishing op (Recommended): A new 3 axis operation, Add 3 Axis > Flat Finishing. It finds each up-facing flat face in the area and clears it at its height with offset loops, keeping clear of the parts with the tool's true shape. It can use a different tool from the wall finishing, usually a flat end mill.
+>   - Finish Flats option: A check box on the Waterline Finishing tab. It also clears each flat at its level as part of the same operation, so the walls and flats are cut with the same tool.
+>   - Use the workaround: Build nothing. Finish flats with a single-level Waterline Roughing operation, as described above.
+
+### 🧑 Frank · 18:06
+
+> Answers:
+> - Waterline finishing only cuts walls, so flat areas need their own toolpath. How should flats be finished?
+>   **Finish Flats option**
+
+### 🤖 Claude
+
+> I have what I need: Finish Flats can reuse the roughing's offset loops and the finishing lap's ordering. Next I'll write up the plan.
+
+> Plan:
+>
+> # Finish Flats on Waterline Finishing
+>
+> ## Context
+>
+> Waterline finishing only finishes walls: one lap per level round the parts. On an up-facing flat face (for example the 5 mm shelf round the half sphere), the lap only runs round the flat's edge and leaves the flat itself unfinished. Facing and Pocketing would cut into anything standing on the face, so they can't be used instead.
+>
+> Frank's choice: add a **Finish Flats** option to the Waterline Finishing tab. With it on, the same operation and tool also clear each flat at its level.
+>
+> ## Core
+>
+> ### `core\WaterlineRoughing.h/.cpp`
+> - Add `bool finishFlats` to `WaterlineRoughingSettings`.
+> - `WaterlineFinishingDefaults()` sets it to false, so existing finishing jobs behave as before.
+>
+> ### `core\CamJob.cpp`
+> - Write and read `finishFlats` in `WriteWaterlineRoughing` / `ReadWaterlineRoughing`. A missing value reads as false.
+> - `SameSettings` already compares the whole settings struct, so check that it sees the new field.
+> - `.cam` format stays at 11: version 11 hasn't been committed or shared yet.
+>
+> ### `GenerateWaterlineFinishToolpath` (`core\WaterlineRoughToolpath.cpp`)
+> - **Flat heights:** when `finishFlats` is on, take `FlatHeights(input.partTriangles)` + `stockToLeave` that lie between `w.bottom` and `w.top`. Make sure each of them is a level, even with Clear Flats off: merge them into `w.levels` before the extra-level pass.
+> - **Flat cells:** at a flat level z, a cell is part of the flat where the tool's centre is free there (`w.inArea[q] && !w.Blocked(q, z)`) and the tip rests on the flat (`w.tips[q] >= z - kHeightTolerance`). These are tool-centre positions, so a ball mill stops where the ball would start to roll off the edge, and a flat mill goes out to its radius.
+> - **Passes:** for each flat, use `DistanceFrom` on the cells that aren't flat. Then cut offset loops with `IsoContours` at `w.cell`, `w.cell + pitch`, and so on, outside in, up to the deepest value. Clip with `ClipContour` to the flat cells, and set the direction from the Cut Direction the same way Stock Offset does in the roughing code (`addContours`, around line 744). The spacing is the operation's own Stepover (`w.pitch`), so % Tool Dia, Distance and Scallop all apply. A Scallop stepover gives the ball's scallop on the flat too.
+> - **Order:** each flat's loops become `Lap` entries at their level, after that level's wall laps. Their island is the bottom-level island under the flat's cells (`islands[q]` of the first flat cell that's blocked at the bottom), so Depth First keeps them with their part. The existing link rules apply: stay down within three stepovers when the move is clear, otherwise lift.
+>
+> ## Add-on
+>
+> ### `IDD_OP_WATERLINE_FINISHING` in `addon\AlibreCAM.rc`
+> - Add a check box **Finish Flats** (`IDC_WL_FINISH_FLATS`, 13441; next control 13442 in `addon\resource.h`) under the Cut Direction group, at about 10,84.
+>
+> ### `CWaterlineFinishingPage` in `addon\OperationDialog.cpp`
+> - `Load` and `Save` handle the check box.
+> - Bulk editing picks it up through the existing `Snapshot`/`Overlay` code.
+>
+> ## Tests (`tests\WaterlineFinishToolpathTests.cpp`)
+> - **Shelf:** a 40 × 40 × 5 box with a half sphere of radius 10 on top, and the stock footprint as the area. With Finish Flats on and a 6 mm flat end mill:
+>   - Cuts at z = 5 cover the shelf: every grid point on the shelf that's at least the tool's radius from the sphere is within half a stepover of a cut.
+>   - With it off, the only cuts at z = 5 are the lap round the sphere.
+> - **Stock to Leave:** the flat's passes are at 5 + the stock to leave.
+> - **Saving and loading:** `finishFlats` round-trips through save and load.
+> - Rerun the existing suite and the skipped timing test.
+>
+> ## Docs
+> - **Help:** the Waterline Finishing tab section gets Finish Flats, plus a sentence saying the walls are cut by laps and the flats by this option.
+> - **Spec:** the doc's Waterline Finishing item, `docs\SPEC.md` (rev 193).
+> - **`CLAUDE.md`** and **`Discussion.md`** (`tools\BuildDiscussion.py`).
+>
+> ## Verification
+> 1. Build Debug and Release, and run `CamCoreTests.exe`.
+> 2. Close Alibre, install Release, and check the DLL and help hashes.
+> 3. Frank's tests:
+>    1. On the half sphere on its base, Waterline Finishing with Finish Flats ticked should clear the 5 mm shelf with loops out to the stock's edge, without cutting into the sphere.
+>    2. Untick it: only the wall laps.
+>    3. Try a ball mill with a Scallop stepover, then a flat end mill.
+>    4. Try Depth First with two separate parts, each with a top flat.
+>    5. Save and reopen the job: the tick should stay.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> The setting goes into the core first, then the flat passes in the finishing generator:
+
+> Everything passes. Installing now, if Alibre is closed:
+
 ---
 
 # Side conversation
