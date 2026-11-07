@@ -43,6 +43,7 @@ protected:
     afx_msg void OnClose();
     afx_msg void OnHelpButton();
     afx_msg void OnAutoDivide();
+    afx_msg void OnSaveStl();
 
     DECLARE_MESSAGE_MAP()
 
@@ -63,4 +64,5 @@ private:
     int m_appliedStop = -1;
     bool m_playing;
     std::wstring m_note;
+    std::wstring m_saved;       // what the last Save STL did
 };

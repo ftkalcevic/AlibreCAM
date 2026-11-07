@@ -184,6 +184,16 @@ namespace camcore
     // Every chunk of the stock that has changed since it was last meshed.
     std::vector<int> DirtyChunks(const VoxelStock& stock);
 
+    // The chunks' meshes as one, each chunk's vertex numbers moved past those before it.
+    StockMesh JoinMeshes(const std::vector<StockMesh>& chunks);
+
+    // The whole stock's surface, meshed on all cores.
+    StockMesh MeshStock(const VoxelStock& stock);
+
+    // A mesh as the bytes of a binary STL file, in mm: an 80 byte header holding
+    // the title, the number of triangles, then each triangle's normal and corners.
+    std::string StockMeshToStl(const StockMesh& mesh, const std::string& title);
+
     // One straight move of the simulation, in assembly mm.
     struct SimMove
     {

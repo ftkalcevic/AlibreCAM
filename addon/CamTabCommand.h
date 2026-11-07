@@ -115,6 +115,8 @@ public:
     camcore::Simulation& GetSimulation() { return m_simulation; }
     std::vector<double> SimulationStops() const { return camcore::ResolutionStops(m_simulationBox); }
     void RestartSimulation(const camcore::SimResolution& resolution);   // and cut back to the same move
+    std::filesystem::path SimulationStlPath() const;                    // the suggested name, beside the .cam file
+    bool SaveSimulationStl(const std::filesystem::path& path, std::wstring& message);
     void OnSimulationChanged();             // the stock or tool moved: mesh again and redraw
     void OnSimulationDialogDone(CSimulationDlg* pDialog);
 

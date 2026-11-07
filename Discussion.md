@@ -5227,6 +5227,128 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Installed, and the installed DLL matches the Release build. Updating `CLAUDE.md` and the log:
 
+> No, none of the extra compiler options helped. Release already used the main speed options (`/O2`, intrinsics, whole program optimisation). I timed the two candidates you agreed on, on a 136 × 150 × 6 mm stock at 0.05 mm cells, three runs each:
+>
+> | Version | Opening mesh | Cutting 305 moves |
+> |---|---|---|
+> | Release as it was | about 250 ms | about 1,510 ms |
+> | With `/Ob3` (stronger inlining) | about 250 ms | about 1,515 ms |
+> | With security checks off (`/GS-`, `/sdl` off) | about 287 ms | about 1,510 ms |
+>
+> Neither made a difference, so the project settings are back exactly as they were.
+>
+> Meshing on all cores did make a difference. The changed parts of the stock are now meshed in parallel, so opening the simulation and redrawing during Play both take **32 ms instead of about 250 ms** on your 16 cores. A new test checks the meshes come out the same as meshing one chunk at a time. Cutting still runs on one core, at about 1.5 s for the whole two-level facing job, because the stock's storage can't safely be changed from several threads at once.
+>
+> Debug and Release both build and pass every test, and the installed DLL matches the Release build. `CLAUDE.md` and `Discussion.md` are updated; the help and spec don't change. Nothing is committed.
+>
+> To test, restart Alibre, then:
+> 1. Simulate the same job. It should open quickly, and the log now shows how many chunks were meshed and how long it took.
+> 2. Press Play. It should redraw faster than before, and the cut stock should look the same.
+
+### 🧑 Frank · 12:33
+
+> Can we save the simulation results as a 3d object?
+
+### 🤖 Claude
+
+> Questions:
+> - What should saving the simulation result do? The cut stock is a blocky voxel surface (cell-sized steps), written as triangles.
+>   - STL file, then open it: A Save button in the Simulation dialog writes a binary STL (in mm). It then offers to open it in Alibre as a new part with ImportNonNative3DFile; that call is unproven in 27.0.1, so it falls back to just the file.
+>   - STL file only: Just write the STL, for viewing in Alibre or any other program, or for 3D printing a preview.
+>   - Also as stock: As option 1, plus Import Stock can take an STL, so the cut result can be the stock of a later job (for example a second setup after flipping the part). The voxel filling already works from triangles.
+> - What should the saved file hold?
+>   - The cut stock only: Just the stock as it is at the current move, in assembly coordinates so it lines up with the parts when opened.
+>   - Stock and the tool: The cut stock plus the tool's shape where it is now, as a second solid in the same file.
+
+### 🧑 Frank · 12:34
+
+> Answers:
+> - What should saving the simulation result do? The cut stock is a blocky voxel surface (cell-sized steps), written as triangles.
+>   **STL file only**
+> - What should the saved file hold?
+>   **The cut stock only**
+
+### 🤖 Claude
+
+> Binary-safe. Writing the plan:
+
+> Plan:
+>
+> # Faster simulation: compiler options and meshing on all cores
+>
+> ## Context
+>
+> Frank tried the Release build and found it much faster. He asked whether any Release compiler options would speed the simulator up further.
+>
+> Release already uses `/O2` (Maximize Speed), `/Oi` (intrinsics) and `/GL` with link-time code generation in `core\CamCore.vcxproj`, `addon\AlibreCAM.vcxproj` and `tests\CamCoreTests.vcxproj`. So the options left are small. The simulator also runs on one core.
+>
+> **Decided (Frank):**
+> - **Compiler options:** try `/Ob3` and `/GS-` with `/sdl` off, for CamCore only. Keep only what measurably helps. No `/arch:AVX2`, so the add-on runs on any x64 PC.
+> - **Cores:** mesh the changed chunks on all cores. Cutting stays on one core.
+>
+> ## Steps
+>
+> 1. **Baseline.** Run the skipped timing test three times in Release and note the start, mesh and cut times:
+>    `bin\x64\Release\CamCoreTests.exe -tc="simulation timing*" --no-skip -s`
+>
+> 2. **Compiler options, one at a time, CamCore Release only** (`core\CamCore.vcxproj`, the Release `ClCompile` group):
+>    - `<InlineFunctionExpansion>` set to `/Ob3` (by `AdditionalOptions`, since the property has no value for it);
+>    - `<BufferSecurityCheck>false</BufferSecurityCheck>` with `<SDLCheck>false</SDLCheck>` for Release.
+>    
+>    Rebuild and time each. Keep an option only if it's consistently faster, by more than run-to-run noise. Every test must still pass, including the exact column-versus-cell match.
+>
+> 3. **Meshing on all cores.**
+>    - Add `MeshChunks(const VoxelStock&, const std::vector<int>& chunks, std::vector<StockMesh>& meshes)` to `core\Simulation.h/.cpp`. It meshes the listed chunks into their slots with `std::for_each(std::execution::par, ...)` (`<execution>`, C++17).
+>    - It's safe because `MeshChunk` only reads the stock (`ReadWords`, `Word`), and each chunk writes its own slot.
+>    - `CCamTabCommand::UpdateSimulationScene` (`addon\CamTabCommand.cpp`) collects the dirty chunks, calls `MeshChunks`, then marks them clean and joins the meshes as now.
+>    - The timing test meshes with `MeshChunks` as well.
+>    - Add a test that `MeshChunks` gives the same meshes as `MeshChunk` one at a time.
+>
+> 4. **Measure again**, and record the before and after times in `CLAUDE.md`'s simulation line.
+>
+> 5. **Docs:**
+>    - `CLAUDE.md`: the build options kept, and parallel meshing.
+>    - `Discussion.md`: rebuilt by `tools\BuildDiscussion.py`.
+>    - The help and spec don't change, since nothing the user sees changes.
+>
+> ## Verification
+>
+> 1. Build Debug and Release, and run `CamCoreTests.exe` from both. All tests should pass.
+> 2. The timing test's numbers before and after are reported to Frank.
+> 3. Close Alibre and install Release.
+> 4. Frank's tests:
+>    1. Simulate the same job. Opening and Play should be faster, and the log shows the mesh times.
+>    2. The cut stock should look the same as before.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Now the tests:
+
+> Both builds pass every test, including the new STL checks. Installing:
+
+> Alibre is open, so I haven't installed it. Doing the docs now:
+
+> Yes. The Simulation dialog now has a **Save STL...** button, next to Close, that saves the cut stock as it is at the current move as an STL file. Debug and Release both build and pass every test. **It isn't installed yet**, because Alibre was open when I tried.
+>
+> - **Where it's saved:** the first suggestion is `<job> - simulation.stl` beside the `.cam` file. After that, it offers the last folder you used until Alibre closes.
+> - **What's in it:** the stock only, without the tool. It's in millimetres and in the assembly's coordinates, so it lines up with your parts.
+> - **How it looks:** blocky, with steps the size of a cell, because it's the surface of the simulation's cells. Where large and small faces meet, some programs may report the mesh as not watertight, but viewers and slicers open it.
+> - **After saving:** the dialog says what it saved and how many triangles. A failed save shows the reason there too.
+>
+> The help, the spec (Claude doc and `docs\SPEC.md`, rev 178), `CLAUDE.md` and `Discussion.md` are updated. Nothing is committed.
+>
+> To test, after installing and restarting Alibre:
+> 1. Simulate part way through a job and press Save STL. It should suggest `<job> - simulation.stl` next to the `.cam` file.
+> 2. Open the file in Windows 3D Viewer or a slicer. It should show the cut stock at that move, the right size in mm.
+> 3. Run to the end, then save over the same file. You should get an overwrite prompt, and the new file should show the finished cut.
+> 4. Check the help's Simulation section, which now has a Save STL entry.
+
+### 🧑 Frank · 12:50
+
+> Alibre's closed, install
+
 ---
 
 # Side conversation

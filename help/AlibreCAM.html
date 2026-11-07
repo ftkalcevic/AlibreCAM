@@ -221,6 +221,8 @@
   <dd>Only while Auto divide voxels is off. From Fine (small cells: sharper, slower, more memory) to Coarse (large cells: blockier, faster). The choices depend on the stock's size, with Medium in the middle as the start. Letting go at a new stop starts the stock again and cuts back to the same move. Remembered until Alibre closes.</dd>
   <dt>Warning</dt>
   <dd>A rapid move that would cut stock stops the simulation and is drawn in thick red, naming the operation and its toolpath move. Play, Step or the other buttons carry on from there.</dd>
+  <dt>Save STL...</dt>
+  <dd>Saves the cut stock as it is at the current move as an STL file, in millimetres and in the assembly's coordinates, so it lines up with the parts. The first suggestion is <em>&lt;job&gt; - simulation.stl</em> beside the .cam file, then the last folder used. The surface is the cells' surface, so it's blocky, with steps the size of a cell; large and small faces meet with joins that some programs call not watertight, though viewers and slicers open it. The tool isn't saved. The line under the controls says what was saved.</dd>
   <dt>Close</dt>
   <dd>Ends the simulation. The stock is drawn as its outline again.</dd>
 </dl>

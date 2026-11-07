@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstring>
 
 #include "Simulation.h"
 
@@ -532,5 +533,65 @@ TEST_CASE("simulation timing on a 136 x 150 x 6 stock" * doctest::skip())
                 << ms(t0, t1) << " ms, mesh " << triangles << " in " << ms(t1, t2) << " ms, cut "
                 << simulation.Moves().size() << " moves in " << ms(t2, t3) << " ms, mesh " << after << " in "
                 << ms(t3, t4) << " ms, mixed bricks " << simulation.Stock().MixedBricks());
+    }
+}
+
+namespace
+{
+    std::uint32_t ReadUint32(const std::string& bytes, size_t at)
+    {
+        std::uint32_t value = 0;
+        for (int b = 0; b < 4; ++b)
+            value |= static_cast<std::uint32_t>(static_cast<unsigned char>(bytes[at + b])) << (8 * b);
+        return value;
+    }
+
+    float ReadFloat(const std::string& bytes, size_t at)
+    {
+        const std::uint32_t raw = ReadUint32(bytes, at);
+        float value;
+        std::memcpy(&value, &raw, sizeof(value));
+        return value;
+    }
+}
+
+TEST_CASE("the whole stock meshes as the chunks joined, and saves as a binary STL")
+{
+    VoxelStock stock = Block(0.5);      // 2 x 2 x 1 chunks
+    const StockMesh whole = MeshStock(stock);
+    size_t separately = 0;
+    for (int c = 0; c < stock.ChunkCount(); ++c)
+        separately += MeshChunk(stock, c).TriangleCount();
+    CHECK(whole.TriangleCount() == separately);
+    CHECK(whole.vertices.size() == whole.normals.size());
+    for (size_t f = 0; f + 3 < whole.faces.size(); f += 4)
+    {
+        CHECK(whole.faces[f] == 3);
+        for (int c = 1; c <= 3; ++c)
+            CHECK(static_cast<size_t>(whole.faces[f + c]) < whole.vertices.size() / 3);
+    }
+
+    const std::string stl = StockMeshToStl(whole, "AlibreCAM test");
+    REQUIRE(stl.size() == 84 + 50 * whole.TriangleCount());
+    CHECK(stl.compare(0, 14, "AlibreCAM test") == 0);
+    CHECK(ReadUint32(stl, 80) == whole.TriangleCount());
+    for (size_t t = 0; t < whole.TriangleCount(); ++t)
+    {
+        const size_t at = 84 + 50 * t;
+        const Vec3 normal{ ReadFloat(stl, at), ReadFloat(stl, at + 4), ReadFloat(stl, at + 8) };
+        CHECK(Length(normal) == doctest::Approx(1.0));
+        CHECK(std::fabs(normal.x) + std::fabs(normal.y) + std::fabs(normal.z) == doctest::Approx(1.0));
+        for (int c = 0; c < 3; ++c)
+        {
+            // Each corner is on the box's surface, on the face the normal points out of.
+            const Vec3 p{ ReadFloat(stl, at + 12 + 12 * c), ReadFloat(stl, at + 16 + 12 * c),
+                          ReadFloat(stl, at + 20 + 12 * c) };
+            const double faceAt = (normal.x > 0.5) ? p.x - 20 : (normal.x < -0.5) ? p.x
+                                : (normal.y > 0.5) ? p.y - 20 : (normal.y < -0.5) ? p.y
+                                : (normal.z > 0.5) ? p.z - 10 : p.z;
+            CHECK(faceAt == doctest::Approx(0.0));
+        }
+        CHECK(stl[at + 48] == 0);
+        CHECK(stl[at + 49] == 0);
     }
 }

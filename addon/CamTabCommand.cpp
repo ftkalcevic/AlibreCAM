@@ -1487,6 +1487,31 @@ void CCamTabCommand::RestartSimulation(const camcore::SimResolution& resolution)
     OnSimulationChanged();
 }
 
+std::filesystem::path CCamTabCommand::SimulationStlPath() const
+{
+    if (m_camPath.empty())
+        return L"Simulation.stl";
+    return m_camPath.parent_path() / (m_camPath.stem().wstring() + L" - simulation.stl");
+}
+
+bool CCamTabCommand::SaveSimulationStl(const std::filesystem::path& path, std::wstring& message)
+{
+    CWaitCursor wait;
+    const ULONGLONG start = GetTickCount64();
+    const camcore::StockMesh mesh = camcore::MeshStock(m_simulation.Stock());
+    std::string problem;
+    if (!camcore::WriteFileAtomically(path, camcore::StockMeshToStl(mesh, "AlibreCAM simulated stock, mm"), problem))
+    {
+        message = L"The STL file couldn't be saved. " + FromUtf8(problem);
+        Log(L"[simulate] saving %s failed: %s", path.wstring().c_str(), FromUtf8(problem).c_str());
+        return false;
+    }
+    Log(L"[simulate] saved %s: %zu triangles in %llu ms", path.wstring().c_str(), mesh.TriangleCount(),
+        GetTickCount64() - start);
+    message = L"Saved " + path.filename().wstring() + L" (" + std::to_wstring(mesh.TriangleCount()) + L" triangles).";
+    return true;
+}
+
 void CCamTabCommand::UpdateSimulationScene()
 {
     // Each chunk that changed is meshed again, and the chunks joined into one mesh.
@@ -1499,21 +1524,7 @@ void CCamTabCommand::UpdateSimulationScene()
         stock.SetChunkClean(c);
     if (!dirty.empty())
     {
-        m_simulationMesh = camcore::StockMesh();
-        for (const camcore::StockMesh& chunk : m_simulationChunks)
-        {
-            const int base = static_cast<int>(m_simulationMesh.vertices.size() / 3);
-            m_simulationMesh.vertices.insert(m_simulationMesh.vertices.end(), chunk.vertices.begin(),
-                                             chunk.vertices.end());
-            m_simulationMesh.normals.insert(m_simulationMesh.normals.end(), chunk.normals.begin(),
-                                            chunk.normals.end());
-            for (size_t f = 0; f + 3 < chunk.faces.size(); f += 4)
-            {
-                m_simulationMesh.faces.insert(m_simulationMesh.faces.end(), { 3, chunk.faces[f + 1] + base,
-                                                                             chunk.faces[f + 2] + base,
-                                                                             chunk.faces[f + 3] + base });
-            }
-        }
+        m_simulationMesh = camcore::JoinMeshes(m_simulationChunks);
         const ULONGLONG took = GetTickCount64() - start;
         if (took > 200)
             Log(L"[simulate] meshed %zu chunks, %zu triangles in all, in %llu ms, %d mixed bricks", dirty.size(),

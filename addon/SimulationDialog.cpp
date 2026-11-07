@@ -21,6 +21,7 @@ namespace
     CPoint g_lastPosition(-1, -1);
     int g_lastSpeed = 40;
     bool g_autoDivide = true;
+    std::wstring g_stlFolder;       // where the last STL was saved this session
     int g_resolutionStop = -1;      // the slider's stop, fine to coarse; -1 is the middle
 
     int StopIndex(const std::vector<double>& stops)
@@ -49,6 +50,7 @@ BEGIN_MESSAGE_MAP(CSimulationDlg, CDialog)
     ON_BN_CLICKED(IDC_SIM_OPERATION_END, &CSimulationDlg::OnOperationEnd)
     ON_BN_CLICKED(IDC_SIM_END, &CSimulationDlg::OnEnd)
     ON_BN_CLICKED(IDC_SIM_AUTO_DIVIDE, &CSimulationDlg::OnAutoDivide)
+    ON_BN_CLICKED(IDC_SIM_SAVE_STL, &CSimulationDlg::OnSaveStl)
     ON_WM_HSCROLL()
     ON_WM_TIMER()
     ON_WM_CTLCOLOR()
@@ -157,7 +159,7 @@ void CSimulationDlg::ShowState()
     SetDlgItemText(IDC_SIM_STATUS, status.c_str());
     m_position.SetPos(static_cast<int>((std::min)(simulation.Position(), size_t(0x7FFFFFFF))));
 
-    SetDlgItemText(IDC_SIM_INFO, m_note.c_str());
+    SetDlgItemText(IDC_SIM_INFO, (m_saved.empty() ? m_note : m_saved + L" " + m_note).c_str());
 
     const size_t speed = MovesPerTick();
     SetDlgItemText(IDC_SIM_SPEED_TEXT, (WithCommas(speed) + (speed == 1 ? L" move a step" : L" moves a step")).c_str());
@@ -176,6 +178,30 @@ void CSimulationDlg::ShowState()
     GetDlgItem(IDC_SIM_OPERATION_END)->EnableWindow(more);
     GetDlgItem(IDC_SIM_END)->EnableWindow(more);
     GetDlgItem(IDC_SIM_PLAY)->EnableWindow(more || m_playing);
+}
+
+void CSimulationDlg::OnSaveStl()
+{
+    Stop();
+    if (m_pTab == nullptr)
+        return;
+
+    // The cut stock as it is now, as an STL file: beside the .cam file at first,
+    // then in the last folder used.
+    const std::filesystem::path suggested = m_pTab->SimulationStlPath();
+    const std::wstring folder = g_stlFolder.empty() ? suggested.parent_path().wstring() : g_stlFolder;
+    CFileDialog dialog(FALSE, L"stl", suggested.filename().c_str(),
+                       OFN_OVERWRITEPROMPT | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST,
+                       L"STL files (*.stl)|*.stl|All files (*.*)|*.*||", this);
+    if (!folder.empty())
+        dialog.m_ofn.lpstrInitialDir = folder.c_str();
+    if (dialog.DoModal() != IDOK)
+        return;
+
+    const std::filesystem::path path(dialog.GetPathName().GetString());
+    g_stlFolder = path.parent_path().wstring();
+    m_pTab->SaveSimulationStl(path, m_saved);
+    ShowState();
 }
 
 void CSimulationDlg::OnAutoDivide()

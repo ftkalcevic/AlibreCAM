@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <execution>
 
 #ifdef _MSC_VER
@@ -994,6 +995,62 @@ namespace camcore
                 chunks.push_back(c);
         }
         return chunks;
+    }
+
+    StockMesh JoinMeshes(const std::vector<StockMesh>& chunks)
+    {
+        StockMesh mesh;
+        for (const StockMesh& chunk : chunks)
+        {
+            const int base = static_cast<int>(mesh.vertices.size() / 3);
+            mesh.vertices.insert(mesh.vertices.end(), chunk.vertices.begin(), chunk.vertices.end());
+            mesh.normals.insert(mesh.normals.end(), chunk.normals.begin(), chunk.normals.end());
+            for (size_t f = 0; f + 3 < chunk.faces.size(); f += 4)
+                mesh.faces.insert(mesh.faces.end(),
+                                  { 3, chunk.faces[f + 1] + base, chunk.faces[f + 2] + base, chunk.faces[f + 3] + base });
+        }
+        return mesh;
+    }
+
+    StockMesh MeshStock(const VoxelStock& stock)
+    {
+        std::vector<int> all(static_cast<size_t>(stock.ChunkCount()));
+        for (size_t c = 0; c < all.size(); ++c)
+            all[c] = static_cast<int>(c);
+        std::vector<StockMesh> chunks;
+        MeshChunks(stock, all, chunks);
+        return JoinMeshes(chunks);
+    }
+
+    std::string StockMeshToStl(const StockMesh& mesh, const std::string& title)
+    {
+        const size_t triangles = mesh.TriangleCount();
+        std::string bytes(84 + 50 * triangles, '\0');
+        bytes.replace(0, (std::min)(title.size(), size_t(80)), title.substr(0, 80));
+        const auto putUint32 = [&](size_t at, std::uint32_t value) {
+            for (int b = 0; b < 4; ++b)
+                bytes[at + b] = static_cast<char>((value >> (8 * b)) & 0xFF);
+        };
+        const auto putFloat = [&](size_t at, float value) {
+            std::uint32_t raw;
+            static_assert(sizeof(raw) == sizeof(value), "a float is 4 bytes");
+            std::memcpy(&raw, &value, sizeof(raw));
+            putUint32(at, raw);
+        };
+        putUint32(80, static_cast<std::uint32_t>(triangles));
+        for (size_t t = 0; t < triangles; ++t)
+        {
+            const size_t at = 84 + 50 * t;
+            const int* corners = &mesh.faces[t * 4 + 1];
+            for (int a = 0; a < 3; ++a)
+                putFloat(at + 4 * a, mesh.normals[static_cast<size_t>(corners[0]) * 3 + a]);
+            for (int c = 0; c < 3; ++c)
+            {
+                for (int a = 0; a < 3; ++a)
+                    putFloat(at + 12 + 12 * c + 4 * a, mesh.vertices[static_cast<size_t>(corners[c]) * 3 + a]);
+            }
+        }
+        return bytes;
     }
 
     /////////////////////////////////////////////////////////////////////////
