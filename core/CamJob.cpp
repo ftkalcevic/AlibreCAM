@@ -941,20 +941,115 @@ namespace camcore
                               plunge.start);
         }
 
-        json WriteWaterlineRoughing(const WaterlineRoughingSettings& waterline)
+        // One of several names, leaving the value alone if it's missing.
+        template <typename T>
+        bool ReadNamed(const json& parent, const char* name, const std::vector<std::pair<const char*, T>>& names,
+                       T& value)
         {
-            return { { "stockToLeave", waterline.stockToLeave }, { "stepDown", waterline.stepDown } };
+            const auto item = parent.find(name);
+            if (item == parent.end())
+                return true;
+            if (!item->is_string())
+                return false;
+            for (const auto& candidate : names)
+            {
+                if (item->get<std::string>() == candidate.first)
+                {
+                    value = candidate.second;
+                    return true;
+                }
+            }
+            return false;
         }
 
-        // Waterline Roughing missing its settings has the defaults.
-        bool ReadWaterlineRoughing(const json& step, WaterlineRoughingSettings& waterline)
+        const std::vector<std::pair<const char*, WaterlinePattern>> kWaterlinePatterns = {
+            { "partOffset", WaterlinePattern::PartOffset }, { "stockOffset", WaterlinePattern::StockOffset },
+            { "linear", WaterlinePattern::Linear } };
+        const std::vector<std::pair<const char*, CutDirection>> kCutDirections = {
+            { "climb", CutDirection::Climb }, { "conventional", CutDirection::Conventional },
+            { "mixed", CutDirection::Mixed } };
+        const std::vector<std::pair<const char*, WaterlineStepoverMode>> kStepoverModes = {
+            { "percent", WaterlineStepoverMode::Percent }, { "distance", WaterlineStepoverMode::Distance },
+            { "scallop", WaterlineStepoverMode::Scallop } };
+        const std::vector<std::pair<const char*, WaterlineStepdownMode>> kStepdownModes = {
+            { "percent", WaterlineStepdownMode::Percent }, { "distance", WaterlineStepdownMode::Distance },
+            { "levels", WaterlineStepdownMode::Levels } };
+
+        template <typename T>
+        const char* NameOf(const std::vector<std::pair<const char*, T>>& names, T value)
         {
-            waterline = WaterlineRoughingSettings();
-            const auto item = step.find("waterlineRoughing");
-            if (item == step.end())
+            for (const auto& candidate : names)
+            {
+                if (candidate.second == value)
+                    return candidate.first;
+            }
+            return names.front().first;
+        }
+
+        json WriteWaterlineRoughing(const WaterlineRoughingSettings& w)
+        {
+            return
+            {
+                { "stockToLeave", w.stockToLeave },
+                { "pattern", NameOf(kWaterlinePatterns, w.pattern) },
+                { "direction", NameOf(kCutDirections, w.direction) },
+                { "start", w.start == WaterlineStart::Inside ? "inside" : "outside" },
+                { "linearStart", w.linearStart == PocketLinearStart::Top ? "top" : "bottom" },
+                { "cutAngle", w.cutAngle },
+                { "stepoverBy", NameOf(kStepoverModes, w.stepoverMode) },
+                { "stepoverPercent", w.stepoverPercent },
+                { "stepoverDistance", w.stepoverDistance },
+                { "scallop", w.scallop },
+                { "extension", w.extension },
+                { "stepdownBy", NameOf(kStepdownModes, w.stepdownMode) },
+                { "stepdownPercent", w.stepdownPercent },
+                { "stepDown", w.stepDown },
+                { "levels", w.levels },
+                { "order", w.order == CutLevelOrder::LevelFirst ? "levelFirst" : "depthFirst" },
+                { "useTop", w.useTop },
+                { "top", w.top },
+                { "useBottom", w.useBottom },
+                { "bottom", w.bottom },
+                { "clearFlats", w.clearFlats }
+            };
+        }
+
+        // Waterline Roughing missing its settings has the defaults, and those saved
+        // before the Cut Levels tab keep their stepdown distance.
+        bool ReadWaterlineRoughing(const json& step, WaterlineRoughingSettings& w)
+        {
+            w = WaterlineRoughingSettings();
+            const auto found = step.find("waterlineRoughing");
+            if (found == step.end())
                 return true;
-            return item->is_object() && ReadOptionalNumber(*item, "stockToLeave", waterline.stockToLeave) &&
-                   ReadOptionalNumber(*item, "stepDown", waterline.stepDown);
+            if (!found->is_object())
+                return false;
+            const json& item = *found;
+            double levels = w.levels;
+            if (!ReadOptionalNumber(item, "levels", levels) || !(levels >= 1.0) || levels > 100000.0)
+                return false;
+            w.levels = static_cast<int>(levels);
+            return ReadOptionalNumber(item, "stockToLeave", w.stockToLeave) &&
+                   ReadNamed(item, "pattern", kWaterlinePatterns, w.pattern) &&
+                   ReadNamed(item, "direction", kCutDirections, w.direction) &&
+                   ReadChoice(item, "start", "inside", WaterlineStart::Inside, "outside", WaterlineStart::Outside,
+                              w.start) &&
+                   ReadChoice(item, "linearStart", "bottom", PocketLinearStart::Bottom, "top", PocketLinearStart::Top,
+                              w.linearStart) &&
+                   ReadOptionalNumber(item, "cutAngle", w.cutAngle) &&
+                   ReadNamed(item, "stepoverBy", kStepoverModes, w.stepoverMode) &&
+                   ReadOptionalNumber(item, "stepoverPercent", w.stepoverPercent) &&
+                   ReadOptionalNumber(item, "stepoverDistance", w.stepoverDistance) &&
+                   ReadOptionalNumber(item, "scallop", w.scallop) &&
+                   ReadOptionalNumber(item, "extension", w.extension) &&
+                   ReadNamed(item, "stepdownBy", kStepdownModes, w.stepdownMode) &&
+                   ReadOptionalNumber(item, "stepdownPercent", w.stepdownPercent) &&
+                   ReadOptionalNumber(item, "stepDown", w.stepDown) &&
+                   ReadChoice(item, "order", "levelFirst", CutLevelOrder::LevelFirst, "depthFirst",
+                              CutLevelOrder::DepthFirst, w.order) &&
+                   ReadOptionalBool(item, "useTop", w.useTop) && ReadOptionalNumber(item, "top", w.top) &&
+                   ReadOptionalBool(item, "useBottom", w.useBottom) && ReadOptionalNumber(item, "bottom", w.bottom) &&
+                   ReadOptionalBool(item, "clearFlats", w.clearFlats);
         }
 
         json WriteChamfer(const ChamferSettings& chamfer)

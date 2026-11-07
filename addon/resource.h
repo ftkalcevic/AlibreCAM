@@ -215,6 +215,7 @@
 #define IDD_SIMULATION                  13041
 #define IDD_OP_PLUNGE_ROUGHING          13042
 #define IDD_OP_WATERLINE_ROUGHING       13043
+#define IDD_OP_WATERLINE_LEVELS         13044
 #define IDD_SETTINGS                    13030
 #define IDD_STOCK_BOX                   13031
 #define IDD_STOCK_PART_BOX              13032
@@ -335,6 +336,37 @@
 #define IDC_FEATURES_STOCK_FOOTPRINT    13405
 #define IDC_WATERLINE_STOCK             13406
 #define IDC_WATERLINE_STEP              13407
+#define IDC_WATERLINE_EXTENSION         13408
+#define IDC_WL_PART_OFFSET              13409
+#define IDC_WL_STOCK_OFFSET             13410
+#define IDC_WL_LINEAR                   13411
+#define IDC_WL_CLIMB                    13412
+#define IDC_WL_CONVENTIONAL             13413
+#define IDC_WL_MIXED                    13414
+#define IDC_WL_START                    13415
+#define IDC_WL_START_LABEL              13416
+#define IDC_WL_LINEAR_BOTTOM            13417
+#define IDC_WL_LINEAR_TOP               13418
+#define IDC_WL_ANGLE_LABEL              13419
+#define IDC_WL_ANGLE                    13420
+#define IDC_WL_STEP_PERCENT_RADIO       13421
+#define IDC_WL_STEP_PERCENT             13422
+#define IDC_WL_STEP_DISTANCE_RADIO      13423
+#define IDC_WL_STEP_DISTANCE            13424
+#define IDC_WL_SCALLOP_RADIO            13425
+#define IDC_WL_SCALLOP                  13426
+#define IDC_WL_DOWN_PERCENT_RADIO       13427
+#define IDC_WL_DOWN_PERCENT             13428
+#define IDC_WL_DOWN_DISTANCE_RADIO      13429
+#define IDC_WL_LEVELS_RADIO             13430
+#define IDC_WL_LEVELS                   13431
+#define IDC_WL_LEVEL_FIRST              13432
+#define IDC_WL_DEPTH_FIRST              13433
+#define IDC_WL_USE_TOP                  13434
+#define IDC_WL_TOP                      13435
+#define IDC_WL_USE_BOTTOM               13436
+#define IDC_WL_BOTTOM                   13437
+#define IDC_WL_CLEAR_FLATS              13438
 #define IDC_HP_AT_TOP                   13266
 #define IDC_HP_AT_BOTTOM                13267
 #define IDC_HP_PICK_TOP                 13268
@@ -370,9 +402,9 @@
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13044
+#define _APS_NEXT_RESOURCE_VALUE        13045
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13408
+#define _APS_NEXT_CONTROL_VALUE         13439
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

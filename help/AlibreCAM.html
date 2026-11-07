@@ -91,6 +91,7 @@
   <a href="#tab-hole-pocketing">Hole Pocketing</a>
   <a href="#tab-plunge-roughing">Plunge Roughing</a>
   <a href="#tab-waterline-roughing">Waterline Roughing</a>
+  <a href="#tab-waterline-levels">Waterline Cut Levels</a>
   <a href="#tab-drilling">Drilling</a>
 </nav>
 <main>
@@ -781,13 +782,46 @@
 
 <section id="tab-waterline-roughing">
 <h2>Waterline Roughing tab</h2>
-<p>Waterline Roughing roughs out a 3D shape in horizontal slices, from the stock's top down to its bottom (or the parts' lowest point without a stock). Its tabs are Features, Tool, Feeds &amp; Speeds, Clearance and this one; more will come.</p>
-<p>The area comes from the Features tab as for Plunge Roughing: picked faces and closed loops of edges (and the stock box's footprint if ticked) seen from above and merged. At each level the tool's centre may go anywhere in the area that's at least the tool's radius plus the Stock to Leave from any part that comes within the Stock to Leave of the level, so the parts stand as islands with the Stock to Leave on their tops and sides. Where no part is beyond the area's edge, the tool's centre goes right up to the edge. Each level is cleared with loops a stepover apart, the outermost hugging the edges and islands, cut climb from the outside in; the stepover is half the tool's diameter for now. A level is entered at the plunge feed from 1 mm above the level before (the first from 1 mm above the stock's top). The tool stays down from one loop to the next when the move is short and stays in the cleared area, and otherwise lifts to the clearance plane, which must be at least 1 mm above the stock. The tool is treated as a plain cylinder at each level. The area is worked out on a fine grid, so loops are accurate to a fraction of a millimetre.</p>
+<p>Waterline Roughing roughs out a 3D shape in horizontal slices, from the top of the cut down to its bottom (see its <a href="#tab-waterline-levels">Cut Levels</a> tab). Its tabs are Features, Tool, Feeds &amp; Speeds, Clearance, Cut Levels and this one.</p>
+<p>The area comes from the Features tab as for Plunge Roughing: picked faces and closed loops of edges (and the stock box's footprint if ticked) seen from above and merged. At each level the tool's centre may go anywhere in the area that's at least the tool's radius plus the Stock to Leave from any part that comes within the Stock to Leave of the level, so the parts stand as islands with the Stock to Leave on their tops and sides. Where no part is beyond the area's edge, the tool's centre goes right up to the edge (and past it by the Linear Extension). A level is entered at the plunge feed from 1 mm above the level before (the first from 1 mm above the top). The tool stays down from one pass to the next when the move is short and stays in the cleared area, and otherwise lifts to the clearance plane, which must be at least 1 mm above the top. The tool is treated as a plain cylinder at each level. Everything is worked out on a fine grid, so the passes are accurate to a fraction of a millimetre.</p>
 <dl>
   <dt>Stock to Leave</dt>
   <dd>Material left covering the parts, on their tops and their sides: the tool's bottom stays this far above them, and its side this far from them. It also raises each flat face's level by this much. 0 or more.</dd>
-  <dt>Cut Depth Step</dt>
-  <dd>The deepest any level may be below the one above it. The levels come from the geometry first: each flat face of the parts facing up gets a level at its height plus the Stock to Leave, so flat floors are reached exactly, even when they're closer together than the step. Each gap between those levels (and the stock's top and bottom) is then split evenly so no step is deeper than this.</dd>
+  <dt>Linear Extension</dt>
+  <dd>How far past the area's edge the tool's centre travels where the edge is open (no part beyond it), for every pattern, so the edge is cut cleanly. Parts still keep the tool its radius plus the Stock to Leave away. 0 (the default) stops the centre on the edge.</dd>
+  <dt>Cut Pattern: Part Offset</dt>
+  <dd>Loops round the parts at each level, the first the Stock to Leave off them, each further one a stepover further out, cut off at the area's edge. Where a level has no part in it, Stock Offset is used.</dd>
+  <dt>Cut Pattern: Stock Offset</dt>
+  <dd>Loops in from the area's (the stock's) edge, each a stepover further in, cut off where they reach the parts, then a loop round the parts at the Stock to Leave.</dd>
+  <dt>Cut Pattern: Linear</dt>
+  <dd>Straight rows along the Angle of Cuts, a stepover apart, cut off at the parts and the area's edge, then a lap round the edge of the cleared area.</dd>
+  <dt>Cut Direction</dt>
+  <dd>Climb keeps the uncut material on the tool's right (clockwise spindle), Conventional on its left. Mixed: the offset patterns alternate direction from one set of loops to the next (an offset cut off at an edge may be cut from either end), and Linear rows zigzag; the loop round the parts and the final lap are always cut climb.</dd>
+  <dt>Offset: Pocket Start Point</dt>
+  <dd>For Part Offset and Stock Offset. Inside starts nearest the parts and works outwards; Outside (the default) starts at the stock's edge and works in.</dd>
+  <dt>Linear: Start at Bottom / Start at Top</dt>
+  <dd>For Linear. Start the rows at the origin's -Y side or +Y side, as Pocketing's Linear Cuts do.</dd>
+  <dt>Linear: Angle of Cuts</dt>
+  <dd>For Linear: the rows' direction. 90 runs along the origin's X, 0 along its Y.</dd>
+  <dt>Stepover: % Tool Dia / Distance / Scallop</dt>
+  <dd>How far apart the loops or rows are: a percentage of the tool's diameter (at most 100%; 50% is the default), a distance, or from the scallop height, the ridge left between two passes. Scallop works from the tool's corner radius (a ball mill's radius): the stepover is 2 &times; &radic;(h(2r &minus; h)). A flat end mill leaves no scallop, so it steps over 90% of its diameter.</dd>
+</dl>
+</section>
+
+<section id="tab-waterline-levels">
+<h2>Waterline Roughing: Cut Levels tab</h2>
+<p>The levels Waterline Roughing cuts at. This tab is Waterline Roughing's own, not the Cut Levels tab of the 2 1/2 axis operations.</p>
+<dl>
+  <dt>Stepdown: % Tool Dia / Distance / Number of Levels</dt>
+  <dd>The deepest any level may be below the one above it: a percentage of the tool's diameter, a distance (2 mm by default), or the whole depth from the top to the bottom divided into this many levels.</dd>
+  <dt>Cut Levels Order: Level First / Depth First</dt>
+  <dd>Where a level's area is in separate pieces (for example either side of a wall), Depth First (the default) cuts each piece down to the bottom before moving to the next; Level First cuts every piece at one level before going down to the next.</dd>
+  <dt>Cut Levels: Top</dt>
+  <dd>When ticked, the cut starts from this height (in the origin's coordinates) instead of the stock's top (or the parts' top without a stock).</dd>
+  <dt>Cut Levels: Bottom</dt>
+  <dd>When ticked, the cut goes down to this height (in the origin's coordinates) instead of the stock's bottom (or the parts' lowest point without a stock).</dd>
+  <dt>Cut Levels: Clear Flats</dt>
+  <dd>On (the default): each flat face of the parts facing up gets a level at its height plus the Stock to Leave, so flat floors are reached exactly, even when they're closer together than the stepdown, and each gap between those levels and the top and bottom is split evenly so no step is deeper than the stepdown. Off: even steps from the top to the bottom, no deeper than the stepdown, whatever the flats.</dd>
 </dl>
 </section>
 

@@ -232,6 +232,241 @@ TEST_CASE("a level on a flat face is cut even when the face's height rounds up a
     CHECK(lowest == doctest::Approx(shelf + 0.5));      // the shelf's level is the lowest cut
 }
 
+namespace
+{
+    // The cutting moves' ends.
+    std::vector<Vec3> Cuts(const Toolpath& toolpath)
+    {
+        std::vector<Vec3> points;
+        for (const ToolpathMove& move : toolpath.moves)
+        {
+            if (move.kind == MoveKind::Feed && move.feed == 1200)
+                points.push_back(move.to);
+        }
+        return points;
+    }
+}
+
+TEST_CASE("the stepover by percent, distance or scallop, and the stepdown by percent, distance or levels")
+{
+    WaterlineRoughingSettings settings;
+    CHECK(WaterlineStepover(settings, 6, 0) == doctest::Approx(3));
+    settings.stepoverMode = WaterlineStepoverMode::Distance;
+    settings.stepoverDistance = 2.5;
+    CHECK(WaterlineStepover(settings, 6, 0) == doctest::Approx(2.5));
+    settings.stepoverMode = WaterlineStepoverMode::Scallop;
+    settings.scallop = 0.05;
+    CHECK(WaterlineStepover(settings, 6, 3) == doctest::Approx(2.0 * std::sqrt(0.05 * 5.95)));   // a ball mill
+    CHECK(WaterlineStepover(settings, 6, 1) == doctest::Approx(2.0 * std::sqrt(0.05 * 1.95)));   // a corner radius
+    CHECK(WaterlineStepover(settings, 6, 0) == doctest::Approx(5.4));                            // flat: 90%
+
+    CHECK(WaterlineStepdown(settings, 6, 10, 0) == doctest::Approx(2));
+    settings.stepdownMode = WaterlineStepdownMode::Percent;
+    settings.stepdownPercent = 25;
+    CHECK(WaterlineStepdown(settings, 6, 10, 0) == doctest::Approx(1.5));
+    settings.stepdownMode = WaterlineStepdownMode::Levels;
+    settings.levels = 4;
+    CHECK(WaterlineStepdown(settings, 6, 10, 0) == doctest::Approx(2.5));
+}
+
+TEST_CASE("every pattern and direction keeps clear of the part and inside the area")
+{
+    for (WaterlinePattern pattern : { WaterlinePattern::PartOffset, WaterlinePattern::StockOffset, WaterlinePattern::Linear })
+    {
+        for (CutDirection direction : { CutDirection::Climb, CutDirection::Conventional, CutDirection::Mixed })
+        {
+            for (WaterlineStart start : { WaterlineStart::Inside, WaterlineStart::Outside })
+            {
+                SequenceStep step = WaterlineStep();
+                step.waterlineRoughing.pattern = pattern;
+                step.waterlineRoughing.direction = direction;
+                step.waterlineRoughing.start = start;
+                step.waterlineRoughing.cutAngle = 30;
+                const Tool tool = Mill(6);
+                const ToolpathResult result = GenerateWaterlineRoughToolpath(Input(step, tool));
+                INFO("pattern " << static_cast<int>(pattern) << ", direction " << static_cast<int>(direction)
+                                << ", start " << static_cast<int>(start));
+                REQUIRE(result.ok);
+                const std::vector<Vec3> cuts = Cuts(result.toolpath);
+                REQUIRE(cuts.size() > 20);
+                bool atBottom = false;
+                for (const Vec3& p : cuts)
+                {
+                    CHECK(p.x >= -0.2);
+                    CHECK(p.x <= 40.2);
+                    CHECK(p.y >= -0.2);
+                    CHECK(p.y <= 30.2);
+                    if (p.z < 6.5 - 1e-9)
+                        CHECK(DistanceToRectangle(p.x, p.y, 10, 8, 30, 22) >= 3.5 - 0.2);
+                    atBottom = atBottom || std::fabs(p.z) < 1e-9;
+                }
+                CHECK(atBottom);
+            }
+        }
+    }
+}
+
+TEST_CASE("Clear Flats off sticks to the stepdown; Top and Bottom force the cut's range")
+{
+    SequenceStep step = WaterlineStep(0.5, 2.0);
+    step.waterlineRoughing.clearFlats = false;
+    const Tool tool = Mill(6);
+    ToolpathResult result = GenerateWaterlineRoughToolpath(Input(step, tool));
+    REQUIRE(result.ok);
+    for (const Vec3& p : Cuts(result.toolpath))
+    {
+        CHECK(std::fabs(p.z - 6.5) > 1e-6);         // no level at the block's top
+        const double steps = p.z / 2.0;
+        CHECK(std::fabs(steps - std::round(steps)) < 1e-6);     // 8, 6, 4, 2, 0
+    }
+
+    step = WaterlineStep(0.5, 2.0);
+    step.waterlineRoughing.useTop = true;
+    step.waterlineRoughing.top = 8;
+    step.waterlineRoughing.useBottom = true;
+    step.waterlineRoughing.bottom = 4;
+    result = GenerateWaterlineRoughToolpath(Input(step, tool));
+    REQUIRE(result.ok);
+    double lowest = 1e9, highest = -1e9;
+    for (const Vec3& p : Cuts(result.toolpath))
+    {
+        lowest = (std::min)(lowest, p.z);
+        highest = (std::max)(highest, p.z);
+    }
+    CHECK(lowest == doctest::Approx(4));
+    CHECK(highest <= 8.0 + 1e-9);
+    CHECK(highest > 4.0);
+}
+
+TEST_CASE("the linear extension takes the tool past the area's open edges")
+{
+    SequenceStep step = WaterlineStep();
+    step.waterlineRoughing.extension = 2.0;
+    const Tool tool = Mill(6);
+    const ToolpathResult result = GenerateWaterlineRoughToolpath(Input(step, tool));
+    REQUIRE(result.ok);
+    double xLow = 1e9;
+    for (const Vec3& p : Cuts(result.toolpath))
+    {
+        xLow = (std::min)(xLow, p.x);
+        CHECK(p.x >= -2.3);
+        if (p.z < 6.5 - 1e-9)
+            CHECK(DistanceToRectangle(p.x, p.y, 10, 8, 30, 22) >= 3.5 - 0.2);
+    }
+    CHECK(xLow < -1.5);
+}
+
+TEST_CASE("depth first cuts each separate area to the bottom; level first goes level by level")
+{
+    // A full-height wall across the middle splits every level into two.
+    const Tool tool = Mill(6);
+    const auto rises = [&](CutLevelOrder order) {
+        SequenceStep step = WaterlineStep(0.5, 2.0);
+        step.waterlineRoughing.order = order;
+        WaterlineRoughToolpathInput input = Input(step, tool);
+        input.partTriangles = Box({ 18, 0, 0 }, { 22, 30, 10 });
+        input.partMaxZ = 10;
+        const ToolpathResult result = GenerateWaterlineRoughToolpath(input);
+        REQUIRE(result.ok);
+        int count = 0;
+        double last = 1e9;
+        for (const Vec3& p : Cuts(result.toolpath))
+        {
+            if (p.z > last + 1e-6)
+                ++count;
+            last = p.z;
+        }
+        return count;
+    };
+    CHECK(rises(CutLevelOrder::LevelFirst) == 0);
+    CHECK(rises(CutLevelOrder::DepthFirst) == 1);   // once, from the first side's bottom to the second's top
+}
+
+TEST_CASE("every waterline setting saves, and older jobs keep their stepdown")
+{
+    SequenceStep waterline = WaterlineStep(0.75, 1.25);
+    WaterlineRoughingSettings& w = waterline.waterlineRoughing;
+    w.pattern = WaterlinePattern::Linear;
+    w.direction = CutDirection::Mixed;
+    w.start = WaterlineStart::Inside;
+    w.linearStart = PocketLinearStart::Top;
+    w.cutAngle = 45;
+    w.stepoverMode = WaterlineStepoverMode::Scallop;
+    w.stepoverPercent = 40;
+    w.stepoverDistance = 2.5;
+    w.scallop = 0.02;
+    w.extension = 1.5;
+    w.stepdownMode = WaterlineStepdownMode::Levels;
+    w.stepdownPercent = 30;
+    w.levels = 7;
+    w.order = CutLevelOrder::LevelFirst;
+    w.useTop = true;
+    w.top = 9;
+    w.useBottom = true;
+    w.bottom = 1;
+    w.clearFlats = false;
+
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "AlibreCAM-waterline-all-test.cam";
+    Job job;
+    job.assembly.name = "Mould";
+    job.assembly.guid = "{guid}";
+    SequenceStep origin;
+    origin.type = StepType::SetOrigin;
+    origin.id = NewStableId();
+    origin.name = "Set Origin 1";
+    job.sequence.push_back(origin);
+    SequenceStep group;
+    group.type = StepType::Group;
+    group.id = NewStableId();
+    group.name = "Folder 1";
+    waterline.id = NewStableId();
+    waterline.name = "Waterline Roughing 1";
+    group.children.push_back(waterline);
+    job.sequence.push_back(group);
+    REQUIRE(SaveJob(job, path).ok);
+    const LoadResult loaded = LoadJob(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    const SequenceStep& back = loaded.job.sequence[1].children[0];
+    CHECK(SameSettings(waterline, back));
+    const WaterlineRoughingSettings& b = back.waterlineRoughing;
+    CHECK(b.pattern == WaterlinePattern::Linear);
+    CHECK(b.direction == CutDirection::Mixed);
+    CHECK(b.start == WaterlineStart::Inside);
+    CHECK(b.linearStart == PocketLinearStart::Top);
+    CHECK(b.stepoverMode == WaterlineStepoverMode::Scallop);
+    CHECK(b.scallop == 0.02);
+    CHECK(b.extension == 1.5);
+    CHECK(b.stepdownMode == WaterlineStepdownMode::Levels);
+    CHECK(b.levels == 7);
+    CHECK(b.order == CutLevelOrder::LevelFirst);
+    CHECK(b.useTop);
+    CHECK(b.top == 9);
+    CHECK(b.useBottom);
+    CHECK(b.bottom == 1);
+    CHECK_FALSE(b.clearFlats);
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+
+    // A job saved before the Cut Levels tab: just the stock to leave and stepDown.
+    const std::filesystem::path oldPath = std::filesystem::temp_directory_path() / "AlibreCAM-waterline-old-test.cam";
+    {
+        std::string text;
+        {
+            SequenceStep plain = WaterlineStep(0.5, 3.0);
+            plain.id = NewStableId();
+            plain.name = "Waterline Roughing 1";
+            Job oldJob = job;
+            oldJob.sequence[1].children = { plain };
+            REQUIRE(SaveJob(oldJob, oldPath).ok);
+        }
+        LoadResult older = LoadJob(oldPath);
+        REQUIRE(older.status == LoadStatus::Ok);
+        CHECK(older.job.sequence[1].children[0].waterlineRoughing.stepDown == 3.0);
+        CHECK(older.job.sequence[1].children[0].waterlineRoughing.stepdownMode == WaterlineStepdownMode::Distance);
+    }
+    std::filesystem::remove(oldPath, ignored);
+}
+
 TEST_CASE("waterline roughing refuses what it can't do, and saves its settings")
 {
     SequenceStep step = WaterlineStep();
@@ -244,7 +479,9 @@ TEST_CASE("waterline roughing refuses what it can't do, and saves its settings")
     CHECK_FALSE(GenerateWaterlineRoughToolpath(input).ok);
     step.waterlineRoughing.stepDown = 0;
     CHECK_FALSE(GenerateWaterlineRoughToolpath(Input(step, tool)).ok);
-    CHECK_FALSE(ValidateWaterlineRoughing({ -1.0, 2.0 }).empty());
+    WaterlineRoughingSettings bad;
+    bad.stockToLeave = -1.0;
+    CHECK_FALSE(ValidateWaterlineRoughing(bad).empty());
 
     CHECK(IsOperation(StepType::WaterlineRoughing));
     const std::filesystem::path path = std::filesystem::temp_directory_path() / "AlibreCAM-waterline-test.cam";
@@ -303,3 +540,4 @@ TEST_CASE("waterline timing on a 150 x 150 x 30 stock" * doctest::skip())
     MESSAGE("waterline: " << result.toolpath.moves.size() << " moves in "
             << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms");
 }
+

@@ -6134,6 +6134,167 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Fixed.
 
+### 🤖 Claude
+
+> Good. The 3.5 level on the shelf now cuts, so that's confirmed in Alibre. The float-rounding fix and its test are in place, and both builds pass. Nothing is committed.
+
+### 🧑 Frank · 17:04
+
+> Now we need to add additional dialog options for waterline roughing -
+>
+>
+> Group box - Cut Pattern
+> 	- Radios 
+> 		- Part Offset - radial machining around the part
+> 	       	- stock offset - radial machining around the stock
+>        		- linear - left/right or zig zag
+> Group Cut Direction
+> 	- Radios 	
+> 		- Climb
+> 		- conventional, 
+> 		- mixed
+> GrouP "Offset" (when part offset or stock offset is set)
+> 	- label/combo - Pocket Start Point - combo Inside, Outside
+> GrouP "Linear" (when part linear is set)
+> 	- radios
+> 		- start at Bottom
+> 		- start at top
+> 	- label/edit - Angle of Cuts
+> Group Stepover
+> 	- radio/edits
+> 		- % Tool Dia
+> 		- Distance
+> 		- Scallop
+>
+>
+> We will have a Cut Levels tab, specifically for watermark roughing - 
+> Group box - Stepdown
+> 	- radio/edit
+> 		- % Tool Dia
+> 		- Distance
+> 		- Number of Levels - the cut distance is divided up into "number of levels"
+> Group box - Cut levels Order
+> 	- radio
+> 		- Level first
+> 		- depth first (the default)
+> Group box - Cut Levels
+> 	- checkbox/edit - Top - force the cut ceiling
+> 	- checkbox/edit - Bottom - force the cut floor.
+> 	- checkbox - Clear Flats - when on, this specifies to set levels specifically to clear flat surfaces.  When off, stick to step down control.
+
+### 🤖 Claude
+
+> This is a sizeable addition, and a few of the options can be read more than one way. Before I plan it:
+
+> Questions:
+> - How should Part Offset and Stock Offset differ? (Today's loops are offsets of the whole cleared area's edge, so they hug the stock edge and the part together.)
+>   - Part out / stock in: Part Offset: loops are copies of the part's outline (plus stock to leave), each a stepover further out, cut off at the area's edge. Stock Offset: loops are copies of the area/stock edge, each a stepover further in, cut off where they reach the part's clearance. Each pattern finishes with a loop round the parts so nothing is left.
+>   - Like today, two orders: Both use today's loops (offsets of the whole cleared area's edge); Part Offset orders them from the part outwards, Stock Offset from the stock edge inwards.
+> - What does Pocket Start Point Inside / Outside mean for the offset patterns?
+>   - Inside = nearest the part: Inside starts with the loop nearest the part and works outwards; Outside starts at the stock edge and works in. Default Outside (starting in air at open edges).
+>   - Inside = middle of area: Inside starts from the middle of each region (the loop furthest from everything) and works out; Outside starts at the region's edge and works in.
+> - Scallop sets the stepover from a scallop height. A flat end mill leaves no scallop on a flat floor; what should it do?
+>   - Corner radius based: Stepover = 2 x sqrt(h x (2r - h)) with r the tool's corner radius (the ball's radius for a ball mill). A flat end mill (r = 0) can't use Scallop: Generate says to pick % or Distance.
+>   - Flat mill: tool width: As above for ball and corner radius mills; a flat end mill steps over its whole diameter less 10%.
+> - How do Number of Levels and Clear Flats combine, and does Cut Depth Step leave the Waterline tab?
+>   - Steps become a size: Cut Depth Step moves off the Waterline tab to the new Cut Levels tab. % Tool Dia, Distance and Number of Levels (top to bottom / N) each give a step size. Clear Flats on: levels at each flat face plus stock to leave, gaps split to at most that step (today's rule); off: even steps from top to bottom, ignoring flats.
+>   - Levels count is exact: As the first, but with Number of Levels there are exactly N levels top to bottom, and with Clear Flats on the flat levels are added on top of those N.
+
+### 🧑 Frank · 17:06
+
+> Answers:
+> - How should Part Offset and Stock Offset differ? (Today's loops are offsets of the whole cleared area's edge, so they hug the stock edge and the part together.)
+>   **Part out / stock in**
+> - What does Pocket Start Point Inside / Outside mean for the offset patterns?
+>   **Inside = nearest the part**
+> - Scallop sets the stepover from a scallop height. A flat end mill leaves no scallop on a flat floor; what should it do?
+>   **Flat mill: tool width**
+> - How do Number of Levels and Clear Flats combine, and does Cut Depth Step leave the Waterline tab?
+>   **Steps become a size**
+
+### 🤖 Claude
+
+> Now the settings, with the old `stepDown` still read as the stepdown distance so existing jobs keep working:
+
+> The shell choked on the script's quotes, so I'll write it to a file instead:
+
+> Now the new generator:
+
+> The core builds. Now the tests, for the new options plus the existing ones:
+
+> Level First passes, but Depth First didn't rise either, so I'll print the sequence of cut heights to see what it did:
+
+> Only the left side is being cut at all, in both modes. The right side's toolpath is missing, not just out of order. A finer trace:
+
+> The heightfield sees the wall correctly. I'll add a temporary print inside the generator to see the regions it finds at each level:
+
+> The heredoc mangled the `\n` escapes into real line breaks. Fixing those two debug lines:
+
+> Both builds are clean and every test passes. Installing, then the docs:
+
+> Waterline Roughing now has all the options you listed, plus Linear Extension, and the toolpath uses every one of them. Debug and Release both build cleanly and every test passes. **It isn't installed**, because the admin prompt was cancelled, so none of it has run in Alibre yet.
+>
+> **Waterline Roughing tab:**
+> - **Stock to Leave, Linear Extension:** Linear Extension defaults to 0. I took it to mean that where an edge is open, with no part beyond it, the tool's centre travels that far past the edge. It applies to every pattern, and parts still keep the tool their full clearance away. Tell me if you meant it only for the Linear pattern.
+> - **Cut Pattern:**
+>   - **Part Offset:** loops spreading out from the parts a stepover at a time, cut off at the area's edge. A level with no part in it uses Stock Offset instead.
+>   - **Stock Offset:** loops coming in from the stock's edge, cut off where they reach the parts, then a loop around the parts.
+>   - **Linear:** rows along the Angle of Cuts, cut off at the parts and the edge, then a lap around the cleared area.
+> - **Cut Direction:** Climb, Conventional or Mixed. With Mixed, the offset patterns alternate direction from one set of loops to the next, and Linear rows zigzag.
+> - **Offset, Pocket Start Point:** Inside starts nearest the parts; Outside, the default, starts at the stock's edge.
+> - **Linear:** Start at Bottom or Top, and Angle of Cuts.
+> - **Stepover:**
+>   - **% Tool Dia:** default 50%.
+>   - **Distance.**
+>   - **Scallop:** worked out from the tool's corner radius, or a ball mill's radius. A flat end mill steps over 90% of its diameter.
+>
+> **Cut Levels tab** (Waterline's own, not the 2½-axis one):
+> - **Stepdown:**
+>   - % Tool Dia.
+>   - Distance, default 2 mm. Older jobs keep their old Cut Depth Step here.
+>   - Number of Levels, which divides the whole depth.
+> - **Cut Levels Order:**
+>   - **Depth First** (the default): where a level's area splits into separate regions, for example either side of a wall, each region is cut to the bottom before the next.
+>   - **Level First:** every region at one level, then down.
+> - **Cut Levels:**
+>   - **Top** and **Bottom:** check boxes that force the cut's top and bottom, in the origin's coordinates.
+>   - **Clear Flats:** on gives today's rule, a level at each flat face. Off gives even steps only.
+>
+> **Defaults and smaller choices I made:** Stock Offset, Climb, Outside, Start at Bottom, 0° and 50%. Linear's final lap and the loop around the parts for Stock Offset are mine too. The tests found two bugs along the way, both now fixed:
+> - **Missing first loop:** the loop at the stock's edge sat exactly on the clipping boundary and was dropped.
+> - **Wrong region:** loops were simplified before being clipped, so a long straight edge crossing a wall was never cut there. That's why Depth First looked like Level First.
+>
+> A 150 × 150 × 30 mm job now takes about 2.3 s. The help (both tabs), the spec (Claude doc and `docs\SPEC.md`, rev 190) and `CLAUDE.md` are updated. Nothing is committed.
+>
+> To test, after installing and restarting Alibre:
+> 1. Open a Waterline Roughing operation. It should have the new Waterline Roughing tab and a Cut Levels tab. Choosing a pattern and a stepover should enable only the relevant boxes.
+> 2. Try Part Offset, Stock Offset and Linear on a part in a stock, with Inside and Outside, and look at the drawn passes.
+> 3. Try Climb, Conventional and Mixed, and check the directions in the drawn passes.
+> 4. Set Linear Extension to 2. The passes should run 2 mm past the stock's open edges.
+> 5. Try Stepover by Scallop with a ball mill and with a flat end mill.
+> 6. On Cut Levels, try Number of Levels, the Top and Bottom boxes, and Clear Flats off.
+> 7. Try a part with a wall splitting the area, with Depth First and with Level First.
+> 8. Save, close and reopen the job. Every setting should come back. An older job should keep its stepdown.
+> 9. The help has the rewritten Waterline Roughing tab section and a new Waterline Cut Levels section.
+
+### 🧑 Frank · 17:24
+
+> Install it
+
+### 🤖 Claude
+
+> The Waterline Roughing options are installed, and both the add-on and the help match the build. Start Alibre and run through the nine tests from my last message.
+>
+> One thing to check in particular is Linear Extension. I made it apply to every pattern at open edges. Tell me if you meant it only for the Linear pattern.
+
+### 🧑 Frank · 17:27
+
+> Linear extension applies to all patterns.  It effectively expands the boundary into empty space where it can.
+
+### 🤖 Claude
+
+> That matches what's built. I'll record it as confirmed in `CLAUDE.md` and the spec:
+
 ---
 
 # Side conversation

@@ -430,6 +430,35 @@ public:
     bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
 
     enum { IDD = IDD_OP_WATERLINE_ROUGHING };
+
+protected:
+    BOOL OnInitDialog() override;
+    afx_msg void OnChoiceChanged();
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    void UpdateFields();
+};
+
+// The Waterline Roughing operation's own Cut Levels tab.
+class CWaterlineLevelsPage : public COperationPage
+{
+public:
+    explicit CWaterlineLevelsPage(COperationDlg* pOwner);
+
+    void Load(const camcore::SequenceStep& step) override;
+    bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
+
+    enum { IDD = IDD_OP_WATERLINE_LEVELS };
+
+protected:
+    afx_msg void OnChoiceChanged();
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    void UpdateFields();
 };
 
 // The Plunge Roughing operation's own tab.
