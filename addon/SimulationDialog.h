@@ -5,6 +5,8 @@
 
 #include "resource.h"
 
+#include "Simulation.h"
+
 class CCamTabCommand;
 
 class CSimulationDlg : public CDialog
@@ -17,6 +19,10 @@ public:
 
     // A line under the controls, such as operations that were left out.
     void SetNote(const std::wstring& note) { m_note = note; }
+
+    // The resolution last chosen (remembered until Alibre closes), for a stock
+    // whose Resolution slider has these stops.
+    static camcore::SimResolution ChosenResolution(const std::vector<double>& stops);
 
     enum { IDD = IDD_SIMULATION };
 
@@ -36,6 +42,7 @@ protected:
     afx_msg HBRUSH OnCtlColor(CDC* pDC, CWnd* pWnd, UINT ctlColor);
     afx_msg void OnClose();
     afx_msg void OnHelpButton();
+    afx_msg void OnAutoDivide();
 
     DECLARE_MESSAGE_MAP()
 
@@ -45,10 +52,15 @@ private:
     void ShowState();
     size_t MovesPerTick() const;
     void Finish();
+    void ShowResolution();      // greys the slider while Auto divide is on
+    void Restart();             // the stock again at the chosen resolution, cut to the same move
 
     CCamTabCommand* m_pTab;
     CSliderCtrl m_position;
     CSliderCtrl m_speed;
+    CSliderCtrl m_resolution;
+    std::vector<double> m_stops;
+    int m_appliedStop = -1;
     bool m_playing;
     std::wstring m_note;
 };

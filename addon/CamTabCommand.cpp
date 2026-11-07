@@ -55,6 +55,7 @@ namespace
         IDC_CAM_SETTINGS,
         IDC_CAM_HELP,
         IDC_CAM_SHOW_STOCK,
+        IDC_CAM_SHOW_ORIGIN,
 
         // Tree menu commands
         ID_CAM_ADD_ORIGIN,
@@ -790,6 +791,12 @@ void CCamTabCommand::SetStockShown(bool shown)
     RebuildScene();
 }
 
+void CCamTabCommand::SetOriginShown(bool shown)
+{
+    m_scene.originShown = shown;
+    RebuildScene();
+}
+
 void CCamTabCommand::BeginPartSelect()
 {
     SelectionFilter wanted;
@@ -1435,10 +1442,15 @@ void CCamTabCommand::SimulateOperations(std::vector<StepRef> refs)
     {
         CWaitCursor wait;
         const ULONGLONG start = GetTickCount64();
-        m_simulation.Start(box, triangles, operations);
-        Log(L"[simulate] %zu operations, %zu moves, %d x %d x %d cells of %g mm, ready in %llu ms", operations.size(),
-            m_simulation.Moves().size(), m_simulation.Stock().SizeX(), m_simulation.Stock().SizeY(),
-            m_simulation.Stock().SizeZ(), m_simulation.Stock().Cell(), GetTickCount64() - start);
+        m_simulationBox = box;
+        m_simulationTriangles = triangles;
+        m_simulation.Start(box, triangles, operations,
+                           CSimulationDlg::ChosenResolution(camcore::ResolutionStops(box)));
+        Log(L"[simulate] %zu operations, %zu moves, %d x %d x %d cells of %g mm (%s), %d mixed bricks, ready in %llu ms",
+            operations.size(), m_simulation.Moves().size(), m_simulation.Stock().SizeX(),
+            m_simulation.Stock().SizeY(), m_simulation.Stock().SizeZ(), m_simulation.Stock().Cell(),
+            m_simulation.Stock().Divided() ? L"divided" : L"undivided", m_simulation.Stock().MixedBricks(),
+            GetTickCount64() - start);
     }
     m_simulationChunks.assign(static_cast<size_t>(m_simulation.Stock().ChunkCount()), camcore::StockMesh());
     m_simulationMesh = camcore::StockMesh();
@@ -1459,21 +1471,33 @@ void CCamTabCommand::SimulateOperations(std::vector<StepRef> refs)
     OnSimulationChanged();
 }
 
+void CCamTabCommand::RestartSimulation(const camcore::SimResolution& resolution)
+{
+    const ULONGLONG start = GetTickCount64();
+    const size_t position = m_simulation.Position();
+    const std::vector<camcore::SimOperation> operations = m_simulation.Operations();
+    m_simulation.Start(m_simulationBox, m_simulationTriangles, operations, resolution);
+    m_simulation.SeekTo(position);
+    m_simulationChunks.assign(static_cast<size_t>(m_simulation.Stock().ChunkCount()), camcore::StockMesh());
+    m_simulationMesh = camcore::StockMesh();
+    Log(L"[simulate] restarted: %d x %d x %d cells of %g mm (%s), cut to move %zu, %d mixed bricks, in %llu ms",
+        m_simulation.Stock().SizeX(), m_simulation.Stock().SizeY(), m_simulation.Stock().SizeZ(),
+        m_simulation.Stock().Cell(), m_simulation.Stock().Divided() ? L"divided" : L"undivided", position,
+        m_simulation.Stock().MixedBricks(), GetTickCount64() - start);
+    OnSimulationChanged();
+}
+
 void CCamTabCommand::UpdateSimulationScene()
 {
     // Each chunk that changed is meshed again, and the chunks joined into one mesh.
+    // The changed chunks are meshed on all cores.
     camcore::VoxelStock& stock = m_simulation.Stock();
-    bool changed = false;
     const ULONGLONG start = GetTickCount64();
-    for (int c = 0; c < stock.ChunkCount() && static_cast<size_t>(c) < m_simulationChunks.size(); ++c)
-    {
-        if (!stock.ChunkDirty(c))
-            continue;
-        m_simulationChunks[static_cast<size_t>(c)] = camcore::MeshChunk(stock, c);
+    const std::vector<int> dirty = camcore::DirtyChunks(stock);
+    camcore::MeshChunks(stock, dirty, m_simulationChunks);
+    for (int c : dirty)
         stock.SetChunkClean(c);
-        changed = true;
-    }
-    if (changed)
+    if (!dirty.empty())
     {
         m_simulationMesh = camcore::StockMesh();
         for (const camcore::StockMesh& chunk : m_simulationChunks)
@@ -1492,7 +1516,8 @@ void CCamTabCommand::UpdateSimulationScene()
         }
         const ULONGLONG took = GetTickCount64() - start;
         if (took > 200)
-            Log(L"[simulate] meshed %zu triangles in %llu ms", m_simulationMesh.TriangleCount(), took);
+            Log(L"[simulate] meshed %zu chunks, %zu triangles in all, in %llu ms, %d mixed bricks", dirty.size(),
+                m_simulationMesh.TriangleCount(), took, stock.MixedBricks());
     }
 
     m_scene.simMesh = &m_simulationMesh;
@@ -3124,6 +3149,7 @@ BEGIN_MESSAGE_MAP(CCamTabWnd, CWnd)
     ON_BN_CLICKED(IDC_CAM_FOREGROUND, &CCamTabWnd::OnForeground)
     ON_BN_CLICKED(IDC_CAM_SHOW_TOOLPATHS, &CCamTabWnd::OnShowToolpaths)
     ON_BN_CLICKED(IDC_CAM_SHOW_STOCK, &CCamTabWnd::OnShowStock)
+    ON_BN_CLICKED(IDC_CAM_SHOW_ORIGIN, &CCamTabWnd::OnShowOrigin)
     ON_NOTIFY(TBN_GETINFOTIP, IDC_CAM_TOOLBAR, &CCamTabWnd::OnToolbarTip)
     ON_NOTIFY(TBN_GETINFOTIP, IDC_CAM_SETTINGS_BAR, &CCamTabWnd::OnToolbarTip)
     ON_BN_CLICKED(IDC_CAM_SETTINGS, &CCamTabWnd::OnSettings)
@@ -3202,17 +3228,17 @@ int CCamTabWnd::OnCreate(LPCREATESTRUCT pCreate)
     m_toolbar.Create(WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_TOOLTIPS | CCS_NODIVIDER | CCS_NORESIZE |
                          CCS_NOPARENTALIGN,
                      CRect(0, 0, 10, 10), this, IDC_CAM_TOOLBAR);
-    TBBUTTON buttons[3] = {};
-    const int commands[3] = { IDC_CAM_FOREGROUND, IDC_CAM_SHOW_TOOLPATHS, IDC_CAM_SHOW_STOCK };
-    const int images[3] = { 0, 1, 4 };
-    for (int i = 0; i < 3; ++i)
+    TBBUTTON buttons[4] = {};
+    const int commands[4] = { IDC_CAM_FOREGROUND, IDC_CAM_SHOW_TOOLPATHS, IDC_CAM_SHOW_STOCK, IDC_CAM_SHOW_ORIGIN };
+    const int images[4] = { 0, 1, 4, 5 };
+    for (int i = 0; i < 4; ++i)
     {
         buttons[i].iBitmap = images[i];
         buttons[i].idCommand = commands[i];
         buttons[i].fsState = TBSTATE_ENABLED | TBSTATE_CHECKED;     // all start on
         buttons[i].fsStyle = BTNS_CHECK;
     }
-    m_toolbar.AddButtons(3, buttons);
+    m_toolbar.AddButtons(4, buttons);
 
     // Help, and the gear that opens the Settings dialog, are a toolbar of their own, kept at the right.
     m_settingsBar.Create(WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_TOOLTIPS | CCS_NODIVIDER | CCS_NORESIZE |
@@ -3434,6 +3460,12 @@ void CCamTabWnd::OnShowStock()
         m_pTab->SetStockShown(m_toolbar.IsButtonChecked(IDC_CAM_SHOW_STOCK) != FALSE);
 }
 
+void CCamTabWnd::OnShowOrigin()
+{
+    if (m_pTab != nullptr)
+        m_pTab->SetOriginShown(m_toolbar.IsButtonChecked(IDC_CAM_SHOW_ORIGIN) != FALSE);
+}
+
 void CCamTabWnd::ShowStock(const camcore::Stock& stock)
 {
     if (m_hStock == nullptr)
@@ -3457,6 +3489,7 @@ void CCamTabWnd::OnToolbarTip(NMHDR* pNotify, LRESULT* pResult)
                           : (pTip->iItem == IDC_CAM_SETTINGS)       ? L"Settings"
                           : (pTip->iItem == IDC_CAM_HELP)           ? L"Help"
                           : (pTip->iItem == IDC_CAM_SHOW_STOCK)     ? L"Show stock"
+                          : (pTip->iItem == IDC_CAM_SHOW_ORIGIN)    ? L"Show origin"
                                                                     : L"";
     if (pTip->pszText != nullptr && pTip->cchTextMax > 0)
         wcsncpy_s(pTip->pszText, pTip->cchTextMax, text, _TRUNCATE);

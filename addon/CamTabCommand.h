@@ -71,6 +71,7 @@ public:
     void EditStock();
     void DeleteStock();
     void SetStockShown(bool shown);
+    void SetOriginShown(bool shown);
 
     // From the Part Box Stock dialog
     void BeginPartSelect();
@@ -112,6 +113,8 @@ public:
     void Simulate(const StepRef& scope);
     void SimulateOperations(std::vector<StepRef> refs);
     camcore::Simulation& GetSimulation() { return m_simulation; }
+    std::vector<double> SimulationStops() const { return camcore::ResolutionStops(m_simulationBox); }
+    void RestartSimulation(const camcore::SimResolution& resolution);   // and cut back to the same move
     void OnSimulationChanged();             // the stock or tool moved: mesh again and redraw
     void OnSimulationDialogDone(CSimulationDlg* pDialog);
 
@@ -272,6 +275,8 @@ private:
     // The simulation, while its dialog is open, and its stock's mesh, chunk by chunk and joined.
     CSimulationDlg* m_pSimulationDlg;
     camcore::Simulation m_simulation;
+    camcore::StockBox m_simulationBox;                  // the stock it started from, to start again
+    std::vector<camcore::Vec3> m_simulationTriangles;
     std::vector<camcore::StockMesh> m_simulationChunks;
     camcore::StockMesh m_simulationMesh;
 
@@ -332,6 +337,7 @@ protected:
     afx_msg void OnForeground();
     afx_msg void OnShowToolpaths();
     afx_msg void OnShowStock();
+    afx_msg void OnShowOrigin();
     afx_msg void OnToolbarTip(NMHDR* pNotify, LRESULT* pResult);
     afx_msg void OnSettings();
     afx_msg void OnHelp();

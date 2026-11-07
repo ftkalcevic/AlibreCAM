@@ -45,6 +45,7 @@ struct CamScene
     std::vector<camcore::LineSegment> stockEdges;
     bool showStock = true;          // off while picking
     bool stockShown = true;         // the toolbar's Show Stock
+    bool originShown = true;        // the toolbar's Show Origin: the active origin's axes and plane
 
     // The simulation, while its dialog is open: the cut stock as one mesh in
     // assembly mm (in place of the stock's edges), the tool where it is, and a

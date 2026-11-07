@@ -2,6 +2,7 @@
 
 #include <doctest/doctest.h>
 
+#include <chrono>
 #include <cmath>
 
 #include "Simulation.h"
@@ -11,10 +12,10 @@ using namespace camcore;
 namespace
 {
     // A 20 x 20 x 10 box from the origin, in 0.5 mm cells.
-    VoxelStock Block(double cell = 0.5)
+    VoxelStock Block(double cell = 0.5, bool divide = true)
     {
         VoxelStock stock;
-        stock.Reset({ { 0, 0, 0 }, { 20, 20, 10 } }, cell);
+        stock.Reset({ { 0, 0, 0 }, { 20, 20, 10 } }, cell, divide);
         stock.FillAll();
         return stock;
     }
@@ -58,12 +59,16 @@ namespace
     const Vec3 kUp{ 0, 0, 1 };
 }
 
-TEST_CASE("the cell size keeps the grid within the budget")
+TEST_CASE("the resolution stops keep the grid within the budget, and auto divide goes finer")
 {
     const StockBox box{ { 0, 0, 0 }, { 300, 200, 50 } };
-    CHECK(ChooseCellSize(box, 2.0e8) == doctest::Approx(0.25));     // 1200 x 800 x 200
-    CHECK(ChooseCellSize(box, 1.0e6) == doctest::Approx(2));        // 150 x 100 x 25
-    CHECK(ChooseCellSize({ { 0, 0, 0 }, { 10, 10, 10 } }, 2.0e8) == doctest::Approx(0.1));
+    const std::vector<double> stops = ResolutionStops(box, 2.0e8);
+    REQUIRE(stops.size() == 7);
+    CHECK(stops.front() == doctest::Approx(0.25));      // 1200 x 800 x 200
+    CHECK(stops.back() == doctest::Approx(10));
+    CHECK(ResolutionStops(box, 1.0e6).front() == doctest::Approx(2));    // 150 x 100 x 25
+    CHECK(AutoDivideCell(box) == doctest::Approx(0.1));             // 3000 x 2000 columns
+    CHECK(AutoDivideCell({ { 0, 0, 0 }, { 136, 150, 6 } }) == doctest::Approx(0.05));
 }
 
 TEST_CASE("a box fills completely, and a box mesh fills the same cells")
@@ -217,7 +222,7 @@ TEST_CASE("stepping cuts move by move, and seeking matches stepping")
         Move(MoveKind::Feed, { 15, 10, 8 }), Move(MoveKind::Rapid, { 15, 10, 15 }),
     };
     Simulation simulation;
-    simulation.Start({ { 0, 0, 0 }, { 20, 20, 10 } }, {}, { Operation(Flat(4), moves) }, 1.0e5);
+    simulation.Start({ { 0, 0, 0 }, { 20, 20, 10 } }, {}, { Operation(Flat(4), moves) }, SimResolution{ true, 0.5 });
     REQUIRE(simulation.Moves().size() == 4);
     const long long whole = simulation.Stock().Count();
 
@@ -246,7 +251,7 @@ TEST_CASE("a rapid through stock stops with a warning")
         Move(MoveKind::Feed, { 15, 10, 5 }),
     };
     Simulation simulation;
-    simulation.Start({ { 0, 0, 0 }, { 20, 20, 10 } }, {}, { Operation(Flat(4), moves) }, 1.0e5);
+    simulation.Start({ { 0, 0, 0 }, { 20, 20, 10 } }, {}, { Operation(Flat(4), moves) }, SimResolution{ true, 0.5 });
     CHECK(simulation.RunToEnd() == 2);
     CHECK(simulation.HasWarning());
     CHECK(simulation.WarningMove() == 1);
@@ -262,7 +267,7 @@ TEST_CASE("arcs become chords, and operations run in their own frames")
 
     SimOperation operation = Operation(Flat(2), moves);
     Simulation simulation;
-    simulation.Start({ { 0, 0, 0 }, { 20, 20, 10 } }, {}, { operation }, 1.0e5);
+    simulation.Start({ { 0, 0, 0 }, { 20, 20, 10 } }, {}, { operation }, SimResolution{ true, 0.5 });
     CHECK(simulation.Moves().size() > 5);       // the half circle in many chords
     simulation.RunToEnd();
     CHECK_FALSE(simulation.HasWarning());
@@ -272,7 +277,260 @@ TEST_CASE("arcs become chords, and operations run in their own frames")
 
     // The same in a frame moved 2 up: the cut is 2 higher.
     operation.frame.origin = { 0, 0, 2 };
-    simulation.Start({ { 0, 0, 0 }, { 20, 20, 10 } }, {}, { operation }, 1.0e5);
+    simulation.Start({ { 0, 0, 0 }, { 20, 20, 10 } }, {}, { operation }, SimResolution{ true, 0.5 });
     simulation.RunToEnd();
     CHECK(FilledAt(simulation.Stock(), 10, 5, 9));
+}
+
+namespace
+{
+    bool SameCells(const VoxelStock& a, const VoxelStock& b)
+    {
+        if (a.SizeX() != b.SizeX() || a.SizeY() != b.SizeY() || a.SizeZ() != b.SizeZ())
+            return false;
+        for (int w = 0; w < a.WordsZ(); ++w)
+        {
+            for (int j = 0; j < a.SizeY(); ++j)
+            {
+                for (int i = 0; i < a.SizeX(); ++i)
+                {
+                    if (a.Word(i, j, w) != b.Word(i, j, w))
+                        return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    std::vector<ToolProfile> EveryToolType()
+    {
+        std::vector<ToolProfile> profiles;
+        for (ToolType type : { ToolType::FlatEndMill, ToolType::BallMill, ToolType::CornerRadiusMill, ToolType::VMill,
+                               ToolType::ChamferMill, ToolType::TaperMill, ToolType::ThreadMill, ToolType::Drill })
+        {
+            Tool tool;
+            tool.type = type;
+            tool.diameter = 6;
+            tool.overallLength = 30;
+            tool.cornerRadius = 1;
+            tool.includedAngle = 90;
+            tool.tipDiameter = 1;
+            tool.taperAngle = 10;
+            tool.pointAngle = 118;
+            profiles.push_back(ProfileOf(tool));
+        }
+        return profiles;
+    }
+
+    // A few cuts: a plunge, a slot, a ramp, and a diagonal.
+    void SomeCuts(VoxelStock& stock, const ToolProfile& profile, const Vec3& axis, bool generalOnly)
+    {
+        const double flip = axis.z;     // with the tool pointing down, the tip is at the bottom of the cut
+        const double top = (flip > 0) ? 0.0 : 10.0;
+        const auto z = [&](double depth) { return (flip > 0) ? 10.0 - depth : depth; };
+        (void)top;
+        CutMove(stock, profile, { 5, 5, z(-5) }, { 5, 5, z(3) }, axis, generalOnly);
+        CutMove(stock, profile, { 3, 12, z(2) }, { 17, 12, z(2) }, axis, generalOnly);
+        CutMove(stock, profile, { 4, 17, z(0) }, { 16, 17, z(4.3) }, axis, generalOnly);
+        CutMove(stock, profile, { 12.3, 2.1, z(1.7) }, { 18.9, 9.4, z(1.7) }, axis, generalOnly);
+    }
+}
+
+TEST_CASE("the height where a tool reaches a radius is the inverse of its radius")
+{
+    for (const ToolProfile& profile : EveryToolType())
+    {
+        for (double h : { 0.0, 0.3, 0.9, 1.7, 2.5, 4.0, 8.0 })
+        {
+            const double r = profile.RadiusAt(h);
+            if (r <= 0.0)
+                continue;
+            const double back = profile.HeightForRadius(r);
+            REQUIRE(back >= 0.0);
+            CHECK(profile.RadiusAt(back) == doctest::Approx(r).epsilon(1e-6));
+            CHECK(back <= h + 1e-9);
+        }
+        CHECK(profile.HeightForRadius(profile.radius + 0.1) < 0.0);
+    }
+}
+
+TEST_CASE("the column at a time cut matches the cell by cell one, both ways up")
+{
+    for (const ToolProfile& profile : EveryToolType())
+    {
+        for (const Vec3& axis : { Vec3{ 0, 0, 1 }, Vec3{ 0, 0, -1 } })
+        {
+            VoxelStock fast = Block(0.25);
+            VoxelStock general = Block(0.25);
+            SomeCuts(fast, profile, axis, false);
+            SomeCuts(general, profile, axis, true);
+            CHECK(fast.Count() < Block(0.25).Count());
+            CHECK(SameCells(fast, general));
+        }
+    }
+}
+
+TEST_CASE("divided and undivided stock cut the same")
+{
+    for (const ToolProfile& profile : EveryToolType())
+    {
+        VoxelStock divided = Block(0.25, true);
+        VoxelStock dense = Block(0.25, false);
+        SomeCuts(divided, profile, kUp, false);
+        SomeCuts(dense, profile, kUp, false);
+        CHECK(SameCells(divided, dense));
+        CHECK(divided.Count() == dense.Count());
+
+        // Sideways too.
+        VoxelStock dividedX = Block(0.25, true);
+        VoxelStock denseX = Block(0.25, false);
+        CutMove(dividedX, profile, { 25, 10, 5 }, { 15, 12, 4 }, { 1, 0, 0 });
+        CutMove(denseX, profile, { 25, 10, 5 }, { 15, 12, 4 }, { 1, 0, 0 });
+        CHECK(SameCells(dividedX, denseX));
+    }
+
+    // And an imported shape.
+    VoxelStock divided;
+    divided.Reset({ { 0, 0, 0 }, { 20, 20, 10 } }, 0.25, true);
+    divided.FillMesh(BoxMesh({ 2, 3, 1 }, { 17, 15, 9 }));
+    VoxelStock dense;
+    dense.Reset({ { 0, 0, 0 }, { 20, 20, 10 } }, 0.25, false);
+    dense.FillMesh(BoxMesh({ 2, 3, 1 }, { 17, 15, 9 }));
+    CHECK(SameCells(divided, dense));
+    CHECK(divided.Count() == 60LL * 48 * 32);
+}
+
+TEST_CASE("bricks are split only where cut, and merge again when they're cut away")
+{
+    VoxelStock stock;
+    stock.Reset({ { 0, 0, 0 }, { 40, 40, 10 } }, 0.25, true);     // 160 x 160 x 40 cells: 20 x 20 x 1 bricks
+    stock.FillAll();
+    CHECK(stock.MixedBricks() == 0);
+    CHECK(stock.FullBricks() == 400);
+
+    // A 2 mm plunge at a brick's middle touches just that brick.
+    CutMove(stock, Flat(1), { 1, 1, 20 }, { 1, 1, 8 }, kUp);
+    CHECK(stock.MixedBricks() == 1);
+
+    // Facing everything down to below the bottom empties every brick.
+    for (double y = 0; y <= 40; y += 4)
+        CutMove(stock, Flat(6), { -5, y, -1 }, { 45, y, -1 }, kUp);
+    CHECK(stock.Count() == 0);
+    CHECK(stock.MixedBricks() == 0);
+    CHECK(stock.FullBricks() == 0);
+
+    // Undivided stock keeps its words.
+    VoxelStock dense;
+    dense.Reset({ { 0, 0, 0 }, { 40, 40, 10 } }, 0.25, false);
+    dense.FillAll();
+    CHECK(dense.MixedBricks() == 400);
+}
+
+TEST_CASE("meshing the changed chunks on all cores gives the same meshes as one at a time")
+{
+    VoxelStock stock;
+    stock.Reset({ { 0, 0, 0 }, { 30, 30, 10 } }, 0.1, true);
+    stock.FillAll();
+    for (int c = 0; c < stock.ChunkCount(); ++c)
+        stock.SetChunkClean(c);     // as if it had been meshed
+    CutMove(stock, Flat(6), { 3, 3, 8 }, { 27, 21, 8 }, kUp);
+    CutMove(stock, ProfileOf([] { Tool t; t.type = ToolType::BallMill; t.diameter = 4; t.overallLength = 30; return t; }()),
+            { 25, 5, 15 }, { 25, 5, 6 }, kUp);
+    const std::vector<int> dirty = DirtyChunks(stock);
+    CHECK_FALSE(dirty.empty());
+    CHECK(dirty.size() < static_cast<size_t>(stock.ChunkCount()));
+
+    std::vector<StockMesh> meshes;
+    MeshChunks(stock, dirty, meshes);
+    REQUIRE(meshes.size() == static_cast<size_t>(stock.ChunkCount()));
+    for (int c : dirty)
+    {
+        const StockMesh one = MeshChunk(stock, c);
+        CHECK(meshes[static_cast<size_t>(c)].vertices == one.vertices);
+        CHECK(meshes[static_cast<size_t>(c)].faces == one.faces);
+    }
+}
+
+TEST_CASE("an empty chunk has no faces, and a tall stock meshes word by word")
+{
+    VoxelStock stock;
+    stock.Reset({ { 0, 0, 0 }, { 10, 10, 20 } }, 0.1, true);     // 100 x 100 x 200 cells: 4 x 4 x 4 chunks
+    stock.FillAll();
+    size_t triangles = 0;
+    for (int c = 0; c < stock.ChunkCount(); ++c)
+        triangles += MeshChunk(stock, c).TriangleCount();
+    // Every chunk on the outside shows a rectangle on each outside face.
+    // Sides: 4 sides x 4 across x 4 up; top and bottom: 2 x 16.
+    CHECK(triangles == (4 * 4 * 4 + 2 * 16) * 2);
+
+    CutMove(stock, Flat(30), { 5, 5, -1 }, { 5, 5, -1 }, kUp);
+    CHECK(stock.Count() == 0);
+    for (int c = 0; c < stock.ChunkCount(); ++c)
+        CHECK(MeshChunk(stock, c).TriangleCount() == 0);
+}
+
+TEST_CASE("a simulation can be started undivided at a chosen cell, and rewinds either way")
+{
+    const std::vector<ToolpathMove> moves = {
+        Move(MoveKind::Rapid, { 5, 10, 15 }), Move(MoveKind::Feed, { 5, 10, 8 }), Move(MoveKind::Feed, { 15, 10, 8 }),
+    };
+    for (bool divide : { true, false })
+    {
+        Simulation simulation;
+        simulation.Start({ { 0, 0, 0 }, { 20, 20, 10 } }, {}, { Operation(Flat(4), moves) },
+                         SimResolution{ divide, 0.2 });
+        CHECK(simulation.Stock().Cell() == doctest::Approx(0.2));
+        CHECK(simulation.Stock().Divided() == divide);
+        const long long whole = simulation.Stock().Count();
+        simulation.RunToEnd();
+        CHECK(simulation.Stock().Count() < whole);
+        simulation.Rewind();
+        CHECK(simulation.Stock().Count() == whole);
+    }
+}
+
+// Run by name (-tc="simulation timing*") to see how long a realistic job takes.
+TEST_CASE("simulation timing on a 136 x 150 x 6 stock" * doctest::skip())
+{
+    std::vector<ToolpathMove> moves = { Move(MoveKind::Rapid, { -5, 0, 10 }) };
+    for (double depth : { 5.5, 5.0 })
+    {
+        for (double y = 0; y <= 150; y += 4)
+        {
+            moves.push_back(Move(MoveKind::Rapid, { -5, y, 10 }));
+            moves.push_back(Move(MoveKind::Feed, { -5, y, depth }));
+            moves.push_back(Move(MoveKind::Feed, { 141, y, depth }));
+            moves.push_back(Move(MoveKind::Rapid, { 141, y, 10 }));
+        }
+    }
+    for (bool divide : { true, false })
+    {
+        const auto t0 = std::chrono::steady_clock::now();
+        Simulation simulation;
+        simulation.Start({ { 0, 0, 0 }, { 136, 150, 6 } }, {}, { Operation(Flat(6), moves) },
+                         SimResolution{ divide, 0.0 });
+        const auto t1 = std::chrono::steady_clock::now();
+        std::vector<StockMesh> meshes;
+        const auto meshAll = [&]() {
+            std::vector<int> all(static_cast<size_t>(simulation.Stock().ChunkCount()));
+            for (size_t c = 0; c < all.size(); ++c)
+                all[c] = static_cast<int>(c);
+            MeshChunks(simulation.Stock(), all, meshes);
+            size_t count = 0;
+            for (const StockMesh& mesh : meshes)
+                count += mesh.TriangleCount();
+            return count;
+        };
+        const size_t triangles = meshAll();
+        const auto t2 = std::chrono::steady_clock::now();
+        simulation.RunToEnd();
+        const auto t3 = std::chrono::steady_clock::now();
+        const size_t after = meshAll();
+        const auto t4 = std::chrono::steady_clock::now();
+        const auto ms = [](auto a, auto b) { return std::chrono::duration_cast<std::chrono::milliseconds>(b - a).count(); };
+        MESSAGE(std::string(divide ? "divided" : "undivided") << " cell " << simulation.Stock().Cell() << ": start "
+                << ms(t0, t1) << " ms, mesh " << triangles << " in " << ms(t1, t2) << " ms, cut "
+                << simulation.Moves().size() << " moves in " << ms(t2, t3) << " ms, mesh " << after << " in "
+                << ms(t3, t4) << " ms, mixed bricks " << simulation.Stock().MixedBricks());
+    }
 }

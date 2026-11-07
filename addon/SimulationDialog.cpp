@@ -20,6 +20,17 @@ namespace
 
     CPoint g_lastPosition(-1, -1);
     int g_lastSpeed = 40;
+    bool g_autoDivide = true;
+    int g_resolutionStop = -1;      // the slider's stop, fine to coarse; -1 is the middle
+
+    int StopIndex(const std::vector<double>& stops)
+    {
+        if (stops.empty())
+            return 0;
+        if (g_resolutionStop < 0)
+            return static_cast<int>(stops.size() / 2);
+        return (std::min)(g_resolutionStop, static_cast<int>(stops.size()) - 1);
+    }
 
     std::wstring WithCommas(size_t value)
     {
@@ -37,6 +48,7 @@ BEGIN_MESSAGE_MAP(CSimulationDlg, CDialog)
     ON_BN_CLICKED(IDC_SIM_PLAY, &CSimulationDlg::OnPlay)
     ON_BN_CLICKED(IDC_SIM_OPERATION_END, &CSimulationDlg::OnOperationEnd)
     ON_BN_CLICKED(IDC_SIM_END, &CSimulationDlg::OnEnd)
+    ON_BN_CLICKED(IDC_SIM_AUTO_DIVIDE, &CSimulationDlg::OnAutoDivide)
     ON_WM_HSCROLL()
     ON_WM_TIMER()
     ON_WM_CTLCOLOR()
@@ -46,6 +58,15 @@ END_MESSAGE_MAP()
 void CSimulationDlg::OnHelpButton()
 {
     ShowHelp(L"simulation");
+}
+
+camcore::SimResolution CSimulationDlg::ChosenResolution(const std::vector<double>& stops)
+{
+    camcore::SimResolution resolution;
+    resolution.autoDivide = g_autoDivide;
+    if (!g_autoDivide && !stops.empty())
+        resolution.cell = stops[static_cast<size_t>(StopIndex(stops))];
+    return resolution;
 }
 
 CSimulationDlg::CSimulationDlg(CCamTabCommand* pTab)
@@ -68,6 +89,17 @@ BOOL CSimulationDlg::OnInitDialog()
     m_speed.SubclassDlgItem(IDC_SIM_SPEED, this);
     m_speed.SetRange(0, kSpeedSteps);
     m_speed.SetPos(g_lastSpeed);
+
+    // Resolution: Auto divide, or a stop from fine to coarse.
+    m_resolution.SubclassDlgItem(IDC_SIM_RESOLUTION, this);
+    if (m_pTab != nullptr)
+        m_stops = m_pTab->SimulationStops();
+    m_resolution.SetRange(0, (std::max)(1, static_cast<int>(m_stops.size()) - 1));
+    m_resolution.SetTicFreq(1);
+    m_appliedStop = StopIndex(m_stops);
+    m_resolution.SetPos(m_appliedStop);
+    CheckDlgButton(IDC_SIM_AUTO_DIVIDE, g_autoDivide ? BST_CHECKED : BST_UNCHECKED);
+    ShowResolution();
 
     if (m_pTab != nullptr)
     {
@@ -125,10 +157,7 @@ void CSimulationDlg::ShowState()
     SetDlgItemText(IDC_SIM_STATUS, status.c_str());
     m_position.SetPos(static_cast<int>((std::min)(simulation.Position(), size_t(0x7FFFFFFF))));
 
-    wchar_t cells[160];
-    swprintf_s(cells, L"Cells %g mm (%d x %d x %d). ", simulation.Stock().Cell(), simulation.Stock().SizeX(),
-               simulation.Stock().SizeY(), simulation.Stock().SizeZ());
-    SetDlgItemText(IDC_SIM_INFO, (std::wstring(cells) + m_note).c_str());
+    SetDlgItemText(IDC_SIM_INFO, m_note.c_str());
 
     const size_t speed = MovesPerTick();
     SetDlgItemText(IDC_SIM_SPEED_TEXT, (WithCommas(speed) + (speed == 1 ? L" move a step" : L" moves a step")).c_str());
@@ -147,6 +176,30 @@ void CSimulationDlg::ShowState()
     GetDlgItem(IDC_SIM_OPERATION_END)->EnableWindow(more);
     GetDlgItem(IDC_SIM_END)->EnableWindow(more);
     GetDlgItem(IDC_SIM_PLAY)->EnableWindow(more || m_playing);
+}
+
+void CSimulationDlg::OnAutoDivide()
+{
+    g_autoDivide = IsDlgButtonChecked(IDC_SIM_AUTO_DIVIDE) == BST_CHECKED;
+    ShowResolution();
+    Restart();
+}
+
+void CSimulationDlg::ShowResolution()
+{
+    const BOOL slider = (!g_autoDivide && m_stops.size() > 1) ? TRUE : FALSE;
+    for (int id : { IDC_SIM_RESOLUTION, IDC_SIM_RESOLUTION_LABEL, IDC_SIM_FINE, IDC_SIM_MEDIUM, IDC_SIM_COARSE })
+        GetDlgItem(id)->EnableWindow(slider);
+}
+
+void CSimulationDlg::Restart()
+{
+    Stop();
+    if (m_pTab == nullptr)
+        return;
+    CWaitCursor wait;
+    m_pTab->RestartSimulation(ChosenResolution(m_stops));
+    ShowState();
 }
 
 void CSimulationDlg::OnRewind()
@@ -235,6 +288,18 @@ void CSimulationDlg::OnHScroll(UINT code, UINT position, CScrollBar* pScrollBar)
     {
         g_lastSpeed = m_speed.GetPos();
         ShowState();
+        return;
+    }
+
+    // A new resolution starts again when the slider is let go at a different stop.
+    if (pScrollBar->GetSafeHwnd() == m_resolution.GetSafeHwnd())
+    {
+        if (code != TB_THUMBTRACK && m_resolution.GetPos() != m_appliedStop)
+        {
+            g_resolutionStop = m_resolution.GetPos();
+            m_appliedStop = g_resolutionStop;
+            Restart();
+        }
         return;
     }
 

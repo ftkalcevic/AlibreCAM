@@ -362,7 +362,7 @@ void CCamViewCommand::DrawScene(IADAddOnCanvasDisplay* pCanvas, const CamScene& 
         }
     }
 
-    if (!scene.hasOrigin)
+    if (!scene.hasOrigin || !scene.originShown)
         return;
 
     const camcore::Frame& frame = scene.origin;

@@ -111,6 +111,8 @@
   <dd>Shows or hides every toolpath. Boundaries and picked feature outlines stay visible. On by default, and not saved.</dd>
   <dt>Show stock</dt>
   <dd>Shows or hides the stock's edges. On by default, and not saved.</dd>
+  <dt>Show origin</dt>
+  <dd>Shows or hides the active origin's axes and its plane. Turn it off when the axes lie over an edge you want to pick. On by default, and not saved.</dd>
   <dt>? (Help)</dt>
   <dd>Opens this page at the CAM tab section.</dd>
   <dt>Settings (gear)</dt>
@@ -213,8 +215,10 @@
   <dd>Cuts everything that's left.</dd>
   <dt>Speed</dt>
   <dd>How many moves are cut at each step while playing, from 1 to 500.</dd>
-  <dt>Cells</dt>
-  <dd>The cell size and the grid's size. Smaller stock gets smaller cells; the grid is kept to about 200 million cells.</dd>
+  <dt>Auto divide voxels</dt>
+  <dd>On (the default), solid and empty parts of the stock are kept whole, and are divided into small cells only where the tool cuts them. That lets the cells be fine, about 0.05 mm on a typical part, while starting quickly. Turn it off to choose the resolution yourself with the slider. Changing it starts the stock again and cuts back to the same move. Remembered until Alibre closes.</dd>
+  <dt>Resolution</dt>
+  <dd>Only while Auto divide voxels is off. From Fine (small cells: sharper, slower, more memory) to Coarse (large cells: blockier, faster). The choices depend on the stock's size, with Medium in the middle as the start. Letting go at a new stop starts the stock again and cuts back to the same move. Remembered until Alibre closes.</dd>
   <dt>Warning</dt>
   <dd>A rapid move that would cut stock stops the simulation and is drawn in thick red, naming the operation and its toolpath move. Play, Step or the other buttons carry on from there.</dd>
   <dt>Close</dt>

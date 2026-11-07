@@ -307,6 +307,12 @@
 #define IDC_SIM_SPEED_TEXT              13379
 #define IDC_SIM_INFO                    13380
 #define IDC_SIM_WARNING                 13381
+#define IDC_SIM_AUTO_DIVIDE             13382
+#define IDC_SIM_RESOLUTION              13383
+#define IDC_SIM_RESOLUTION_LABEL        13384
+#define IDC_SIM_FINE                    13385
+#define IDC_SIM_MEDIUM                  13386
+#define IDC_SIM_COARSE                  13387
 #define IDC_HP_AT_TOP                   13266
 #define IDC_HP_AT_BOTTOM                13267
 #define IDC_HP_PICK_TOP                 13268
@@ -344,7 +350,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        13042
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13382
+#define _APS_NEXT_CONTROL_VALUE         13388
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif
