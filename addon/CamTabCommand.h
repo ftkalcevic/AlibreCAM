@@ -116,6 +116,18 @@ public:
     std::vector<double> SimulationStops() const { return camcore::ResolutionStops(m_simulationBox); }
     void RestartSimulation(const camcore::SimResolution& resolution);   // and cut back to the same move
     std::filesystem::path SimulationStlPath() const;                    // the suggested name, beside the .cam file
+
+    // What the simulation shows: the cut stock, the parts' cells, and the
+    // differences from the parts. The parts are read the first time they're needed.
+    struct SimulationShow
+    {
+        bool stock = true;
+        bool part = false;
+        bool notEnough = false;
+        bool tooMuch = false;
+    };
+    void SetSimulationShow(const SimulationShow& show);
+    std::wstring SimulationCompareText() const;     // the volumes, or why the parts can't be compared
     bool SaveSimulationStl(const std::filesystem::path& path, std::wstring& message);
     void OnSimulationChanged();             // the stock or tool moved: mesh again and redraw
     void OnSimulationDialogDone(CSimulationDlg* pDialog);
@@ -224,6 +236,8 @@ private:
     void ClosePartBoxDialog(bool callAlibre);
     void CloseSimulationDialog();
     void UpdateSimulationScene();
+    bool PrepareSimulationPart();           // the parts read and put in the simulation's grid
+    void ClearSimulationCompare();          // at the start or end of a simulation, or a new grid
     // The stock's edges in assembly mm, and its box. False with a problem if it can't be read.
     // pPoints, if given, gets points whose highest is the stock's top along any direction.
     bool ReadStockShape(const camcore::Stock& stock, std::vector<camcore::LineSegment>& edges,
@@ -278,6 +292,18 @@ private:
     CSimulationDlg* m_pSimulationDlg;
     camcore::Simulation m_simulation;
     camcore::StockBox m_simulationBox;                  // the stock it started from, to start again
+    SimulationShow m_simulationShow;
+    std::vector<camcore::Vec3> m_simulationPartTriangles;   // all the parts, in assembly mm, read once
+    bool m_simulationPartsRead = false;
+    std::wstring m_simulationPartProblem;
+    camcore::VoxelStock m_simulationPart;               // the parts in the simulation's grid
+    bool m_simulationPartReady = false;
+    bool m_simulationCompareStale = true;
+    double m_simulationNotEnough = 0.0;                 // mm^3
+    double m_simulationTooMuch = 0.0;
+    camcore::StockMesh m_simulationPartMesh;
+    camcore::StockMesh m_simulationNotEnoughMesh;
+    camcore::StockMesh m_simulationTooMuchMesh;
     std::vector<camcore::Vec3> m_simulationTriangles;
     std::vector<camcore::StockMesh> m_simulationChunks;
     camcore::StockMesh m_simulationMesh;

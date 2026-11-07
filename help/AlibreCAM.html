@@ -221,6 +221,15 @@
   <dd>Only while Auto divide voxels is off. From Fine (small cells: sharper, slower, more memory) to Coarse (large cells: blockier, faster). The choices depend on the stock's size, with Medium in the middle as the start. Letting go at a new stop starts the stock again and cuts back to the same move. Remembered until Alibre closes.</dd>
   <dt>Warning</dt>
   <dd>A rapid move that would cut stock stops the simulation and is drawn in thick red, naming the operation and its toolpath move. Play, Step or the other buttons carry on from there.</dd>
+  <dt>Show</dt>
+  <dd>What's drawn in the view. Each is remembered until Alibre closes.
+    <ul>
+      <li><strong>Stock</strong>: the cut stock, shaded (on at first).</li>
+      <li><strong>Part</strong>: the parts as the simulation sees them, in green: every visible, unsuppressed part in the assembly, in the same cells as the stock, so you can check they line up with the model. An imported stock's own part is left out. The parts are read the first time any of the last three boxes is ticked, which can take a moment.</li>
+      <li><strong>Not enough removed</strong>: stock still left outside the parts, in amber. Stock to Leave shows here too.</li>
+      <li><strong>Too much removed</strong>: part material the simulation has cut away, in red, drawn over the model so it shows inside the part.</li>
+    </ul>
+    Differences within one cell of a part's surface aren't shown, so the surface doesn't speckle. The line under the boxes gives each difference's volume in mm&sup3;, worked out again as the stock is cut, or says why the parts couldn't be read.</dd>
   <dt>Save STL...</dt>
   <dd>Saves the cut stock as it is at the current move as an STL file, in millimetres and in the assembly's coordinates, so it lines up with the parts. The first suggestion is <em>&lt;job&gt; - simulation.stl</em> beside the .cam file, then the last folder used. The surface is the cells' surface, so it's blocky, with steps the size of a cell; large and small faces meet with joins that some programs call not watertight, though viewers and slicers open it. The tool isn't saved. The line under the controls says what was saved.</dd>
   <dt>Close</dt>

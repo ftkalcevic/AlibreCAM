@@ -22,7 +22,6 @@ these belong in the spec (`docs\SPEC.md`) once they're made.
     - Spiral machining
     - Curve machining
     - Between 2 curves
-- Add simulate
 - More stock alignment options
 - 4th axis: rotate and machine, etc.
 - 🔴 Show some summary information under each op, eg tool

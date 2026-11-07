@@ -266,10 +266,27 @@ void CCamViewCommand::DrawScene(IADAddOnCanvasDisplay* pCanvas, const CamScene& 
     // The simulated stock in place of the stock's edges, the tool, and a rapid that cut.
     if (scene.simulating)
     {
-        if (scene.simMesh != nullptr && scene.stockShown)
+        if (scene.simMesh != nullptr && scene.stockShown && scene.simStockShown)
         {
             const __int64 segment = AddSegment(pCanvas, L"Simulated stock", kSimStockColour, 1.0f, scene.foreground);
             DrawMesh(pCanvas, segment, *scene.simMesh, unit);
+        }
+        if (scene.simPartMesh != nullptr)
+        {
+            const __int64 segment = AddSegment(pCanvas, L"Parts' cells", kSimPartColour, 1.0f, scene.foreground);
+            DrawMesh(pCanvas, segment, *scene.simPartMesh, unit);
+        }
+        if (scene.simNotEnoughMesh != nullptr)
+        {
+            const __int64 segment =
+                AddSegment(pCanvas, L"Not enough removed", kSimNotEnoughColour, 1.0f, scene.foreground);
+            DrawMesh(pCanvas, segment, *scene.simNotEnoughMesh, unit);
+        }
+        if (scene.simTooMuchMesh != nullptr)
+        {
+            // Over the model, as it's inside the part's shape.
+            const __int64 segment = AddSegment(pCanvas, L"Too much removed", kSimTooMuchColour, 1.0f, true);
+            DrawMesh(pCanvas, segment, *scene.simTooMuchMesh, unit);
         }
         if (scene.simToolShown)
             DrawTool(pCanvas, scene, unit);

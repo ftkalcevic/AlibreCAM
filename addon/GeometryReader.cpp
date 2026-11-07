@@ -1165,6 +1165,148 @@ bool ReadPartsBounds(IADSession* pAssembly, const std::vector<camcore::StockPart
     }
 }
 
+namespace
+{
+    // A facet array's points (VT_R8 triplets, three points to a triangle), as they are.
+    void ReadFacetArray(SAFEARRAY* pFacets, std::vector<Vec3>& points)
+    {
+        if (pFacets == nullptr)
+            return;
+        VARTYPE vt = VT_EMPTY;
+        SafeArrayGetVartype(pFacets, &vt);
+        LONG lower = 0, upper = -1;
+        SafeArrayGetLBound(pFacets, 1, &lower);
+        SafeArrayGetUBound(pFacets, 1, &upper);
+        const LONG count = upper - lower + 1;
+        double* pData = nullptr;
+        if (vt == VT_R8 && count >= 9 && SUCCEEDED(SafeArrayAccessData(pFacets, reinterpret_cast<void**>(&pData))))
+        {
+            points.reserve(points.size() + static_cast<size_t>(count / 3));
+            for (LONG i = 0; i + 8 < count; i += 9)
+            {
+                for (int k = 0; k < 9; k += 3)
+                    points.push_back(Vec3{ pData[i + k], pData[i + k + 1], pData[i + k + 2] });
+            }
+            SafeArrayUnaccessData(pFacets);
+        }
+    }
+
+    std::wstring BstrText(const _bstr_t& text)
+    {
+        const wchar_t* chars = static_cast<const wchar_t*>(text);
+        return (chars != nullptr) ? std::wstring(chars) : std::wstring();
+    }
+
+    std::wstring SamePathKey(std::wstring path)
+    {
+        for (wchar_t& c : path)
+            c = (c == L'/') ? L'\\' : static_cast<wchar_t>(towlower(c));
+        return path;
+    }
+
+    // The parts under an occurrence, depth first.
+    void CollectPartOccurrences(IADOccurrence* pOccurrence, std::vector<IADOccurrencePtr>& parts)
+    {
+        IADOccurrencesPtr children = pOccurrence->GetOccurrences();
+        const long count = (children != nullptr) ? children->GetCount() : 0;
+        for (long i = 0; i < count; ++i)
+        {
+            IADOccurrencePtr child = children->GetItem(_variant_t(i));
+            if (child == nullptr || child->GetIsSuppressed() || child->GetIsHidden())
+                continue;
+            if (QI<IADPartSessionPtr>(child->GetDesignSession()) != nullptr)
+                parts.push_back(child);
+            else
+                CollectPartOccurrences(child, parts);
+        }
+    }
+}
+
+bool ReadAssemblyPartFacets(IADSession* pAssembly, const std::wstring& leaveOutPath, std::vector<Vec3>& triangles,
+                            std::wstring& problem)
+{
+    triangles.clear();
+    problem.clear();
+    const ULONGLONG start = GetTickCount64();
+    try
+    {
+        IADAssemblySessionPtr assembly = QI<IADAssemblySessionPtr>(pAssembly);
+        if (assembly == nullptr)
+        {
+            problem = L"The assembly can't be read.";
+            return false;
+        }
+        const double assemblyMm = MillimetresPerModelUnit(QI<IADDesignSessionPtr>(pAssembly));
+        std::vector<IADOccurrencePtr> parts;
+        CollectPartOccurrences(assembly->GetRootOccurrence(), parts);
+
+        const std::wstring leaveOut = SamePathKey(leaveOutPath);
+        int read = 0;
+        for (IADOccurrencePtr& occurrence : parts)
+        {
+            const std::wstring name = BstrText(occurrence->GetName());
+            IADDesignSessionPtr design = occurrence->GetDesignSession();
+            IADSessionPtr session = QI<IADSessionPtr>(design);
+            const std::wstring path = (session != nullptr) ? BstrText(session->GetfilePath()) : std::wstring();
+            if (!leaveOut.empty() && SamePathKey(path) == leaveOut)
+            {
+                Log(L"[compare] %s is the stock part, left out", name.c_str());
+                continue;
+            }
+
+            // The part's facets in its own units, from its session; failing that, its file.
+            std::vector<Vec3> points;
+            try
+            {
+                SAFEARRAY* pFacets = QI<IADPartSessionPtr>(design)->GetFacetData();
+                ReadFacetArray(pFacets, points);
+                if (pFacets != nullptr)
+                    SafeArrayDestroy(pFacets);
+            }
+            catch (const _com_error& error)
+            {
+                Log(L"[compare] %s: facets from its session failed, hr=0x%08X", name.c_str(),
+                    static_cast<unsigned>(error.Error()));
+                points.clear();
+            }
+            if (points.empty() && !path.empty())
+            {
+                std::wstring fileProblem;
+                std::vector<Vec3> millimetres;
+                if (ReadPartFacets(path, millimetres, fileProblem))
+                {
+                    const double partMm = MillimetresPerModelUnit(design);
+                    for (const Vec3& p : millimetres)
+                        points.push_back(p * (1.0 / partMm));
+                }
+            }
+            if (points.empty())
+            {
+                Log(L"[compare] %s has no facets to read", name.c_str());
+                continue;
+            }
+
+            const PartToAssembly toAssembly(occurrence, assemblyMm);
+            for (const Vec3& p : points)
+                triangles.push_back(toAssembly.Point(p));
+            ++read;
+            Log(L"[compare] %s: %zu triangles", name.c_str(), points.size() / 3);
+        }
+        Log(L"[compare] read %d of %zu parts, %zu triangles, in %llu ms", read, parts.size(), triangles.size() / 3,
+            GetTickCount64() - start);
+        if (triangles.empty())
+            problem = L"No parts could be read to compare with.";
+        return !triangles.empty();
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[compare] could not read the parts: hr=0x%08X", static_cast<unsigned>(error.Error()));
+        problem = L"The parts couldn't be read.";
+        triangles.clear();
+        return false;
+    }
+}
+
 bool ReadPartFacets(const std::wstring& path, std::vector<Vec3>& triangles, std::wstring& problem)
 {
     triangles.clear();

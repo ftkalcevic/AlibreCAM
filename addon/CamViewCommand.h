@@ -52,6 +52,13 @@ struct CamScene
     // rapid that cut stock.
     bool simulating = false;
     const camcore::StockMesh* simMesh = nullptr;
+    bool simStockShown = true;                          // the dialog's Show Stock
+
+    // Comparing with the parts, each drawn when it's set: the parts' cells, stock
+    // left that should have been cut, and part material cut away.
+    const camcore::StockMesh* simPartMesh = nullptr;
+    const camcore::StockMesh* simNotEnoughMesh = nullptr;
+    const camcore::StockMesh* simTooMuchMesh = nullptr;
     bool simToolShown = false;
     camcore::Vec3 simTip;
     camcore::Vec3 simAxis{ 0.0, 0.0, 1.0 };

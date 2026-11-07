@@ -22,6 +22,7 @@ namespace
     int g_lastSpeed = 40;
     bool g_autoDivide = true;
     std::wstring g_stlFolder;       // where the last STL was saved this session
+    CCamTabCommand::SimulationShow g_show;      // what's shown, remembered until Alibre closes
     int g_resolutionStop = -1;      // the slider's stop, fine to coarse; -1 is the middle
 
     int StopIndex(const std::vector<double>& stops)
@@ -51,6 +52,10 @@ BEGIN_MESSAGE_MAP(CSimulationDlg, CDialog)
     ON_BN_CLICKED(IDC_SIM_END, &CSimulationDlg::OnEnd)
     ON_BN_CLICKED(IDC_SIM_AUTO_DIVIDE, &CSimulationDlg::OnAutoDivide)
     ON_BN_CLICKED(IDC_SIM_SAVE_STL, &CSimulationDlg::OnSaveStl)
+    ON_BN_CLICKED(IDC_SIM_SHOW_STOCK, &CSimulationDlg::OnShowChanged)
+    ON_BN_CLICKED(IDC_SIM_SHOW_PART, &CSimulationDlg::OnShowChanged)
+    ON_BN_CLICKED(IDC_SIM_SHOW_NOT_ENOUGH, &CSimulationDlg::OnShowChanged)
+    ON_BN_CLICKED(IDC_SIM_SHOW_TOO_MUCH, &CSimulationDlg::OnShowChanged)
     ON_WM_HSCROLL()
     ON_WM_TIMER()
     ON_WM_CTLCOLOR()
@@ -102,6 +107,14 @@ BOOL CSimulationDlg::OnInitDialog()
     m_resolution.SetPos(m_appliedStop);
     CheckDlgButton(IDC_SIM_AUTO_DIVIDE, g_autoDivide ? BST_CHECKED : BST_UNCHECKED);
     ShowResolution();
+
+    // What's shown.
+    CheckDlgButton(IDC_SIM_SHOW_STOCK, g_show.stock ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(IDC_SIM_SHOW_PART, g_show.part ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(IDC_SIM_SHOW_NOT_ENOUGH, g_show.notEnough ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(IDC_SIM_SHOW_TOO_MUCH, g_show.tooMuch ? BST_CHECKED : BST_UNCHECKED);
+    if (m_pTab != nullptr)
+        m_pTab->SetSimulationShow(g_show);
 
     if (m_pTab != nullptr)
     {
@@ -160,6 +173,7 @@ void CSimulationDlg::ShowState()
     m_position.SetPos(static_cast<int>((std::min)(simulation.Position(), size_t(0x7FFFFFFF))));
 
     SetDlgItemText(IDC_SIM_INFO, (m_saved.empty() ? m_note : m_saved + L" " + m_note).c_str());
+    SetDlgItemText(IDC_SIM_COMPARE, m_pTab->SimulationCompareText().c_str());
 
     const size_t speed = MovesPerTick();
     SetDlgItemText(IDC_SIM_SPEED_TEXT, (WithCommas(speed) + (speed == 1 ? L" move a step" : L" moves a step")).c_str());
@@ -178,6 +192,19 @@ void CSimulationDlg::ShowState()
     GetDlgItem(IDC_SIM_OPERATION_END)->EnableWindow(more);
     GetDlgItem(IDC_SIM_END)->EnableWindow(more);
     GetDlgItem(IDC_SIM_PLAY)->EnableWindow(more || m_playing);
+}
+
+void CSimulationDlg::OnShowChanged()
+{
+    g_show.stock = IsDlgButtonChecked(IDC_SIM_SHOW_STOCK) == BST_CHECKED;
+    g_show.part = IsDlgButtonChecked(IDC_SIM_SHOW_PART) == BST_CHECKED;
+    g_show.notEnough = IsDlgButtonChecked(IDC_SIM_SHOW_NOT_ENOUGH) == BST_CHECKED;
+    g_show.tooMuch = IsDlgButtonChecked(IDC_SIM_SHOW_TOO_MUCH) == BST_CHECKED;
+    if (m_pTab == nullptr)
+        return;
+    CWaitCursor wait;
+    m_pTab->SetSimulationShow(g_show);
+    ShowState();
 }
 
 void CSimulationDlg::OnSaveStl()

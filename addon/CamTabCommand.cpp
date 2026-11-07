@@ -1454,6 +1454,10 @@ void CCamTabCommand::SimulateOperations(std::vector<StepRef> refs)
     }
     m_simulationChunks.assign(static_cast<size_t>(m_simulation.Stock().ChunkCount()), camcore::StockMesh());
     m_simulationMesh = camcore::StockMesh();
+    m_simulationPartTriangles.clear();
+    m_simulationPartsRead = false;
+    m_simulationPartProblem.clear();
+    ClearSimulationCompare();
 
     StartView(L"simulation");
     m_pSimulationDlg = new CSimulationDlg(this);
@@ -1480,6 +1484,9 @@ void CCamTabCommand::RestartSimulation(const camcore::SimResolution& resolution)
     m_simulation.SeekTo(position);
     m_simulationChunks.assign(static_cast<size_t>(m_simulation.Stock().ChunkCount()), camcore::StockMesh());
     m_simulationMesh = camcore::StockMesh();
+    ClearSimulationCompare();
+    if (m_simulationShow.part || m_simulationShow.notEnough || m_simulationShow.tooMuch)
+        PrepareSimulationPart();
     Log(L"[simulate] restarted: %d x %d x %d cells of %g mm (%s), cut to move %zu, %d mixed bricks, in %llu ms",
         m_simulation.Stock().SizeX(), m_simulation.Stock().SizeY(), m_simulation.Stock().SizeZ(),
         m_simulation.Stock().Cell(), m_simulation.Stock().Divided() ? L"divided" : L"undivided", position,
@@ -1512,6 +1519,72 @@ bool CCamTabCommand::SaveSimulationStl(const std::filesystem::path& path, std::w
     return true;
 }
 
+void CCamTabCommand::ClearSimulationCompare()
+{
+    m_simulationPart = camcore::VoxelStock();
+    m_simulationPartReady = false;
+    m_simulationCompareStale = true;
+    m_simulationNotEnough = 0.0;
+    m_simulationTooMuch = 0.0;
+    m_simulationPartMesh = camcore::StockMesh();
+    m_simulationNotEnoughMesh = camcore::StockMesh();
+    m_simulationTooMuchMesh = camcore::StockMesh();
+    m_scene.simPartMesh = nullptr;
+    m_scene.simNotEnoughMesh = nullptr;
+    m_scene.simTooMuchMesh = nullptr;
+}
+
+bool CCamTabCommand::PrepareSimulationPart()
+{
+    if (m_simulationPartReady)
+        return true;
+    if (!m_simulationPartsRead)
+    {
+        // Every visible part, less an imported stock's own part.
+        CWaitCursor wait;
+        m_simulationPartsRead = true;
+        const std::wstring leaveOut = (m_job.stock.kind == camcore::StockKind::Imported)
+                                          ? FromUtf8(m_job.stock.partPath)
+                                          : std::wstring();
+        ReadAssemblyPartFacets(GetSession(), leaveOut, m_simulationPartTriangles, m_simulationPartProblem);
+    }
+    if (m_simulationPartTriangles.empty())
+        return false;
+
+    CWaitCursor wait;
+    const ULONGLONG start = GetTickCount64();
+    m_simulationPart.ResetLike(m_simulation.Stock());
+    m_simulationPart.FillMesh(m_simulationPartTriangles);
+    m_simulationPartMesh = camcore::MeshStock(m_simulationPart);
+    m_simulationPartReady = true;
+    m_simulationCompareStale = true;
+    Log(L"[compare] parts in the grid: %lld cells, %zu triangles to draw, in %llu ms", m_simulationPart.Count(),
+        m_simulationPartMesh.TriangleCount(), GetTickCount64() - start);
+    return true;
+}
+
+void CCamTabCommand::SetSimulationShow(const SimulationShow& show)
+{
+    m_simulationShow = show;
+    if (show.part || show.notEnough || show.tooMuch)
+        PrepareSimulationPart();
+    OnSimulationChanged();
+}
+
+std::wstring CCamTabCommand::SimulationCompareText() const
+{
+    if (!(m_simulationShow.part || m_simulationShow.notEnough || m_simulationShow.tooMuch))
+        return std::wstring();
+    if (!m_simulationPartReady)
+        return m_simulationPartProblem.empty() ? L"The parts couldn't be read." : m_simulationPartProblem;
+    if (!(m_simulationShow.notEnough || m_simulationShow.tooMuch))
+        return std::wstring();
+    wchar_t text[160];
+    swprintf_s(text, L"Not enough removed: %.1f mm\u00B3. Too much removed: %.1f mm\u00B3.", m_simulationNotEnough,
+               m_simulationTooMuch);
+    return text;
+}
+
 void CCamTabCommand::UpdateSimulationScene()
 {
     // Each chunk that changed is meshed again, and the chunks joined into one mesh.
@@ -1523,6 +1596,8 @@ void CCamTabCommand::UpdateSimulationScene()
     for (int c : dirty)
         stock.SetChunkClean(c);
     if (!dirty.empty())
+        m_simulationCompareStale = true;
+    if (!dirty.empty())
     {
         m_simulationMesh = camcore::JoinMeshes(m_simulationChunks);
         const ULONGLONG took = GetTickCount64() - start;
@@ -1532,6 +1607,28 @@ void CCamTabCommand::UpdateSimulationScene()
     }
 
     m_scene.simMesh = &m_simulationMesh;
+    m_scene.simStockShown = m_simulationShow.stock;
+
+    // The differences from the parts, worked out again when the stock has changed.
+    const bool comparing = m_simulationPartReady && (m_simulationShow.notEnough || m_simulationShow.tooMuch);
+    if (comparing && m_simulationCompareStale)
+    {
+        const ULONGLONG compareStart = GetTickCount64();
+        const camcore::StockDifference difference = camcore::CompareStock(stock, m_simulationPart);
+        m_simulationNotEnough = difference.notEnoughVolume;
+        m_simulationTooMuch = difference.tooMuchVolume;
+        m_simulationNotEnoughMesh = camcore::MeshStock(difference.notEnough);
+        m_simulationTooMuchMesh = camcore::MeshStock(difference.tooMuch);
+        m_simulationCompareStale = false;
+        const ULONGLONG took = GetTickCount64() - compareStart;
+        if (took > 200)
+            Log(L"[compare] compared in %llu ms: not enough %.1f mm3, too much %.1f mm3", took, m_simulationNotEnough,
+                m_simulationTooMuch);
+    }
+    m_scene.simPartMesh = (m_simulationPartReady && m_simulationShow.part) ? &m_simulationPartMesh : nullptr;
+    m_scene.simNotEnoughMesh = (comparing && m_simulationShow.notEnough) ? &m_simulationNotEnoughMesh : nullptr;
+    m_scene.simTooMuchMesh = (comparing && m_simulationShow.tooMuch) ? &m_simulationTooMuchMesh : nullptr;
+
     const camcore::SimOperation* pOperation = m_simulation.CurrentOperation();
     m_scene.simToolShown = pOperation != nullptr;
     if (pOperation != nullptr)
@@ -1566,6 +1663,8 @@ void CCamTabCommand::OnSimulationDialogDone(CSimulationDlg* pDialog)
     m_simulationChunks.clear();
     m_simulationMesh = camcore::StockMesh();
     m_scene.simMesh = nullptr;
+    ClearSimulationCompare();
+    m_simulationPartTriangles.clear();
     RebuildScene();
 }
 
@@ -1582,6 +1681,8 @@ void CCamTabCommand::CloseSimulationDialog()
     m_simulationMesh = camcore::StockMesh();
     m_scene.simMesh = nullptr;
     m_scene.simulating = false;
+    ClearSimulationCompare();
+    m_simulationPartTriangles.clear();
 }
 
 void CCamTabCommand::GenerateOperations(const std::vector<StepRef>& refs)

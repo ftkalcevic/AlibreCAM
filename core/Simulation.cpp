@@ -132,6 +132,7 @@ namespace camcore
     void VoxelStock::Reset(const StockBox& box, double cell, bool divide)
     {
         const Vec3 size = box.upper - box.lower;
+        m_box = box;
         m_lower = box.lower;
         m_cell = cell;
         m_nx = CellsAlong(size.x, cell);
@@ -1020,6 +1021,111 @@ namespace camcore
         std::vector<StockMesh> chunks;
         MeshChunks(stock, all, chunks);
         return JoinMeshes(chunks);
+    }
+
+    StockDifference CompareStock(const VoxelStock& stock, const VoxelStock& part)
+    {
+        StockDifference difference;
+        difference.notEnough.ResetLike(stock);
+        difference.tooMuch.ResetLike(stock);
+        const int n = VoxelStock::kChunk;
+        const int count = stock.ChunkCount();
+
+        // Each chunk on its own core, keeping the columns that differ.
+        struct Column
+        {
+            int i;
+            int j;
+            std::uint64_t notEnough;
+            std::uint64_t tooMuch;
+        };
+        std::vector<std::vector<Column>> found(static_cast<size_t>(count));
+        std::vector<int> chunks(static_cast<size_t>(count));
+        for (int c = 0; c < count; ++c)
+            chunks[static_cast<size_t>(c)] = c;
+        std::for_each(std::execution::par, chunks.begin(), chunks.end(), [&](int chunk) {
+            const int cx = chunk % stock.ChunksX();
+            const int cy = (chunk / stock.ChunksX()) % stock.ChunksY();
+            const int w = chunk / (stock.ChunksX() * stock.ChunksY());
+            const int i0 = cx * n;
+            const int j0 = cy * n;
+            const int ni = (std::min)(n, stock.SizeX() - i0);
+            const int nj = (std::min)(n, stock.SizeY() - j0);
+            const int pi = ni + 2;
+            const int pj = nj + 2;
+            const size_t padded = static_cast<size_t>(pi) * pj;
+
+            // The part's words with a ring round them, and those above and below.
+            std::vector<std::uint64_t> here(padded), above(padded), below(padded);
+            part.ReadWords(i0 - 1, j0 - 1, pi, pj, w, here.data());
+            part.ReadWords(i0 - 1, j0 - 1, pi, pj, w + 1, above.data());
+            part.ReadWords(i0 - 1, j0 - 1, pi, pj, w - 1, below.data());
+
+            // Grown and shrunk up and down each column first.
+            std::vector<std::uint64_t> grownZ(padded), shrunkZ(padded);
+            bool anyPart = false;
+            for (size_t q = 0; q < padded; ++q)
+            {
+                const std::uint64_t word = here[q];
+                const std::uint64_t up = (word >> 1) | ((above[q] & 1) << 63);      // each cell's neighbour above
+                const std::uint64_t down = (word << 1) | (below[q] >> 63);          // and below
+                grownZ[q] = word | up | down;
+                shrunkZ[q] = word & up & down;
+                anyPart = anyPart || word != 0;
+            }
+
+            std::vector<std::uint64_t> stockWords(static_cast<size_t>(ni) * nj);
+            stock.ReadWords(i0, j0, ni, nj, w, stockWords.data());
+            std::vector<Column>& columns = found[static_cast<size_t>(chunk)];
+            for (int y = 0; y < nj; ++y)
+            {
+                for (int x = 0; x < ni; ++x)
+                {
+                    std::uint64_t grown = 0;
+                    std::uint64_t shrunk = ~std::uint64_t(0);
+                    if (anyPart)
+                    {
+                        for (int dy = 0; dy < 3; ++dy)
+                        {
+                            for (int dx = 0; dx < 3; ++dx)
+                            {
+                                const size_t q = static_cast<size_t>(y + dy) * pi + x + dx;
+                                grown |= grownZ[q];
+                                shrunk &= shrunkZ[q];
+                            }
+                        }
+                    }
+                    else
+                    {
+                        shrunk = 0;
+                    }
+                    const std::uint64_t cells = stockWords[static_cast<size_t>(y) * ni + x];
+                    const std::uint64_t notEnough = cells & ~grown;
+                    const std::uint64_t tooMuch = shrunk & ~cells;
+                    if (notEnough != 0 || tooMuch != 0)
+                        columns.push_back({ i0 + x, j0 + y, notEnough, tooMuch });
+                }
+            }
+        });
+
+        // Into the grids, one at a time: splitting bricks isn't safe on several cores.
+        for (int chunk = 0; chunk < count; ++chunk)
+        {
+            const int w = chunk / (stock.ChunksX() * stock.ChunksY());
+            for (const Column& column : found[static_cast<size_t>(chunk)])
+            {
+                if (column.notEnough != 0)
+                    difference.notEnough.SetCells(column.i, column.j, w, column.notEnough);
+                if (column.tooMuch != 0)
+                    difference.tooMuch.SetCells(column.i, column.j, w, column.tooMuch);
+            }
+        }
+        difference.notEnough.Settle();
+        difference.tooMuch.Settle();
+        const double cellVolume = stock.Cell() * stock.Cell() * stock.Cell();
+        difference.notEnoughVolume = static_cast<double>(difference.notEnough.Count()) * cellVolume;
+        difference.tooMuchVolume = static_cast<double>(difference.tooMuch.Count()) * cellVolume;
+        return difference;
     }
 
     std::string StockMeshToStl(const StockMesh& mesh, const std::string& title)

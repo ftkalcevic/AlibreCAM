@@ -510,6 +510,7 @@ TEST_CASE("simulation timing on a 136 x 150 x 6 stock" * doctest::skip())
         Simulation simulation;
         simulation.Start({ { 0, 0, 0 }, { 136, 150, 6 } }, {}, { Operation(Flat(6), moves) },
                          SimResolution{ divide, 0.0 });
+        const auto ms = [](auto a, auto b) { return std::chrono::duration_cast<std::chrono::milliseconds>(b - a).count(); };
         const auto t1 = std::chrono::steady_clock::now();
         std::vector<StockMesh> meshes;
         const auto meshAll = [&]() {
@@ -528,7 +529,14 @@ TEST_CASE("simulation timing on a 136 x 150 x 6 stock" * doctest::skip())
         const auto t3 = std::chrono::steady_clock::now();
         const size_t after = meshAll();
         const auto t4 = std::chrono::steady_clock::now();
-        const auto ms = [](auto a, auto b) { return std::chrono::duration_cast<std::chrono::milliseconds>(b - a).count(); };
+        VoxelStock part;
+        part.ResetLike(simulation.Stock());
+        part.FillMesh(BoxMesh({ 2, 2, 0 }, { 134, 148, 5 }));
+        const auto t5 = std::chrono::steady_clock::now();
+        const StockDifference difference = CompareStock(simulation.Stock(), part);
+        const auto t6 = std::chrono::steady_clock::now();
+        MESSAGE("part filled in " << ms(t4, t5) << " ms, compared in " << ms(t5, t6) << " ms: not enough "
+                << difference.notEnoughVolume << " mm3, too much " << difference.tooMuchVolume << " mm3");
         MESSAGE(std::string(divide ? "divided" : "undivided") << " cell " << simulation.Stock().Cell() << ": start "
                 << ms(t0, t1) << " ms, mesh " << triangles << " in " << ms(t1, t2) << " ms, cut "
                 << simulation.Moves().size() << " moves in " << ms(t2, t3) << " ms, mesh " << after << " in "
@@ -593,5 +601,62 @@ TEST_CASE("the whole stock meshes as the chunks joined, and saves as a binary ST
         }
         CHECK(stl[at + 48] == 0);
         CHECK(stl[at + 49] == 0);
+    }
+}
+
+namespace
+{
+    // A stock over 20 x 20 x 10 at 0.25 mm, filled with a box.
+    VoxelStock BoxCells(const Vec3& a, const Vec3& b, bool divide = true)
+    {
+        VoxelStock stock;
+        stock.Reset({ { 0, 0, 0 }, { 20, 20, 10 } }, 0.25, divide);
+        stock.FillMesh(BoxMesh(a, b));
+        return stock;
+    }
+
+    const Vec3 kPartLow{ 4, 4, 2 };
+    const Vec3 kPartHigh{ 16, 14, 8 };
+}
+
+TEST_CASE("stock cut exactly to the part shows no differences")
+{
+    const VoxelStock part = BoxCells(kPartLow, kPartHigh);
+    const StockDifference difference = CompareStock(part, part);
+    CHECK(difference.notEnough.Count() == 0);
+    CHECK(difference.tooMuch.Count() == 0);
+    CHECK(difference.notEnoughVolume == 0.0);
+}
+
+TEST_CASE("stock left proud of the part is not enough removed, within a cell's tolerance")
+{
+    const VoxelStock part = BoxCells(kPartLow, kPartHigh);
+
+    // 2 mm left on the +X side: a 2 x 10 x 6 slab, less the cell next to the part.
+    const VoxelStock proud = BoxCells(kPartLow, { kPartHigh.x + 2, kPartHigh.y, kPartHigh.z });
+    const StockDifference difference = CompareStock(proud, part);
+    CHECK(difference.tooMuch.Count() == 0);
+    CHECK(difference.notEnoughVolume == doctest::Approx(1.75 * 10 * 6));
+
+    // One cell proud is within the tolerance.
+    const VoxelStock oneCell = BoxCells(kPartLow, { kPartHigh.x + 0.25, kPartHigh.y, kPartHigh.z });
+    CHECK(CompareStock(oneCell, part).notEnough.Count() == 0);
+}
+
+TEST_CASE("a cut into the part is too much removed, and divided or not gives the same")
+{
+    for (bool divide : { true, false })
+    {
+        const VoxelStock part = BoxCells(kPartLow, kPartHigh, divide);
+        VoxelStock stock = BoxCells(kPartLow, kPartHigh, divide);
+        // A 4 mm slot 2 mm deep across the top, along X.
+        CutMove(stock, Flat(4), { 0, 9, 6 }, { 20, 9, 6 }, kUp);
+        const StockDifference difference = CompareStock(stock, part);
+        CHECK(difference.notEnough.Count() == 0);
+        // The slot is 12 x 4 x 2 inside the part. The part shrunk by a cell is
+        // trimmed only at its own faces: the slot's ends at the part's sides and
+        // its top, so 11.5 long x 4 wide x 1.75 deep.
+        CHECK(difference.tooMuchVolume == doctest::Approx(11.5 * 4 * 1.75));
+        CHECK(difference.tooMuch.Divided() == divide);
     }
 }

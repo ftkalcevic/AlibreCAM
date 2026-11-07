@@ -53,6 +53,12 @@ const DisplayColour kSimStockColour = { 120, 160, 200, 255 };
 const DisplayColour kSimToolColour = { 230, 190, 0, 255 };
 const float kSimToolLineWeight = 1.5f;
 const DisplayColour kSimWarningColour = { 230, 0, 0, 255 };
+
+// Comparing with the parts: the parts' cells, stock left that should have been cut,
+// and part material that was cut away.
+const DisplayColour kSimPartColour = { 110, 190, 120, 255 };
+const DisplayColour kSimNotEnoughColour = { 245, 170, 30, 255 };
+const DisplayColour kSimTooMuchColour = { 220, 20, 20, 255 };
 const float kSimWarningLineWeight = 4.0f;
 
 // The stock, drawn as its edges.

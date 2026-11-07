@@ -5349,6 +5349,184 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Alibre's closed, install
 
+### 🤖 Claude
+
+> Save STL is installed: the Release build, along with the updated help page, and the installed add-on matches the build. Start Alibre and run through the four tests from my last message.
+
+### 🧑 Frank · 12:54
+
+> it would be nice if we had an option to view difference between the actual alibre 3d models from the simulated shape; both too much removed, and not enough removed.
+
+### 🤖 Claude
+
+> Questions:
+> - Which Alibre parts should the simulated stock be compared with?
+>   - Pick, default all (Recommended): Every part in the assembly except an imported stock part, unless you choose some with a Select Parts button in the Simulation dialog. Useful when the assembly also holds clamps or a fixture.
+>   - All parts: Every visible part in the assembly, no choosing.
+>   - Part Box stock's parts: The parts listed for Part Box stock (all if none), and all parts for other stock kinds.
+> - How should the differences be shown in the view?
+>   - Three colours (Recommended): A Show differences check box in the Simulation dialog. While it's on, the stock is drawn as: the material that matches the part in grey, material left that should be cut in amber, and part material that was cut away in red (as a ghost of what's missing). The dialog shows each volume in mm³.
+>   - Errors only: Draw the cut stock as usual, plus only the red cut-away part material as an overlay. Simpler to read, but it doesn't show material left behind.
+> - Cells along the part's surface will often differ by one cell, which would show as a thin speckle everywhere. How much should be ignored?
+>   - Tolerance field, mm (Recommended): A Tolerance box in the dialog, defaulting to one cell's size (shown in mm only here). Differences within that distance of the part's surface aren't shown. Stock to leave would still show as amber unless the tolerance covers it.
+>   - Fixed one cell: Always ignore differences within one cell of the surface, with no setting.
+
+### 🧑 Frank · 12:58
+
+> Answers:
+> - Which Alibre parts should the simulated stock be compared with?
+>   **All parts**
+> - How should the differences be shown in the view?
+>   **Give options in the dialog to show each error type, stock, and part**
+> - Cells along the part's surface will often differ by one cell, which would show as a thin speckle everywhere. How much should be ignored?
+>   **Fixed one cell**
+
+### 🤖 Claude
+
+> `PartToAssembly` in `addon\GeometryReader.cpp` already converts part coordinates into assembly mm through an occurrence's `WorldTransform`, so it can be reused for the part facets. Writing the plan:
+
+> Plan:
+>
+> # Compare the simulated stock with the Alibre parts
+>
+> ## Context
+>
+> Frank wants to see where the simulated stock differs from the real Alibre models: where too much was removed (part material cut away), and where not enough was (stock left outside the part).
+>
+> **Decided (Frank):**
+> - **Parts:** all parts. Every visible, unsuppressed part occurrence in the assembly, leaving out an imported stock's own part file if it's in the assembly.
+> - **Display:** check boxes in the Simulation dialog, one for each thing that can be shown:
+>   - **Stock**, the cut stock (today's drawing);
+>   - **Part**, the parts' own cells;
+>   - **Not enough removed**;
+>   - **Too much removed**.
+> - **Tolerance:** fixed at one cell. A difference within one cell of the part's surface isn't counted, so the surface doesn't speckle.
+>
+> The parts go into the same cell grid as the simulation (same box, cell size and division), so they can be compared word by word.
+> - **Not enough removed** = stock AND NOT (the part grown by one cell).
+> - **Too much removed** = (the part shrunk by one cell) AND NOT stock.
+>
+> Growing and shrinking use the 3 × 3 × 3 cube of neighbours.
+>
+> ## Core (`core\Simulation.h/.cpp`, tested)
+>
+> - **`VoxelStock::ResetLike(const VoxelStock& other)`:** an empty grid with the same box, cell size and division.
+> - **`StockDifference`** holds the two difference grids (`notEnough`, `tooMuch`) and their volumes in mm³ (`Count() × cell³`).
+> - **`StockDifference CompareStock(const VoxelStock& stock, const VoxelStock& part)`:**
+>   - **On all cores, chunk by chunk:** like `MeshChunk`, it reads a chunk's words with a ring of neighbours, plus the words above and below (`ReadWords`). For each column it works out:
+>     - **grown:** OR of the 3 × 3 columns of `w | w<<1 | w>>1`, with the carry bits from the words above and below;
+>     - **shrunk:** AND of the 3 × 3 columns of `w & (w<<1 | carry) & (w>>1 | carry)`, where outside the grid counts as empty;
+>     - then the two differences.
+>   - **Into the grids:** the non-zero results are written one at a time (`SetMask`, made public as `SetCells` or a friend). Splitting bricks isn't safe from several threads at once.
+> - **Meshing:** each grid is meshed with `MeshStock`, as now.
+>
+> ## Add-on
+>
+> - **Reading the parts** (`addon\GeometryReader`): `ReadAssemblyPartFacets(IADSession* assembly, const std::wstring& leaveOutPath, std::vector<Vec3>& triangles, std::wstring& problem)`.
+>   - It walks the root occurrence's `Occurrences` recursively. For each leaf occurrence it skips the hidden and suppressed ones, and the one whose design session's file is `leaveOutPath`.
+>   - It takes `IADPartSession::GetFacetData` from the occurrence's `DesignSession`, with no file opened, and maps each point through `PartToAssembly` (which already exists there).
+>   - **Unproven:** that a child occurrence's `DesignSession` gives its facets in place. It logs the count of parts and triangles. If it fails, it falls back to `ReadPartFacets` on the part's file.
+> - **`CCamTabCommand`:**
+>   - `m_simulationParts`, a `VoxelStock` filled with `FillMesh` from those triangles. It's built the first time Part or a difference box is ticked, and again after a restart at a new resolution.
+>   - `m_simulationDifference`, meshes for the part, not-enough and too-much grids, worked out again in `UpdateSimulationScene` whenever the stock changed and a difference box is on.
+>   - `CamScene` gains `simPartMesh`, `simNotEnoughMesh` and `simTooMuchMesh`, drawn with `DrawMesh` like `simMesh`. Each draws only when its box is on, as does the stock mesh.
+>   - New colours in `addon\DisplaySettings.h`:
+>     - Part: light blue `kSimPartColour`;
+>     - Not enough: amber `kSimNotEnoughColour`;
+>     - Too much: red `kSimTooMuchColour`.
+>   - The Too much mesh is drawn over the model, so a gouge inside the part's shape shows.
+> - **`IDD_SIMULATION`:**
+>   - A "Show" group with four check boxes: Stock (on), Part (off), Not enough removed (off), Too much removed (off). IDs from 13389.
+>   - A line under them: "Not enough removed: X mm³. Too much removed: Y mm³.", shown while either difference is on.
+>   - The dialog grows to fit. The choices are remembered until Alibre closes.
+> - **Logging:** the time taken, to judge whether Play needs to work out the differences less often.
+>
+> ## Tests (`tests\SimulationTests.cpp`)
+>
+> - **A part box inside a stock box:**
+>   - with the stock cut exactly to the part, both differences are empty (the one-cell tolerance);
+>   - with the stock left 2 mm proud on one side, Not enough is about that slab's volume, and Too much is empty;
+>   - with a pocket cut 2 mm into the part, Too much is about that pocket's volume.
+> - **The one-cell tolerance:** a difference just one cell thick isn't counted.
+> - **Divided and undivided** grids give the same results.
+>
+> ## Docs
+>
+> - **Help:** the Simulation section gets Show: Stock, Part, Not enough removed, Too much removed, and the volumes, including all visible parts and the one-cell tolerance.
+> - **Spec** (doc and `docs\SPEC.md`).
+> - **`CLAUDE.md`:** the simulation line, plus the unproven `DesignSession` facets.
+> - **`Discussion.md`:** rebuilt.
+>
+> ## Verification
+>
+> 1. Build Debug and Release, and run the tests.
+> 2. Close Alibre, then install Release.
+> 3. Frank's tests:
+>    1. Simulate a finished job to the end and tick Too much removed and Not enough removed. Correct toolpaths should show little or nothing, with small volumes.
+>    2. Set Stock to Leave to 1 mm on a profile and run again. Amber should show round the profile, with a volume to match.
+>    3. Make a toolpath gouge, for example a pocket deeper than the part. Red should show there.
+>    4. Tick Part. The parts should show in light blue, lined up with the Alibre model (this checks the units and transforms).
+>    5. Hide a part in Alibre and restart the simulation. It should be left out.
+>    6. Check the help.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Every test passes. I'll add the comparison to the timing test too, to see what it costs at 0.05 mm:
+
+> Comparing takes about 60 ms at 0.05 mm, and filling the part's cells about 0.6 s (done once). Now reading the parts out of the assembly. Checking the 27.0.1 calls:
+
+> Indexing starts at 0, with a `VT_I4` index. Writing the reader:
+
+> `ToWide` is private to `ModelReader.cpp`, so I'll give the new code its own small helper:
+
+> It compiles. Now the drawing and the check boxes. Reading how the simulation mesh is drawn today:
+
+> The simulated stock is already drawn in light blue, so the Part needs a different colour from the light blue in the plan. I'll use green. Now the scene, the tab and the dialog:
+
+> Both builds are clean and every test passes. Installing:
+
+> The admin prompt was cancelled, so it isn't installed. Now the docs:
+
+> That replace left the warning's description after my new sentences. Putting it back where it belongs, and updating the "still to come" line now that comparing with the parts exists:
+
+> The doc is at rev 181. Mirroring that in `SPEC.md`, and updating the help and `CLAUDE.md`:
+
+> The Simulation dialog can now compare the cut stock with your Alibre parts. Debug and Release both build cleanly and pass every test. **It isn't installed:** the admin prompt was cancelled. Reading the parts out of Alibre also hasn't been tried in Alibre yet.
+>
+> **What's new:** a **Show** group with four check boxes, each remembered until Alibre closes:
+> - **Stock**: the cut stock, as before. It starts ticked.
+> - **Part**: the parts as the simulation sees them, in green. Use this to check they line up with the model.
+> - **Not enough removed**: stock left outside the parts, in amber. Stock to Leave shows here too.
+> - **Too much removed**: part material cut away, in red. It's drawn over the model so it shows inside the part.
+>
+> A line under the boxes gives each difference's volume in mm³. It's worked out again as the stock is cut.
+>
+> **How it works:**
+> - **Which parts:** every visible, unsuppressed part in the assembly. If the stock is an imported part, that part is left out.
+> - **When they're read:** the first time you tick Part or either difference box, so that tick can take a moment.
+> - **How they're compared:** the parts are put into the same cells as the simulated stock and compared cell by cell. Differences within one cell of a part's surface are ignored, as you chose, so the surface doesn't speckle.
+> - **Reading the parts** uses each part already open in the assembly, so no files are opened. If that fails for a part, it falls back to opening the part's file. Either way, the log lists each part and how many triangles it gave.
+> - **Speed:** at 0.05 mm cells, comparing takes about 60 ms and putting a part into the cells about 0.6 s, measured in the core tests.
+> - **Colour:** I used green for Part rather than the light blue in the plan, because the simulated stock is already light blue.
+>
+> In the tests I had one expected volume wrong at first. The red area keeps a cut's full width where the cut goes into the part, and is only trimmed by the one cell at the part's own faces. The code was right, so I fixed the test.
+>
+> The help, the spec (Claude doc and `docs\SPEC.md`, rev 181), `CLAUDE.md` and `Discussion.md` are updated. Nothing is committed.
+>
+> To test, after installing and restarting Alibre:
+> 1. Simulate a finished job to the end, then tick Too much removed and Not enough removed. Correct toolpaths should show little or nothing, with small volumes.
+> 2. Tick Part. The green cells should sit exactly on the Alibre parts. If they're shifted, scaled or turned, send me the log's `[compare]` lines.
+> 3. Set Stock to Leave to 1 mm on a profile and simulate again. Amber should show round the profile, with a volume to match.
+> 4. Make a gouge, for example a pocket deeper than the part. Red should show there.
+> 5. Hide a part in Alibre, then close and reopen the simulation. That part should be left out.
+> 6. The help's Simulation section has a new Show entry.
+
+### 🧑 Frank · 13:11
+
+> Alibre's closed, install
+
 ---
 
 # Side conversation

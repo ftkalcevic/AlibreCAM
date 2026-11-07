@@ -44,6 +44,7 @@ protected:
     afx_msg void OnHelpButton();
     afx_msg void OnAutoDivide();
     afx_msg void OnSaveStl();
+    afx_msg void OnShowChanged();
 
     DECLARE_MESSAGE_MAP()
 

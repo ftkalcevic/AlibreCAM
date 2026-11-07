@@ -46,6 +46,9 @@ namespace camcore
         // An empty grid over the box. Its size is rounded up to whole cells. An
         // undivided grid keeps every brick's words, and never merges them.
         void Reset(const StockBox& box, double cell, bool divide = true);
+
+        // An empty grid over the same box, with the same cells and division.
+        void ResetLike(const VoxelStock& other) { Reset(other.m_box, other.m_cell, other.m_divide); }
         void FillAll();
 
         // Fills the cells inside a closed triangle mesh (three points to a
@@ -79,6 +82,9 @@ namespace camcore
         // Clears the cells of a column's word that are set in mask, and returns how
         // many were filled. Doesn't mark chunks; MarkDirtyBox does.
         long long ClearMask(int i, int j, int w, std::uint64_t mask);
+
+        // Sets the cells of a column's word that are set in mask. Call Settle after.
+        void SetCells(int i, int j, int w, std::uint64_t mask) { SetMask(i, j, w, mask); }
 
         // Merges the bricks cut since the last call that are now all empty or full.
         void Settle();
@@ -118,6 +124,7 @@ namespace camcore
         void MergeBrick(size_t brick);
         void MarkDirty(int i, int j, int k);
 
+        StockBox m_box;
         Vec3 m_lower;
         double m_cell = 1.0;
         int m_nx = 0;
@@ -189,6 +196,20 @@ namespace camcore
 
     // The whole stock's surface, meshed on all cores.
     StockMesh MeshStock(const VoxelStock& stock);
+
+    // Where the simulated stock differs from the parts, both in the same grid: stock
+    // left outside the parts (not enough removed), and part material cut away (too
+    // much removed). A difference within one cell of the part's surface isn't
+    // counted: the part is grown by a cell for the first, and shrunk by one for the
+    // second, over the 3 x 3 x 3 cells round each.
+    struct StockDifference
+    {
+        VoxelStock notEnough;
+        VoxelStock tooMuch;
+        double notEnoughVolume = 0.0;   // mm^3
+        double tooMuchVolume = 0.0;
+    };
+    StockDifference CompareStock(const VoxelStock& stock, const VoxelStock& part);
 
     // A mesh as the bytes of a binary STL file, in mm: an 80 byte header holding
     // the title, the number of triangles, then each triangle's normal and corners.

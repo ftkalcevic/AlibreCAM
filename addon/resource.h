@@ -314,6 +314,11 @@
 #define IDC_SIM_MEDIUM                  13386
 #define IDC_SIM_COARSE                  13387
 #define IDC_SIM_SAVE_STL                13388
+#define IDC_SIM_SHOW_STOCK              13389
+#define IDC_SIM_SHOW_PART               13390
+#define IDC_SIM_SHOW_NOT_ENOUGH         13391
+#define IDC_SIM_SHOW_TOO_MUCH           13392
+#define IDC_SIM_COMPARE                 13393
 #define IDC_HP_AT_TOP                   13266
 #define IDC_HP_AT_BOTTOM                13267
 #define IDC_HP_PICK_TOP                 13268
@@ -351,7 +356,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        13042
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13389
+#define _APS_NEXT_CONTROL_VALUE         13394
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

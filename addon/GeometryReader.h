@@ -80,3 +80,11 @@ bool ReadPartsBounds(IADSession* pAssembly, const std::vector<camcore::StockPart
 // triangle, in the part's own coordinates in mm), and closes it. Returns false
 // and sets problem if the file can't be opened or isn't a part.
 bool ReadPartFacets(const std::wstring& path, std::vector<camcore::Vec3>& triangles, std::wstring& problem);
+
+// The facets of every visible, unsuppressed part in the assembly (three points to a
+// triangle, in the assembly's coordinates in mm), leaving out the part whose file is
+// leaveOutPath (an imported stock's). Each part is read from its occurrence's own
+// session, or from its file if that fails. Returns false and sets problem if no
+// part could be read.
+bool ReadAssemblyPartFacets(IADSession* pAssembly, const std::wstring& leaveOutPath,
+                            std::vector<camcore::Vec3>& triangles, std::wstring& problem);
