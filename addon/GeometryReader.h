@@ -81,6 +81,12 @@ bool ReadPartsBounds(IADSession* pAssembly, const std::vector<camcore::StockPart
 // and sets problem if the file can't be opened or isn't a part.
 bool ReadPartFacets(const std::wstring& path, std::vector<camcore::Vec3>& triangles, std::wstring& problem);
 
+// A picked face's facets (three points to a triangle) in the assembly's
+// coordinates in mm, about 0.05 mm from the true surface. Returns false and sets
+// problem if the face can't be found or read.
+bool ReadFaceFacets(IADSession* pAssembly, const camcore::PickedGeometry& feature,
+                    std::vector<camcore::Vec3>& triangles, std::wstring& problem);
+
 // The facets of every visible, unsuppressed part in the assembly (three points to a
 // triangle, in the assembly's coordinates in mm), leaving out the part whose file is
 // leaveOutPath (an imported stock's). Each part is read from its occurrence's own

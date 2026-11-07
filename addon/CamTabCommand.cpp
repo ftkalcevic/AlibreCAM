@@ -2113,11 +2113,15 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         return true;
     }
 
-    // Plunge Roughing plunges over each closed area, down to the parts under the tool.
+    // Plunge Roughing projects the picked faces and edges onto the origin's XY
+    // plane, merges what touches, and plunges inside, down to the parts.
     if (operation.type == camcore::StepType::PlungeRoughing)
     {
-        if (!gatherAreas("Plunge Roughing"))
+        if (operation.features.empty())
+        {
+            problem = "There are no features. Pick faces, or edges making closed loops.";
             return false;
+        }
 
         camcore::PlungeRoughToolpathInput plungeInput;
         plungeInput.operation = &operation;
@@ -2128,21 +2132,86 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         plungeInput.stockMaxZ = stockMaxZ;
         plungeInput.haveStockMinZ = haveStockMinZ;
         plungeInput.stockMinZ = stockMinZ;
-        for (size_t n = 0; n < areas.areas.size(); ++n)
+
+        // A face as its facets; failing that, its outline. Edges are gathered
+        // where their ends meet, and each group must close.
+        const auto toFrame = [&](camcore::Path& piece) {
+            for (camcore::PathVertex& vertex : piece)
+            {
+                if (vertex.arc)
+                {
+                    vertex.axis = camcore::WorldToFrame(frame.frame, vertex.centre + vertex.axis) -
+                                  camcore::WorldToFrame(frame.frame, vertex.centre);
+                    vertex.centre = camcore::WorldToFrame(frame.frame, vertex.centre);
+                }
+                vertex.point = camcore::WorldToFrame(frame.frame, vertex.point);
+            }
+        };
+        std::vector<std::vector<camcore::Path>> edgeOutlines;
+        for (const camcore::PickedGeometry& feature : operation.features)
         {
-            camcore::ProfileChain chain = camcore::ChainProfile(areas.areas[n], areas.level);
-            if (!chain.ok)
+            std::vector<camcore::Path> outline;
+            std::wstring readProblem;
+            const bool isFace = feature.kind == camcore::PickKind::PlanarFace ||
+                                feature.kind == camcore::PickKind::CylindricalFace ||
+                                feature.kind == camcore::PickKind::SurfaceFace;
+            if (isFace)
             {
-                problem = areaName(n, "Area") + chain.problem;
+                std::vector<camcore::Vec3> facets;
+                if (ReadFaceFacets(GetSession(), feature, facets, readProblem))
+                {
+                    for (camcore::Vec3& point : facets)
+                        point = camcore::WorldToFrame(frame.frame, point);
+                    plungeInput.faces.push_back(std::move(facets));
+                    continue;
+                }
+                Log(L"[generate] a face's facets couldn't be read, so its outline is used: %s", readProblem.c_str());
+            }
+            if (!ReadFeatureOutline(GetSession(), feature, outline, readProblem, false))
+            {
+                problem = ToUtf8(readProblem);
                 return false;
             }
-            if (!chain.closed)
+            for (camcore::Path& piece : outline)
+                toFrame(piece);
+            if (isFace)
             {
-                problem = areaName(n, "Area") + "the edges must join into a closed outline.";
-                return false;
+                camcore::ProfileChain chain = camcore::ChainProfile({ outline }, 0.0);
+                if (chain.ok && chain.closed)
+                    plungeInput.outlines.push_back(std::move(chain));
+                continue;
             }
-            plungeInput.outlines.push_back(std::move(chain));
+            edgeOutlines.push_back(std::move(outline));
         }
+        if (!edgeOutlines.empty())
+        {
+            const camcore::AreaGeometry edgeAreas =
+                camcore::GatherAreas(edgeOutlines, std::vector<bool>(edgeOutlines.size(), false));
+            if (!edgeAreas.ok)
+            {
+                problem = edgeAreas.problem;
+                return false;
+            }
+            for (size_t n = 0; n < edgeAreas.areas.size(); ++n)
+            {
+                camcore::ProfileChain chain = camcore::ChainProfile(edgeAreas.areas[n], edgeAreas.level);
+                const std::string name =
+                    (edgeAreas.areas.size() > 1) ? "Edge group " + std::to_string(n + 1) + ": " : std::string();
+                if (!chain.ok)
+                {
+                    problem = name + chain.problem;
+                    return false;
+                }
+                if (!chain.closed)
+                {
+                    problem = name + "the edges must join into a closed loop.";
+                    return false;
+                }
+                plungeInput.outlines.push_back(std::move(chain));
+            }
+        }
+        Log(L"[generate] plunge area from %zu faces and %zu loops", plungeInput.faces.size(),
+            plungeInput.outlines.size());
 
         // Every visible part, less an imported stock's own, in the origin's frame.
         const std::wstring leaveOut = (m_job.stock.kind == camcore::StockKind::Imported && HasStock())

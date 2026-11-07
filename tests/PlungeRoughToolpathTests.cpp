@@ -7,6 +7,7 @@
 
 #include "Boundary.h"
 #include "CamJob.h"
+#include "Features.h"
 #include "PlungeRoughToolpath.h"
 
 using namespace camcore;
@@ -90,6 +91,22 @@ namespace
         return bottoms;
     }
 
+    // The 0 to 40 by 0 to 30 rectangle as a plunge area, in 0.1 mm cells.
+    PlungeArea RectangleArea()
+    {
+        PlungeArea area;
+        area.Reset(0, 0, 40, 30, 0.1);
+        area.AddLoop(Rectangle(0, 0, 40, 30).path);
+        area.Finish();
+        return area;
+    }
+
+    // A flat face's triangles: a rectangle, as two triangles.
+    std::vector<Vec3> FlatFace(double x0, double y0, double x1, double y1, double z = 0.0)
+    {
+        return { { x0, y0, z }, { x1, y0, z }, { x1, y1, z }, { x0, y0, z }, { x1, y1, z }, { x0, y1, z } };
+    }
+
     double DistanceToRectangle(const Vec3& p, double x0, double y0, double x1, double y1)
     {
         return (std::min)({ p.x - x0, x1 - p.x, p.y - y0, y1 - p.y });
@@ -102,7 +119,8 @@ TEST_CASE("plunges pack inside the area, clear of its wall, and cover it")
     settings.cutAngle = 90;
     const double reach = 3.0 + 0.5;
     const double pitch = 4.5;
-    const std::vector<std::vector<Vec3>> rows = PlungeRows(Rectangle(0, 0, 40, 30).path, reach, pitch, settings);
+    const PlungeArea area = RectangleArea();
+    const std::vector<std::vector<Vec3>> rows = PlungeRows(area, reach, pitch, 6.0, settings);
     REQUIRE(rows.size() >= 2);
 
     std::vector<Vec3> all;
@@ -124,7 +142,8 @@ TEST_CASE("plunges pack inside the area, clear of its wall, and cover it")
             CHECK(std::fabs(rows[r][0].y - rows[r - 1][0].y) <= pitch * std::sqrt(3.0) / 2.0 + 1e-6);
     }
 
-    // Every point the tool's centre can reach is cut: within a tool radius of a plunge.
+    // Every point the tool's centre can reach is cut: within a tool radius of a
+    // plunge, give or take the grid's cells at the edge.
     for (double x = reach; x <= 40 - reach + 1e-9; x += 0.25)
     {
         for (double y = reach; y <= 30 - reach + 1e-9; y += 0.25)
@@ -132,7 +151,7 @@ TEST_CASE("plunges pack inside the area, clear of its wall, and cover it")
             double nearest = 1e9;
             for (const Vec3& p : all)
                 nearest = (std::min)(nearest, std::hypot(p.x - x, p.y - y));
-            CHECK(nearest <= 3.0 + 1e-6);
+            CHECK(nearest <= 3.0 + 2.5 * area.Cell());
         }
     }
 }
@@ -143,7 +162,7 @@ TEST_CASE("rows run along the angle, from the start side, zig or zigzag")
     settings.cutAngle = 90;
     settings.start = PlungeStartSide::Bottom;
     settings.direction = PlungePathDirection::ZigZag;
-    std::vector<std::vector<Vec3>> rows = PlungeRows(Rectangle(0, 0, 40, 30).path, 3.5, 4.5, settings);
+    std::vector<std::vector<Vec3>> rows = PlungeRows(RectangleArea(), 3.5, 4.5, 6.0, settings);
     REQUIRE(rows.size() >= 3);
     for (const auto& row : rows)
     {
@@ -155,16 +174,16 @@ TEST_CASE("rows run along the angle, from the start side, zig or zigzag")
     CHECK(rows[1].front().x > rows[1].back().x);                // the next back
 
     settings.direction = PlungePathDirection::Zig;
-    rows = PlungeRows(Rectangle(0, 0, 40, 30).path, 3.5, 4.5, settings);
+    rows = PlungeRows(RectangleArea(), 3.5, 4.5, 6.0, settings);
     CHECK(rows[1].front().x < rows[1].back().x);
 
     settings.start = PlungeStartSide::Top;
-    rows = PlungeRows(Rectangle(0, 0, 40, 30).path, 3.5, 4.5, settings);
+    rows = PlungeRows(RectangleArea(), 3.5, 4.5, 6.0, settings);
     CHECK(rows[0][0].y > rows[1][0].y);                         // from the top down
 
     // An angle of 0 runs the rows along Y.
     settings.cutAngle = 0;
-    rows = PlungeRows(Rectangle(0, 0, 40, 30).path, 3.5, 4.5, settings);
+    rows = PlungeRows(RectangleArea(), 3.5, 4.5, 6.0, settings);
     for (const Vec3& p : rows[0])
         CHECK(p.x == doctest::Approx(rows[0].front().x));
 }
@@ -273,6 +292,44 @@ TEST_CASE("plunge roughing refuses what it can't do")
     CHECK_FALSE(ValidatePlungeRoughing({ -1.0 }).empty());
 }
 
+TEST_CASE("plunges at least a tool apart never overlap, ends included")
+{
+    // Frank's example: a 55 mm square, a 3 mm tool, 125% stepover.
+    PlungeArea area;
+    area.Reset(0, 0, 55, 55, 3.0 / 40.0);
+    area.AddLoop(Rectangle(0, 0, 55, 55).path);
+    area.Finish();
+    for (double percent : { 100.0, 110.0, 125.0, 150.0, 200.0 })
+    {
+        PlungeRoughingSettings settings;
+        settings.stockToLeave = 0.5;
+        for (double angle : { 0.0, 90.0, 30.0 })
+        {
+            settings.cutAngle = angle;
+            const double pitch = 3.0 * percent / 100.0;
+            const std::vector<std::vector<Vec3>> rows = PlungeRows(area, 1.5 + 0.5, pitch, 3.0, settings);
+            std::vector<Vec3> all;
+            for (const auto& row : rows)
+                all.insert(all.end(), row.begin(), row.end());
+            REQUIRE(all.size() > 10);
+            double closest = 1e9;
+            for (size_t i = 0; i < all.size(); ++i)
+            {
+                for (size_t j = i + 1; j < all.size(); ++j)
+                    closest = (std::min)(closest, std::hypot(all[i].x - all[j].x, all[i].y - all[j].y));
+            }
+            INFO("stepover " << percent << "%, angle " << angle);
+            CHECK(closest >= 3.0 - 1e-6);
+            // Neighbours along a row are exactly the stepover apart, or at least a tool apart at the ends.
+            for (const auto& row : rows)
+            {
+                for (size_t i = 1; i < row.size(); ++i)
+                    CHECK(std::hypot(row[i].x - row[i - 1].x, row[i].y - row[i - 1].y) >= 3.0 - 1e-6);
+            }
+        }
+    }
+}
+
 TEST_CASE("the stepover has no maximum: plunges wider apart than the tool leave plugs")
 {
     SequenceStep step = PlungeStep();
@@ -288,6 +345,74 @@ TEST_CASE("the stepover has no maximum: plunges wider apart than the tool leave 
     step.plungeRoughing.stepover = { false, 0.0, 20.0 };
     CHECK(ValidatePlungeRoughing(step.plungeRoughing).empty());
     CHECK(GeneratePlungeRoughToolpath(Input(step, tool)).ok);
+}
+
+TEST_CASE("faces are projected from above, and shapes that touch merge into one area")
+{
+    const SequenceStep step = PlungeStep();
+    const Tool tool = Mill(6);
+
+    // Two faces side by side, at different heights, make one 40 x 30 area.
+    PlungeRoughToolpathInput input = Input(step, tool);
+    input.outlines.clear();
+    input.faces = { FlatFace(0, 0, 20, 30, 3), FlatFace(20, 0, 40, 30, 5) };
+    ToolpathResult merged = GeneratePlungeRoughToolpath(input);
+    REQUIRE(merged.ok);
+    bool acrossTheJoin = false;
+    for (const Vec3& p : Bottoms(merged.toolpath))
+        acrossTheJoin = acrossTheJoin || std::fabs(p.x - 20) < 2.0;
+    CHECK(acrossTheJoin);       // separately, nothing could plunge within 3.5 of x = 20
+
+    // The same as one loop round the lot.
+    const ToolpathResult loop = GeneratePlungeRoughToolpath(Input(step, tool));
+    REQUIRE(loop.ok);
+    CHECK(static_cast<double>(Bottoms(merged.toolpath).size()) ==
+          doctest::Approx(static_cast<double>(Bottoms(loop.toolpath).size())).epsilon(0.1));
+
+    // A face and a loop that overlap merge too.
+    input.faces = { FlatFace(0, 0, 25, 30) };
+    input.outlines = { Rectangle(15, 0, 40, 30) };
+    merged = GeneratePlungeRoughToolpath(input);
+    REQUIRE(merged.ok);
+    acrossTheJoin = false;
+    for (const Vec3& p : Bottoms(merged.toolpath))
+        acrossTheJoin = acrossTheJoin || (p.x > 22 && p.x < 28);
+    CHECK(acrossTheJoin);
+}
+
+TEST_CASE("a face's holes are filled, and a face seen edge on covers nothing")
+{
+    const SequenceStep step = PlungeStep();
+    const Tool tool = Mill(6);
+
+    // A 40 x 30 frame with a 20 x 14 hole in the middle, as four strips.
+    PlungeRoughToolpathInput input = Input(step, tool);
+    input.outlines.clear();
+    std::vector<Vec3> ring;
+    for (const auto& strip : { FlatFace(0, 0, 40, 8), FlatFace(0, 22, 40, 30), FlatFace(0, 8, 10, 22),
+                               FlatFace(30, 8, 40, 22) })
+        ring.insert(ring.end(), strip.begin(), strip.end());
+    input.faces = { ring };
+    const ToolpathResult result = GeneratePlungeRoughToolpath(input);
+    REQUIRE(result.ok);
+    bool inHole = false;
+    for (const Vec3& p : Bottoms(result.toolpath))
+        inHole = inHole || (p.x > 14 && p.x < 26 && p.y > 12 && p.y < 18);
+    CHECK(inHole);
+
+    // An upright face has no area from above.
+    input.faces = { { { 0, 0, 0 }, { 40, 0, 0 }, { 40, 0, 10 }, { 0, 0, 0 }, { 40, 0, 10 }, { 0, 0, 10 } } };
+    CHECK_FALSE(GeneratePlungeRoughToolpath(input).ok);
+}
+
+TEST_CASE("plunge roughing takes any face, and edges; facing still takes only flat faces")
+{
+    for (PickKind kind : { PickKind::PlanarFace, PickKind::CylindricalFace, PickKind::SurfaceFace, PickKind::LineEdge,
+                           PickKind::CircleEdge, PickKind::CurveEdge })
+        CHECK(FeatureAllowed(FeatureFilter::ProjectedArea, kind));
+    CHECK_FALSE(FeatureAllowed(FeatureFilter::ProjectedArea, PickKind::DesignPoint));
+    CHECK_FALSE(FeatureAllowed(FeatureFilter::FacingArea, PickKind::SurfaceFace));
+    CHECK_FALSE(FeatureAllowed(FeatureFilter::FacingArea, PickKind::CylindricalFace));
 }
 
 TEST_CASE("a plunge roughing operation saves its settings")
@@ -315,6 +440,11 @@ TEST_CASE("a plunge roughing operation saves its settings")
     plunge.plungeRoughing.cutAngle = 30;
     plunge.plungeRoughing.stepover = { false, 60.0, 3.25 };
     plunge.plungeRoughing.approach = 1.5;
+    PickedGeometry surface;
+    surface.kind = PickKind::SurfaceFace;
+    surface.occurrenceName = "Mould<1>";
+    surface.point = { 1, 2, 3 };
+    plunge.features.push_back(surface);
     group.children.push_back(plunge);
     job.sequence.push_back(group);
     REQUIRE(SaveJob(job, path).ok);
@@ -333,6 +463,9 @@ TEST_CASE("a plunge roughing operation saves its settings")
     CHECK(settings.stepover.percent == 60.0);
     CHECK(settings.approach == 1.5);
     CHECK(SameSettings(plunge, back));
+    REQUIRE(back.features.size() == 1);
+    CHECK(back.features[0].kind == PickKind::SurfaceFace);
+    CHECK(back.features[0].point.z == 3);
 
     std::error_code ignored;
     std::filesystem::remove(path, ignored);

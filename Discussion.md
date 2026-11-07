@@ -5645,6 +5645,103 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Both builds pass every test. Updating the Claude doc to match, then installing:
 
+> Plunge Roughing's stepover no longer has a maximum, as a % or a distance. It only has to be more than 0. Past about 87% of the tool's diameter, plugs are left standing between the plunges, and the help now says so instead of giving a limit.
+>
+> This applies to Plunge Roughing only. Pocketing and the other operations still cap their stepover at 100%.
+>
+> Debug and Release both build, every test passes, and the Release build is installed. A new test checks that 250% and a 20 mm distance with a 6 mm tool are accepted and generate a toolpath. The help, the spec (Claude doc and `docs\SPEC.md`, rev 183) and `CLAUDE.md` are updated. Nothing is committed.
+>
+> To test, restart Alibre, then:
+> 1. On the Plunge Roughing tab, set Step Over to 150% and Generate. It should be accepted, with the plunges spread further apart than the tool's width.
+> 2. Try a Distance larger than the tool's diameter. That should be accepted too.
+> 3. A stepover of 0 should still be refused.
+> 4. The help's Step Over Control entry has changed.
+
+### 🧑 Frank · 13:58
+
+> When generating the toolpath, project edges and surfaces to a horizontal plane.  If the polygons are touching, merge them together.  Use these polygons to define where we will horizontally plunge.  The depth is where this cylinder touches the model (less the stock to leave)
+
+### 🤖 Claude
+
+> Questions:
+> - A picked face is projected as its whole footprint from above (its facets merged). If the face has holes, should the plunge area keep them?
+>   - Fill them (Recommended): Only the face's outer boundary counts; holes inside it are part of the area. The 3D model still sets each plunge's depth, so a through hole is plunged to the stock's bottom.
+>   - Keep them out: The projection is exactly the face, so no plunges go where its holes are (unless another picked face or loop covers them).
+> - Edges must make closed polygons to be projected. What about edges that don't close into a loop?
+>   - Refuse, as now (Recommended): Generate stops and says which group of edges doesn't close.
+>   - Ignore them: Leave open edge chains out and use the rest, noting it in the log.
+
+### 🧑 Frank · 13:59
+
+> Answers:
+> - A picked face is projected as its whole footprint from above (its facets merged). If the face has holes, should the plunge area keep them?
+>   **Fill them (Recommended)**
+> - Edges must make closed polygons to be projected. What about edges that don't close into a loop?
+>   **Refuse, as now (Recommended)**
+
+### 🤖 Claude
+
+> The face facet call is `IADFace::FacetData(surfaceTol)`. Next, whether the Features tab lets curved faces be picked at all:
+
+> Curved faces can't be picked yet: Facing's filter takes only flat faces. Plunge Roughing needs a filter of its own. Looking at how picked faces are sorted into kinds:
+
+> Plunge Roughing needs its own feature filter, a new pick kind for curved faces, and the area built from the projection. Checking how picks are saved, so the new kind round-trips:
+
+> The core builds. Now the tests: `PlungeRows` takes the area now, and there are new checks for faces, merging and filled holes.
+
+> Every test passes. Clearing the one warning, an unsigned count passed to `Approx`:
+
+> Now the add-on side: the new pick kind and filter, reading a face's facets, and Generate.
+
+> Both builds are clean and every test passes. I'll add a check that the new filter takes curved faces, and that a `SurfaceFace` pick saves and loads:
+
+> Every test passes in Debug and Release. Installing:
+
+> That installed, but the help still needs updating, so I'll reinstall after the docs.
+
+> Plunge Roughing now works the way you described. Generate projects the picked faces and edges onto the origin's XY plane, merges whatever touches or overlaps into one area, and plunges inside that. Each plunge goes down until the tool touches the model, less the Stock to Leave. That depth part was already how it worked.
+>
+> Debug and Release both build, every test passes, and the new add-on is installed. **The installed help is out of date**, though: Alibre was running again when I tried to reinstall after updating the help page.
+>
+> **What changed:**
+> - **Faces:** the Features tab for Plunge Roughing takes any face now, including cylinders, spheres and freeform surfaces, as well as edges. Facing, Profiling and Pocketing still take only flat faces.
+> - **Projection:** a face covers its whole footprint, read from its facets, with any holes inside it filled. If its facets can't be read, its outer edge loop is used instead.
+> - **Edges:** each group of edges whose ends meet must make a closed loop, which covers its inside. Edges that don't close are refused, as before.
+> - **Merging:** the area is built on a fine grid, about a fortieth of the tool's diameter per cell, so touching or overlapping shapes merge. A distance map keeps the whole tool plus Stock to Leave inside the merged area.
+>
+> **Not yet proven in Alibre:** reading a face's facets uses Alibre's `FacetData` call on a single face, which hasn't been tried yet. Each read writes a `[facets]` line to the log.
+>
+> The help, the spec (Claude doc and `docs\SPEC.md`, rev 184) and `CLAUDE.md` are updated. Nothing is committed.
+>
+> To test, in Alibre:
+> 1. In a Plunge Roughing operation, pick a curved face, such as a dome or a fillet. It should be accepted, listed as "Surface", and give plunges over its footprint seen from above.
+> 2. Pick two faces that share an edge. Plunges should run across the shared edge as one area.
+> 3. Pick a face with a hole in it. Plunges should go over the hole too.
+> 4. Pick edges that make a closed loop, plus a face overlapping it. They should merge.
+> 5. Pick edges that don't close. Generate should refuse.
+> 6. Check the log's `[facets]` lines. If a face shows 0 triangles or fails, send me those lines.
+> 7. After the reinstall, the help's Features and Plunge Roughing sections will have changed.
+
+### 🧑 Frank · 14:09
+
+> Alibre's closed, install
+
+### 🤖 Claude
+
+> Installed, and both the add-on and the help page now match what's in the repository. Start Alibre and run through the seven tests from my last message. If a face's facets don't come through, send me the `[facets]` lines from the log.
+
+### 🧑 Frank · 14:20
+
+> The generated spacing isn't quite right.  There are times when the cylinders overlap.  In my example, 55mm square base, 3mm too, 125% spacing, the first plunge and the last plunge overlap on the first row.  The 2nd row is fine.  The 3rd row shows the same problem.
+
+### 🤖 Claude
+
+> Frank's example is a 55 mm square, a 3 mm tool and a 125% stepover, so plunges should be 3.75 mm apart. I'll look at the row code to see where an end plunge can land closer than that:
+
+> The help edit went through, but writing `docs\SPEC.md` failed. Checking the file is intact before retrying:
+
+> It's intact; the open probably failed because the file was locked for a moment. Retrying just the spec and `CLAUDE.md` edits:
+
 ---
 
 # Side conversation

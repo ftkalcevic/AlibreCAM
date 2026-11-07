@@ -186,7 +186,8 @@ namespace
         Log(L"[pick] cylinder ends %s, %.4f apart", found ? L"found" : L"not found", high - low);
     }
 
-    bool ReadFace(IADFace* pFace, PickedGeometry& pick)
+    // A face as a pick: flat, cylindrical, or (only when anyFace) any other surface.
+    bool ReadFace(IADFace* pFace, PickedGeometry& pick, bool anyFace = false)
     {
         Vec3 point, normal;
         if (OutwardPlaneNormal(pFace, point, normal))
@@ -204,6 +205,17 @@ namespace
             pick.radius = cylinder->GetRadius();
             FindCylinderEnds(pFace, pick);
             Log(L"[pick] cylindrical face, radius %g", pick.radius);
+        }
+        else if (anyFace)
+        {
+            // Known by the middle of its box, as it has no plane or axis.
+            IADPointPtr low, high;
+            pFace->GetExtents(&low, &high);
+            if (low == nullptr || high == nullptr)
+                return false;
+            pick.kind = PickKind::SurfaceFace;
+            pick.point = (ToVec3(low) + ToVec3(high)) * 0.5;
+            Log(L"[pick] surface face");
         }
         else
         {
@@ -633,7 +645,7 @@ namespace
         }
         else if (IADFacePtr face = QI<IADFacePtr>(target))
         {
-            read = ReadFace(face, pick);
+            read = ReadFace(face, pick, filter == camcore::FeatureFilter::ProjectedArea);
         }
 
         // Faces and edges need their occurrence to be found again.
@@ -1302,6 +1314,63 @@ bool ReadAssemblyPartFacets(IADSession* pAssembly, const std::wstring& leaveOutP
     {
         Log(L"[compare] could not read the parts: hr=0x%08X", static_cast<unsigned>(error.Error()));
         problem = L"The parts couldn't be read.";
+        triangles.clear();
+        return false;
+    }
+}
+
+bool ReadFaceFacets(IADSession* pAssembly, const PickedGeometry& feature, std::vector<Vec3>& triangles,
+                    std::wstring& problem)
+{
+    triangles.clear();
+    problem.clear();
+    try
+    {
+        IADOccurrencePtr occurrence;
+        IDispatchPtr target;
+        IADFacePtr face;
+        if (BindFeature(pAssembly, feature, occurrence, target))
+            face = QI<IADFacePtr>(target);
+        if (face == nullptr)
+        {
+            problem = L"A face can't be found in the model. It may have been deleted.";
+            return false;
+        }
+
+        // About 0.05 mm from the true surface, in the part's units.
+        const double partMm = MillimetresPerModelUnit(occurrence->GetDesignSession());
+        SAFEARRAY* pFacets = face->FacetData(0.05 / partMm);
+        VARTYPE vt = VT_EMPTY;
+        LONG lower = 0, upper = -1;
+        if (pFacets != nullptr)
+        {
+            SafeArrayGetVartype(pFacets, &vt);
+            SafeArrayGetLBound(pFacets, 1, &lower);
+            SafeArrayGetUBound(pFacets, 1, &upper);
+        }
+        std::vector<Vec3> points;
+        ReadFacetArray(pFacets, points);
+        if (pFacets != nullptr)
+            SafeArrayDestroy(pFacets);
+        Log(L"[facets] %s: face facets vt=%d, %ld values, %zu triangles", FromUtf8(feature.occurrenceName).c_str(),
+            static_cast<int>(vt), static_cast<long>(upper - lower + 1), points.size() / 3);
+        if (points.empty())
+        {
+            problem = L"A face's shape couldn't be read.";
+            return false;
+        }
+
+        const double assemblyMm = MillimetresPerModelUnit(QI<IADDesignSessionPtr>(pAssembly));
+        const PartToAssembly transform(occurrence, assemblyMm);
+        triangles.reserve(points.size());
+        for (const Vec3& point : points)
+            triangles.push_back(transform.Point(point));
+        return true;
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[facets] could not read a face: hr=0x%08X", static_cast<unsigned>(error.Error()));
+        problem = L"A face's shape couldn't be read.";
         triangles.clear();
         return false;
     }

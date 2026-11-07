@@ -110,6 +110,7 @@ namespace camcore
             case PickKind::CurveEdge:       return "curveEdge";
             case PickKind::DesignPlane:     return "designPlane";
             case PickKind::DesignAxis:      return "designAxis";
+            case PickKind::SurfaceFace:     return "surfaceFace";
             default:                        return "none";
             }
         }
@@ -119,7 +120,8 @@ namespace camcore
             static const PickKind kinds[] =
             {
                 PickKind::PlanarFace, PickKind::CylindricalFace, PickKind::LineEdge, PickKind::CircleEdge,
-                PickKind::DesignPoint, PickKind::CurveEdge, PickKind::DesignPlane, PickKind::DesignAxis
+                PickKind::DesignPoint, PickKind::CurveEdge, PickKind::DesignPlane, PickKind::DesignAxis,
+                PickKind::SurfaceFace
             };
             for (PickKind candidate : kinds)
             {

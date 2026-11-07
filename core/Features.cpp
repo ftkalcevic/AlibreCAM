@@ -97,6 +97,9 @@ namespace camcore
         case FeatureFilter::FacingArea:
             return kind == PickKind::PlanarFace || kind == PickKind::LineEdge || kind == PickKind::CircleEdge ||
                    kind == PickKind::CurveEdge;
+        case FeatureFilter::ProjectedArea:
+            return kind == PickKind::PlanarFace || kind == PickKind::CylindricalFace || kind == PickKind::SurfaceFace ||
+                   kind == PickKind::LineEdge || kind == PickKind::CircleEdge || kind == PickKind::CurveEdge;
         default:
             return false;
         }

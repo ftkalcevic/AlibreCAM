@@ -335,6 +335,7 @@ namespace
         case PickKind::PlanarFace:      return L"Face";
         case PickKind::LineEdge:        return L"Edge";
         case PickKind::CurveEdge:       return L"Curve";
+        case PickKind::SurfaceFace:     return L"Surface";
         default:                        return L"Other";
         }
     }
@@ -492,8 +493,9 @@ void CFeaturesPage::SetSelectedFeatures(const std::vector<PickedGeometry>& selec
     if (ignored > 0)
     {
         note += L" " + std::to_wstring(ignored) + (ignored == 1 ? L" selected item isn't" : L" selected items aren't") +
-                (m_pOwner->GetFeatureFilter() == FeatureFilter::FacingArea ? L" a flat face or an edge"
-                                                                           : L" a circle, hole or point") +
+                (m_pOwner->GetFeatureFilter() == FeatureFilter::FacingArea      ? L" a flat face or an edge"
+                 : m_pOwner->GetFeatureFilter() == FeatureFilter::ProjectedArea ? L" a face or an edge"
+                                                                                 : L" a circle, hole or point") +
                 L", and was left out.";
     }
     ShowNote(note);
@@ -2976,7 +2978,9 @@ FeatureFilter COperationDlg::GetFeatureFilter() const
     // Profiling and Pocketing borrow Facing's until their own are decided.
     const bool area = m_step.type == StepType::Facing || m_step.type == StepType::Profiling ||
                       m_step.type == StepType::Pocketing || m_step.type == StepType::Chamfer ||
-                      m_step.type == StepType::Engrave || m_step.type == StepType::PlungeRoughing;
+                      m_step.type == StepType::Engrave;
+    if (m_step.type == StepType::PlungeRoughing)
+        return FeatureFilter::ProjectedArea;
     return area ? FeatureFilter::FacingArea : FeatureFilter::Points;
 }
 

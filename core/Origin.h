@@ -58,7 +58,8 @@ namespace camcore
         DesignPoint,
         CurveEdge,      // any other edge, such as a spline: start and end, and point halfway along
         DesignPlane,    // Alibre's own planes, such as XY, or the user's
-        DesignAxis
+        DesignAxis,
+        SurfaceFace     // any other face, such as a sphere or spline surface: only Plunge Roughing takes one
     };
 
     // A face, edge or design point picked in the view.

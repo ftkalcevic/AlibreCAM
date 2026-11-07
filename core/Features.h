@@ -16,9 +16,10 @@ namespace camcore
     enum class FeatureFilter
     {
         Points,     // Drill: anything that reduces to a point
-        FacingArea  // Facing: flat faces, and edges around the area (straight,
+        FacingArea, // Facing: flat faces, and edges around the area (straight,
                     // circular or other curves such as splines). The edges
                     // needn't make a closed shape.
+        ProjectedArea   // Plunge Roughing: any faces, and edges, projected from above
     };
 
     bool FeatureAllowed(FeatureFilter filter, PickKind kind);
