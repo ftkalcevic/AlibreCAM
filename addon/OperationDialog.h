@@ -419,6 +419,26 @@ private:
     camcore::PocketLinearStart m_linearStart;
 };
 
+// The Plunge Roughing operation's own tab.
+class CPlungeRoughingPage : public COperationPage
+{
+public:
+    explicit CPlungeRoughingPage(COperationDlg* pOwner);
+
+    void Load(const camcore::SequenceStep& step) override;
+    bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
+
+    enum { IDD = IDD_OP_PLUNGE_ROUGHING };
+
+protected:
+    afx_msg void OnStepoverChanged();
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    void UpdateFields();
+};
+
 // The Hole Pocketing operation's own tab.
 class CHolePocketingPage : public COperationPage
 {

@@ -10,6 +10,7 @@
 #include "HolePocketToolpath.h"
 #include "PocketToolpath.h"
 #include "EngraveToolpath.h"
+#include "PlungeRoughToolpath.h"
 #include "ProfileToolpath.h"
 #include "FileIO.h"
 #include "PostDialog.h"
@@ -67,6 +68,7 @@ namespace
         ID_CAM_ADD_POCKETING,
         ID_CAM_ADD_CHAMFER,
         ID_CAM_ADD_ENGRAVE,
+        ID_CAM_ADD_PLUNGE_ROUGHING,
         ID_CAM_EDIT_STEP,
         ID_CAM_STOCK_BOX,
         ID_CAM_STOCK_PART_BOX,
@@ -1071,6 +1073,7 @@ void CCamTabCommand::AddOperation(size_t folder, camcore::StepType type)
                                              : type == camcore::StepType::Chamfer ? "Chamfer"
                                              : type == camcore::StepType::Engrave ? "Engrave"
                                              : type == camcore::StepType::HolePocketing ? "Hole Pocketing"
+                                             : type == camcore::StepType::PlungeRoughing ? "Plunge Roughing"
                                                                                     : "Drill");
 
     // A new operation starts with the tool selected in the tree.
@@ -1915,7 +1918,7 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
     if (operation.type != camcore::StepType::Drill && operation.type != camcore::StepType::Facing &&
         operation.type != camcore::StepType::Profiling && operation.type != camcore::StepType::Pocketing &&
         operation.type != camcore::StepType::Chamfer && operation.type != camcore::StepType::Engrave &&
-        operation.type != camcore::StepType::HolePocketing)
+        operation.type != camcore::StepType::HolePocketing && operation.type != camcore::StepType::PlungeRoughing)
     {
         problem = "Toolpaths for this operation aren't built yet.";
         return false;
@@ -1956,6 +1959,8 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
     // stops Generate, as clearing it can't be checked.
     bool haveStockMaxZ = false;
     double stockMaxZ = 0.0;
+    bool haveStockMinZ = false;
+    double stockMinZ = 0.0;
     if (HasStock())
     {
         std::vector<camcore::LineSegment> edges;
@@ -1968,6 +1973,12 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
             return false;
         }
         haveStockMaxZ = camcore::HighestAlongZ(frame.frame, points, stockMaxZ);
+        for (const camcore::Vec3& point : points)
+        {
+            const double z = camcore::WorldToFrame(frame.frame, point).z;
+            stockMinZ = haveStockMinZ ? (std::min)(stockMinZ, z) : z;
+            haveStockMinZ = true;
+        }
     }
 
     // Each feature's outline, read again from the model, in the origin's frame
@@ -2099,6 +2110,62 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
             return false;
         }
         operation.toolpath = profileResult.toolpath;
+        return true;
+    }
+
+    // Plunge Roughing plunges over each closed area, down to the parts under the tool.
+    if (operation.type == camcore::StepType::PlungeRoughing)
+    {
+        if (!gatherAreas("Plunge Roughing"))
+            return false;
+
+        camcore::PlungeRoughToolpathInput plungeInput;
+        plungeInput.operation = &operation;
+        plungeInput.tool = (pTool != nullptr) ? &tool : nullptr;
+        plungeInput.havePartMaxZ = havePartMaxZ;
+        plungeInput.partMaxZ = partMaxZ;
+        plungeInput.haveStockMaxZ = haveStockMaxZ;
+        plungeInput.stockMaxZ = stockMaxZ;
+        plungeInput.haveStockMinZ = haveStockMinZ;
+        plungeInput.stockMinZ = stockMinZ;
+        for (size_t n = 0; n < areas.areas.size(); ++n)
+        {
+            camcore::ProfileChain chain = camcore::ChainProfile(areas.areas[n], areas.level);
+            if (!chain.ok)
+            {
+                problem = areaName(n, "Area") + chain.problem;
+                return false;
+            }
+            if (!chain.closed)
+            {
+                problem = areaName(n, "Area") + "the edges must join into a closed outline.";
+                return false;
+            }
+            plungeInput.outlines.push_back(std::move(chain));
+        }
+
+        // Every visible part, less an imported stock's own, in the origin's frame.
+        const std::wstring leaveOut = (m_job.stock.kind == camcore::StockKind::Imported && HasStock())
+                                          ? FromUtf8(m_job.stock.partPath)
+                                          : std::wstring();
+        std::vector<camcore::Vec3> partTriangles;
+        std::wstring partProblem;
+        if (!ReadAssemblyPartFacets(GetSession(), leaveOut, partTriangles, partProblem))
+            Log(L"[generate] plunge roughing without parts: %s", partProblem.c_str());
+        plungeInput.partTriangles.reserve(partTriangles.size());
+        for (const camcore::Vec3& point : partTriangles)
+            plungeInput.partTriangles.push_back(camcore::WorldToFrame(frame.frame, point));
+
+        const ULONGLONG start = GetTickCount64();
+        const camcore::ToolpathResult plungeResult = camcore::GeneratePlungeRoughToolpath(plungeInput);
+        Log(L"[generate] plunge roughing: %zu part triangles, %zu moves, in %llu ms",
+            plungeInput.partTriangles.size() / 3, plungeResult.toolpath.moves.size(), GetTickCount64() - start);
+        if (!plungeResult.ok)
+        {
+            problem = plungeResult.problem;
+            return false;
+        }
+        operation.toolpath = plungeResult.toolpath;
         return true;
     }
 
@@ -3213,6 +3280,7 @@ namespace
         kImagePocketing,
         kImageChamfer,
         kImageEngrave,
+        kImagePlungeRoughing,
         kImageWarning       // drawn over another image, as overlay 1
     };
 
@@ -3246,6 +3314,7 @@ namespace
         case camcore::StepType::Pocketing:     return kImagePocketing;
         case camcore::StepType::Chamfer:       return kImageChamfer;
         case camcore::StepType::Engrave:       return kImageEngrave;
+        case camcore::StepType::PlungeRoughing: return kImagePlungeRoughing;
         default:                               return kImageOperations;
         }
     }
@@ -3904,6 +3973,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     menu.CreatePopupMenu();
     CMenu holes;
     CMenu twoAndAHalfAxis;
+    CMenu threeAxis;
     if (onStep && m_pTab->IsFolder(ref))
     {
         menu.AppendMenu(MF_STRING | renamable, ID_CAM_RENAME_STEP, L"Rename");
@@ -3925,6 +3995,10 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
         twoAndAHalfAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_ENGRAVE, L"Engrave...");
         menu.AppendMenu(MF_POPUP | editable, reinterpret_cast<UINT_PTR>(twoAndAHalfAxis.GetSafeHmenu()),
                         L"Add 2 1/2 Axis");
+
+        threeAxis.CreatePopupMenu();
+        threeAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_PLUNGE_ROUGHING, L"Plunge Roughing...");
+        menu.AppendMenu(MF_POPUP | editable, reinterpret_cast<UINT_PTR>(threeAxis.GetSafeHmenu()), L"Add 3 Axis");
         menu.AppendMenu(MF_SEPARATOR);
         menu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
         menu.AppendMenu(MF_STRING | clearable, ID_CAM_CLEAR_TOOLPATHS, L"Clear Toolpaths");
@@ -3986,6 +4060,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     case ID_CAM_ADD_POCKETING: m_pTab->AddOperation(ref.step, camcore::StepType::Pocketing); break;
     case ID_CAM_ADD_CHAMFER: m_pTab->AddOperation(ref.step, camcore::StepType::Chamfer); break;
     case ID_CAM_ADD_ENGRAVE: m_pTab->AddOperation(ref.step, camcore::StepType::Engrave); break;
+    case ID_CAM_ADD_PLUNGE_ROUGHING: m_pTab->AddOperation(ref.step, camcore::StepType::PlungeRoughing); break;
     case ID_CAM_EDIT_STEP:   m_pTab->EditStep(ref); break;
     case ID_CAM_RENAME_STEP: m_tree.EditLabel(hItem); break;
     case ID_CAM_DELETE_STEP: m_pTab->DeleteStep(ref); break;

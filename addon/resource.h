@@ -213,6 +213,7 @@
 #define IDB_CAM_TREE_24                 13039
 #define IDB_CAM_TREE_32                 13040
 #define IDD_SIMULATION                  13041
+#define IDD_OP_PLUNGE_ROUGHING          13042
 #define IDD_SETTINGS                    13030
 #define IDD_STOCK_BOX                   13031
 #define IDD_STOCK_PART_BOX              13032
@@ -319,6 +320,17 @@
 #define IDC_SIM_SHOW_NOT_ENOUGH         13391
 #define IDC_SIM_SHOW_TOO_MUCH           13392
 #define IDC_SIM_COMPARE                 13393
+#define IDC_PLUNGE_STOCK                13394
+#define IDC_PLUNGE_ZIG                  13395
+#define IDC_PLUNGE_ZIGZAG               13396
+#define IDC_PLUNGE_BOTTOM               13397
+#define IDC_PLUNGE_TOP                  13398
+#define IDC_PLUNGE_ANGLE                13399
+#define IDC_PLUNGE_STEP_PERCENT_RADIO   13400
+#define IDC_PLUNGE_STEP_PERCENT         13401
+#define IDC_PLUNGE_STEP_DISTANCE_RADIO  13402
+#define IDC_PLUNGE_STEP_DISTANCE        13403
+#define IDC_PLUNGE_APPROACH             13404
 #define IDC_HP_AT_TOP                   13266
 #define IDC_HP_AT_BOTTOM                13267
 #define IDC_HP_PICK_TOP                 13268
@@ -354,9 +366,9 @@
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13042
+#define _APS_NEXT_RESOURCE_VALUE        13043
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13394
+#define _APS_NEXT_CONTROL_VALUE         13405
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

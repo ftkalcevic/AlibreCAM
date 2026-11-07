@@ -89,6 +89,7 @@
   <a href="#tab-engraving">Engraving</a>
   <a href="#tab-pocketing">Pocketing</a>
   <a href="#tab-hole-pocketing">Hole Pocketing</a>
+  <a href="#tab-plunge-roughing">Plunge Roughing</a>
   <a href="#tab-drilling">Drilling</a>
 </nav>
 <main>
@@ -164,6 +165,8 @@
   <dd>Adds a Chamfer operation: cuts a chamfer along edges with a V-mill or chamfer mill.</dd>
   <dt>Add 2 1/2 Axis ▸ Engrave</dt>
   <dd>Adds an Engrave operation: the tool's centre follows lines, such as text or a scribed outline.</dd>
+  <dt>Add 3 Axis ▸ Plunge Roughing</dt>
+  <dd>Adds a Plunge Roughing operation: roughs out a 3D shape inside closed areas by feeding straight down, on a packed grid of plunges, each stopping above the parts.</dd>
   <dt>Edit</dt>
   <dd>Opens the step's dialog.</dd>
   <dt>Rename</dt>
@@ -502,7 +505,7 @@
 
 <section id="tab-features">
 <h2>Features tab</h2>
-<p>The geometry the operation machines, in the order it's machined. Each operation takes its own kinds of geometry: Drill and Hole Pocketing take circles, arcs, hole faces and design points; Facing, Profiling and Pocketing take faces and edges, including spline curves. For the 2 1/2 axis operations only the geometry's position in the origin's XY plane matters: the heights come from the Cut Levels tab. Each face is an area of its own, and edges whose ends meet are grouped into one.</p>
+<p>The geometry the operation machines, in the order it's machined. Each operation takes its own kinds of geometry: Drill and Hole Pocketing take circles, arcs, hole faces and design points; Facing, Profiling, Pocketing and Plunge Roughing take faces and edges, including spline curves. For the 2 1/2 axis operations only the geometry's position in the origin's XY plane matters: the heights come from the Cut Levels tab. Plunge Roughing uses the geometry only for the area, seen from above; its depths come from the parts. Each face is an area of its own, and edges whose ends meet are grouped into one.</p>
 <dl>
   <dt>Feature list</dt>
   <dd>Each feature's type, part, diameter, and X, Y and Z in the operation's origin. Drag rows to reorder them. Choosing rows selects them in the view. Press Delete to remove the chosen rows.</dd>
@@ -749,6 +752,25 @@
   <dd>For Linear Cuts, start the rows at the origin's -Y side or +Y side.</dd>
   <dt>Stepover</dt>
   <dd>How far apart the loops or rows are, as a % of the tool diameter or a distance.</dd>
+</dl>
+</section>
+
+<section id="tab-plunge-roughing">
+<h2>Plunge Roughing tab</h2>
+<p>Plunge Roughing roughs out a 3D shape by feeding the tool straight down (along the origin's -Z) again and again, cutting out round plugs. Each closed area from the Features tab is filled with plunges packed as circles are: rows along the Angle of Cuts, alternate rows shifted half a stepover, and each row's ends getting a plunge where the grid leaves a gap. The whole tool, plus the Stock to Leave, stays inside the area, so its wall isn't cut. Each plunge goes down until the tool, anywhere across its width, would come within the Stock to Leave of a part, so it follows the 3D shape below; where no part is under it, it goes to the stock's bottom. Every visible, unsuppressed part in the assembly counts (an imported stock's own part doesn't). Any mill or drill can be used; the depth is worked out for its shape. Plunges with nothing to cut are left out. Its tabs are Features, Tool, Feeds &amp; Speeds, Clearance and this one.</p>
+<dl>
+  <dt>Stock to Leave</dt>
+  <dd>Material left on the parts, and on the area's wall, for later operations. 0 or more.</dd>
+  <dt>Path Direction: Zig / Zig Zag</dt>
+  <dd>The order along each row. Zig goes the same way along every row; Zig Zag comes back along the next.</dd>
+  <dt>Start Side: Bottom / Top</dt>
+  <dd>Which side the first row is on: the origin's -Y side (Bottom) or +Y side (Top), as Pocketing's Linear Cuts do. With rows along Y, Bottom is the -X side.</dd>
+  <dt>Angle of Cuts</dt>
+  <dd>The direction the rows run, the path each row's plunges are traced along: 90 runs along the origin's X, 0 along its Y.</dd>
+  <dt>Step Over Control</dt>
+  <dd>How far apart neighbouring plunges are, as a % of the tool diameter or a distance; rows are this times 0.87 apart. It has no maximum. To leave no plugs between plunges it should be at most about 87% of the diameter; more than that leaves plugs standing between them. 75% is the default.</dd>
+  <dt>Cut Engage/Retract: Approach</dt>
+  <dd>How far above the stock's top (or the parts' top, with no stock) the tool comes down to at rapid before feeding down at the plunge feed. It comes back up there at the retract feed, and moves between plunges at that height. It starts and ends at the clearance plane, which must be at or above this height.</dd>
 </dl>
 </section>
 

@@ -5527,6 +5527,124 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Alibre's closed, install
 
+### 🤖 Claude
+
+> The comparison is installed: the Release build, along with the updated help page, and the installed add-on matches the build. Start Alibre and run through the six tests from my last message. If the green Part cells don't sit on the model, send me the `[compare]` lines from the log.
+
+### 🧑 Frank · 13:29
+
+> Now we are moving on to true 3d operations.  These will appear in a new menu level - "Add 3 Axis...".
+> Lets start with roughing operations.  The first will be Plunge Roughing.  This uses an endmill or drill to feed in -Z only to cut out cylindrical plugs.
+> The dialog will have the tabs - Features, Tool, Feeds and Speeds, Clearance, and the Plunge Roughing tab.
+> The Plunge roughing tab has, a label/edit Stock to Leave.
+> A group box, Path Direction, with radio zig, or zig zag.
+> A group  box, Start Side, with radio buttons, Bottom and Top.
+> A group box, Angle of Cuts, with and edit.  Angle of cuts is the path we trace for each plunge.
+> Next group box is Step over control, with radio/edit pairs for % Tool Dia, and Distance.
+> And a Cut Engage/Retract group, with label/edit Approach.
+>
+> For the tool path, a grid of holes is fit inside the closed geometry.  The sort order is best fit to "Path direction".  Holes are drilled to depth less "stock to leave".  the grid of holes should use circle packing - using the "Step over control" to space them.
+
+### 🤖 Claude
+
+> Questions:
+> - Plunge Roughing has no Cut Levels tab. How deep should each plunge go?
+>   - To the 3D model (Recommended): Each plunge stops Stock to Leave above the highest point of the parts under the tool's footprint (all visible parts, as the simulation compare reads them), so it roughs a 3D shape. Where no part is under it, it goes to the stock's bottom.
+>   - To the geometry's Z: Every plunge goes to the picked boundary's height plus Stock to Leave, like a pocket with one level.
+>   - Picked faces only: Each plunge stops Stock to Leave above the picked faces under it; the boundary is their outline.
+> - How must the plunges fit inside the closed geometry?
+>   - Whole tool inside (Recommended): Every plunge's full circle, plus Stock to Leave, stays inside the boundary, so the wall isn't cut.
+>   - Centre inside: Plunge wherever the tool's centre is inside the boundary, so the edge of the area is cleared too, cutting past the boundary by the tool radius.
+> - What does Approach mean between plunges?
+>   - Rapid to Approach above stock (Recommended): Rapid down to Approach above the stock's top (or the clearance plane if lower), then feed down; after each plunge, rapid back up to Approach above the stock's top and across to the next. Only the first and last moves use the Clearance tab's height.
+>   - Rapid to Approach above material: Feed starts Approach above the material actually left at that spot (the stock top, or what a previous plunge left), so less air is cut.
+> - Which tools can Plunge Roughing use?
+>   - Flat end mill or drill (Recommended): As you described. A drill's point goes to the depth, so its full diameter stops short by the point's length.
+>   - Any mill or drill: Ball and corner radius mills too, with the depth worked out for their shape.
+
+### 🧑 Frank · 13:31
+
+> Answers:
+> - Plunge Roughing has no Cut Levels tab. How deep should each plunge go?
+>   **To the 3D model (Recommended)**
+> - How must the plunges fit inside the closed geometry?
+>   **Whole tool inside (Recommended)**
+> - What does Approach mean between plunges?
+>   **Rapid to Approach above stock (Recommended)**
+> - Which tools can Plunge Roughing use?
+>   **Any mill or drill**
+
+### 🤖 Claude
+
+> Engrave was the most recent operation added, so its trail lists every place a new operation touches:
+
+> I'm still reading the pocketing code, to reuse how its Linear rows handle the angle and the start side.
+
+> Next, the Pocketing tab's code and dialog template, to copy its controls for Stock to Leave, Angle and Stepover:
+
+> I have the full list of places to touch. One more: the tree images are drawn by a scratch script, so the new operation needs an icon there too.
+
+> Adding a Plunge Roughing image to the tree strips: a block with a staggered pattern of round holes.
+
+> The image reads well at all three sizes. Now the core: the settings, then the toolpath.
+
+> Now `CamJob`: the new step type, its settings, saving and loading, and `.cam` format version 8.
+
+> The core builds cleanly. Now the tests. Checking how an operation's save and load round trip is tested:
+
+> All 56 new checks pass, along with the rest. Now the add-on: resources, the tab page, the dialog wiring, the menu, the tree image and Generate.
+
+> Both builds are clean and every test passes. Installing:
+
+> Alibre is open, so I haven't installed it. On to the docs: the help first.
+
+> Now the same paragraph in the Claude doc, just before the Simulation item:
+
+> Plunge Roughing is built: a folder's right-click menu has a new **Add 3 Axis ▸ Plunge Roughing...**. Debug and Release both build cleanly and every test passes, including the new Plunge Roughing tests. **It isn't installed**, because Alibre was open, so none of it has run in Alibre yet.
+>
+> **The dialog** has Features, Tool, Feeds & Speeds, Clearance and the Plunge Roughing tab. The tab follows your layout: Stock to Leave, Path Direction (Zig or Zig Zag), Start Side (Bottom or Top), Angle of Cuts, Step Over Control (% Tool Dia or Distance) and Cut Engage/Retract with Approach. The operation also has its own tree image: a block with a staggered grid of holes.
+>
+> **The toolpath:**
+> - **Areas:** the Features tab takes faces and edges that make closed areas, as Pocketing does.
+> - **The grid:** plunges fill each area as packed circles. Rows run along the Angle of Cuts, alternate rows shift by half a stepover, and a row's end gets an extra plunge where the grid would leave a gap of more than half a stepover. The whole tool plus Stock to Leave stays inside the area.
+> - **Order:** rows start from the start side and run Zig or Zig Zag. Bottom and Top work as in Pocketing's Linear Cuts: Bottom is the origin's −Y side.
+> - **Depth:** each plunge goes down until the tool, anywhere across its width, would come within Stock to Leave of a part. It reads every visible part, the same way the simulation's comparison does. Where no part is under the tool, it goes to the stock's bottom. The depth is worked out for each tool's shape, so ball, V and drill tips stop in the right place.
+> - **Moves:** rapid down to Approach above the stock's top, feed down at the plunge feed, and back up at the retract feed. It moves between plunges at that height and uses the clearance plane only at the start and end. A plunge with nothing to cut is skipped.
+>
+> **Defaults I chose**, since you didn't give any: Stock to Leave 0.5 mm, Zig Zag, Bottom, Angle 0°, Stepover 75% and Approach 2 mm.
+>
+> Two things to know:
+> - At 100% stepover, uncut plugs are left between plunges. Up to about 87% they aren't.
+> - The `.cam` format is now version 8, so older add-ons won't open a job that's been saved by this one.
+>
+> The help (menu entry, Features note and a new Plunge Roughing tab section), the spec (Claude doc and `docs\SPEC.md`, rev 182), `CLAUDE.md` and `Discussion.md` are updated. Nothing is committed.
+>
+> To test, after installing and restarting Alibre:
+> 1. Right-click a folder. **Add 3 Axis ▸ Plunge Roughing...** opens the dialog with the five tabs. The new tree image shows.
+> 2. On the Plunge Roughing tab, switching between % Tool Dia and Distance should enable only the chosen box. Bad values, such as a negative Stock to Leave or a stepover of 0, should be refused.
+> 3. Pick a face or a closed loop of edges around a 3D part, choose a flat end mill, and Generate. The plunges should fill the area on a staggered grid, stopping above the part's surface. Where no part is under the tool, they should go to the stock's bottom.
+> 4. Try Zig, Zig Zag, Bottom, Top, and Angles 0 and 90, and check the plunge order in the drawn toolpath.
+> 5. Try a ball mill and a drill. Their tips should stop just above the part.
+> 6. Simulate it, then tick Too much removed. There should be no red.
+> 7. Save, close and reopen the job. The settings should come back.
+> 8. The help has the new tab section and menu entry.
+
+### 🧑 Frank · 13:42
+
+> Alibre's closed, install
+
+### 🤖 Claude
+
+> Plunge Roughing is installed: the Release build, along with the updated help page, and the installed add-on matches the build. Start Alibre and run through the eight tests from my last message. If the plunge depths look wrong, send me the `[generate]` and `[compare]` lines from the log, which show the part triangles that were read.
+
+### 🧑 Frank · 13:51
+
+> Step over % has no max.
+
+### 🤖 Claude
+
+> Both builds pass every test. Updating the Claude doc to match, then installing:
+
 ---
 
 # Side conversation

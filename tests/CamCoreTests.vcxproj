@@ -76,6 +76,7 @@
     <ClCompile Include="MachineTests.cpp" />
     <ClCompile Include="ChamferToolpathTests.cpp" />
     <ClCompile Include="EngraveToolpathTests.cpp" />
+    <ClCompile Include="PlungeRoughToolpathTests.cpp" />
     <ClCompile Include="SimulationTests.cpp" />
     <ClCompile Include="SourceTests.cpp" />
     <ClCompile Include="FeatureTests.cpp" />

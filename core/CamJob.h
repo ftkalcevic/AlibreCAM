@@ -13,6 +13,7 @@
 #include "CutLevels.h"
 #include "Drill.h"
 #include "Engraving.h"
+#include "PlungeRoughing.h"
 #include "EntryExit.h"
 #include "Facing.h"
 #include "Feeds.h"
@@ -27,7 +28,7 @@ namespace camcore
 {
     // The newest .cam format this build can read and the one it writes.
     // Version 2 added Set Origin steps and groups to the sequence.
-    constexpr int kCamFormatVersion = 7;
+    constexpr int kCamFormatVersion = 8;
 
     // Which assembly a job belongs to. The GUID comes from the assembly file,
     // and is empty if it couldn't be read.
@@ -47,7 +48,8 @@ namespace camcore
         Pocketing,      // an operation, 2 1/2 axis pocketing
         HolePocketing,  // an operation: round holes cut with an end mill on a spiral
         Chamfer,        // an operation: a chamfer along edges, with Profiling's settings too
-        Engrave         // an operation: the tool's centre follows lines
+        Engrave,        // an operation: the tool's centre follows lines
+        PlungeRoughing  // an operation, 3 axis: plunges straight down on a packed grid
     };
 
     bool IsOperation(StepType type);
@@ -104,6 +106,9 @@ namespace camcore
 
         // Hole Pocketing operations only.
         HolePocketingSettings holePocketing;
+
+        // Plunge Roughing operations only.
+        PlungeRoughingSettings plungeRoughing;
         std::vector<Path> boundaries;
 
         // Groups only. Operations run in this order. Groups don't nest, and a

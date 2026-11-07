@@ -1,0 +1,339 @@
+// PlungeRoughToolpathTests.cpp : tests for Plunge Roughing's grid of plunges, their depths and its toolpath.
+
+#include <doctest/doctest.h>
+
+#include <cmath>
+#include <filesystem>
+
+#include "Boundary.h"
+#include "CamJob.h"
+#include "PlungeRoughToolpath.h"
+
+using namespace camcore;
+
+namespace
+{
+    ProfileChain Rectangle(double x0, double y0, double x1, double y1, double z = 0.0)
+    {
+        ProfileChain chain;
+        chain.ok = true;
+        chain.closed = true;
+        chain.path = PathFromPoints({ { x0, y0, z }, { x1, y0, z }, { x1, y1, z }, { x0, y1, z } });
+        return chain;
+    }
+
+    // The 12 triangles of a box.
+    std::vector<Vec3> Box(const Vec3& a, const Vec3& b)
+    {
+        const Vec3 c[8] = {
+            { a.x, a.y, a.z }, { b.x, a.y, a.z }, { b.x, b.y, a.z }, { a.x, b.y, a.z },
+            { a.x, a.y, b.z }, { b.x, a.y, b.z }, { b.x, b.y, b.z }, { a.x, b.y, b.z },
+        };
+        const int faces[6][4] = { { 0, 3, 2, 1 }, { 4, 5, 6, 7 }, { 0, 1, 5, 4 },
+                                  { 1, 2, 6, 5 }, { 2, 3, 7, 6 }, { 3, 0, 4, 7 } };
+        std::vector<Vec3> mesh;
+        for (const auto& f : faces)
+        {
+            for (int i : { f[0], f[1], f[2], f[0], f[2], f[3] })
+                mesh.push_back(c[i]);
+        }
+        return mesh;
+    }
+
+    SequenceStep PlungeStep()
+    {
+        SequenceStep step;
+        step.type = StepType::PlungeRoughing;
+        step.clearance.mode = ClearanceMode::AbsoluteZ;
+        step.clearance.absoluteZ = 20;
+        step.feeds.plunge = 150;
+        step.feeds.retract = 900;
+        step.plungeRoughing.stockToLeave = 0.5;
+        step.plungeRoughing.approach = 2;
+        step.plungeRoughing.cutAngle = 90;      // rows along X
+        step.plungeRoughing.stepover = { true, 75.0, 0.0 };
+        return step;
+    }
+
+    Tool Mill(double diameter, ToolType type = ToolType::FlatEndMill)
+    {
+        Tool tool;
+        tool.type = type;
+        tool.diameter = diameter;
+        tool.overallLength = 30;
+        return tool;
+    }
+
+    PlungeRoughToolpathInput Input(const SequenceStep& step, const Tool& tool)
+    {
+        PlungeRoughToolpathInput input;
+        input.operation = &step;
+        input.tool = &tool;
+        input.outlines = { Rectangle(0, 0, 40, 30) };
+        input.haveStockMaxZ = true;
+        input.stockMaxZ = 10;
+        input.haveStockMinZ = true;
+        input.stockMinZ = 0;
+        return input;
+    }
+
+    // Each plunge's bottom: the feed down's end.
+    std::vector<Vec3> Bottoms(const Toolpath& toolpath)
+    {
+        std::vector<Vec3> bottoms;
+        for (size_t i = 0; i < toolpath.moves.size(); ++i)
+        {
+            const ToolpathMove& move = toolpath.moves[i];
+            if (move.kind == MoveKind::Feed && move.feed == 150)
+                bottoms.push_back(move.to);
+        }
+        return bottoms;
+    }
+
+    double DistanceToRectangle(const Vec3& p, double x0, double y0, double x1, double y1)
+    {
+        return (std::min)({ p.x - x0, x1 - p.x, p.y - y0, y1 - p.y });
+    }
+}
+
+TEST_CASE("plunges pack inside the area, clear of its wall, and cover it")
+{
+    PlungeRoughingSettings settings;
+    settings.cutAngle = 90;
+    const double reach = 3.0 + 0.5;
+    const double pitch = 4.5;
+    const std::vector<std::vector<Vec3>> rows = PlungeRows(Rectangle(0, 0, 40, 30).path, reach, pitch, settings);
+    REQUIRE(rows.size() >= 2);
+
+    std::vector<Vec3> all;
+    for (size_t r = 0; r < rows.size(); ++r)
+    {
+        for (size_t i = 0; i < rows[r].size(); ++i)
+        {
+            const Vec3& p = rows[r][i];
+            CHECK(DistanceToRectangle(p, 0, 0, 40, 30) >= reach - 1e-6);
+            if (i > 0)
+            {
+                const double apart = std::fabs(p.x - rows[r][i - 1].x);
+                CHECK(apart <= pitch + 1e-6);
+                CHECK(apart > 0.1);
+            }
+            all.push_back(p);
+        }
+        if (r > 0)
+            CHECK(std::fabs(rows[r][0].y - rows[r - 1][0].y) <= pitch * std::sqrt(3.0) / 2.0 + 1e-6);
+    }
+
+    // Every point the tool's centre can reach is cut: within a tool radius of a plunge.
+    for (double x = reach; x <= 40 - reach + 1e-9; x += 0.25)
+    {
+        for (double y = reach; y <= 30 - reach + 1e-9; y += 0.25)
+        {
+            double nearest = 1e9;
+            for (const Vec3& p : all)
+                nearest = (std::min)(nearest, std::hypot(p.x - x, p.y - y));
+            CHECK(nearest <= 3.0 + 1e-6);
+        }
+    }
+}
+
+TEST_CASE("rows run along the angle, from the start side, zig or zigzag")
+{
+    PlungeRoughingSettings settings;
+    settings.cutAngle = 90;
+    settings.start = PlungeStartSide::Bottom;
+    settings.direction = PlungePathDirection::ZigZag;
+    std::vector<std::vector<Vec3>> rows = PlungeRows(Rectangle(0, 0, 40, 30).path, 3.5, 4.5, settings);
+    REQUIRE(rows.size() >= 3);
+    for (const auto& row : rows)
+    {
+        for (const Vec3& p : row)
+            CHECK(p.y == doctest::Approx(row.front().y));
+    }
+    CHECK(rows[0][0].y < rows[1][0].y);                         // from the bottom up
+    CHECK(rows[0].front().x < rows[0].back().x);                // the first row one way
+    CHECK(rows[1].front().x > rows[1].back().x);                // the next back
+
+    settings.direction = PlungePathDirection::Zig;
+    rows = PlungeRows(Rectangle(0, 0, 40, 30).path, 3.5, 4.5, settings);
+    CHECK(rows[1].front().x < rows[1].back().x);
+
+    settings.start = PlungeStartSide::Top;
+    rows = PlungeRows(Rectangle(0, 0, 40, 30).path, 3.5, 4.5, settings);
+    CHECK(rows[0][0].y > rows[1][0].y);                         // from the top down
+
+    // An angle of 0 runs the rows along Y.
+    settings.cutAngle = 0;
+    rows = PlungeRows(Rectangle(0, 0, 40, 30).path, 3.5, 4.5, settings);
+    for (const Vec3& p : rows[0])
+        CHECK(p.x == doctest::Approx(rows[0].front().x));
+}
+
+TEST_CASE("each plunge stops the stock to leave above the parts under the whole tool")
+{
+    const SequenceStep step = PlungeStep();
+    const Tool tool = Mill(6);
+    PlungeRoughToolpathInput input = Input(step, tool);
+    // A floor at 4, and a block rising to 7 over the right half.
+    input.partTriangles = Box({ 0, 0, 0 }, { 40, 30, 4 });
+    const std::vector<Vec3> block = Box({ 20, 0, 4 }, { 40, 30, 7 });
+    input.partTriangles.insert(input.partTriangles.end(), block.begin(), block.end());
+
+    const ToolpathResult result = GeneratePlungeRoughToolpath(input);
+    REQUIRE(result.ok);
+    const std::vector<Vec3> bottoms = Bottoms(result.toolpath);
+    REQUIRE_FALSE(bottoms.empty());
+    int low = 0, high = 0;
+    for (const Vec3& p : bottoms)
+    {
+        if (p.x < 20 - 3.5 - 0.5)
+        {
+            CHECK(p.z == doctest::Approx(4.5));
+            ++low;
+        }
+        else if (p.x > 20 - 3.5 + 0.05)
+        {
+            // The tool reaches over the block, so it stops above it.
+            CHECK(p.z == doctest::Approx(7.5));
+            ++high;
+        }
+    }
+    CHECK(low > 0);
+    CHECK(high > 0);
+}
+
+TEST_CASE("a ball mill stops with its tip the stock to leave above a flat floor")
+{
+    const SequenceStep step = PlungeStep();
+    const Tool tool = Mill(6, ToolType::BallMill);
+    PlungeRoughToolpathInput input = Input(step, tool);
+    input.partTriangles = Box({ 0, 0, 0 }, { 40, 30, 4 });
+    const ToolpathResult result = GeneratePlungeRoughToolpath(input);
+    REQUIRE(result.ok);
+    for (const Vec3& p : Bottoms(result.toolpath))
+        CHECK(p.z == doctest::Approx(4.5).epsilon(0.002));
+}
+
+TEST_CASE("without a part under it, a plunge goes to the stock's bottom, and moves go by the approach height")
+{
+    const SequenceStep step = PlungeStep();
+    const Tool tool = Mill(6);
+    const ToolpathResult result = GeneratePlungeRoughToolpath(Input(step, tool));
+    REQUIRE(result.ok);
+    const std::vector<ToolpathMove>& moves = result.toolpath.moves;
+    REQUIRE(moves.size() >= 5);
+
+    // Down from the clearance plane to 2 above the stock, plunge, back up, ... and up at the end.
+    CHECK(moves[0].kind == MoveKind::Rapid);
+    CHECK(moves[0].to.z == doctest::Approx(20));
+    CHECK(moves[1].kind == MoveKind::Rapid);
+    CHECK(moves[1].to.z == doctest::Approx(12));
+    CHECK(moves[2].kind == MoveKind::Feed);
+    CHECK(moves[2].feed == 150);
+    CHECK(moves[2].to.z == doctest::Approx(0));
+    CHECK(moves[3].kind == MoveKind::Feed);
+    CHECK(moves[3].feed == 900);
+    CHECK(moves[3].to.z == doctest::Approx(12));
+    CHECK(moves[4].kind == MoveKind::Rapid);
+    CHECK(moves[4].to.z == doctest::Approx(12));
+    CHECK(moves.back().kind == MoveKind::Rapid);
+    CHECK(moves.back().to.z == doctest::Approx(20));
+}
+
+TEST_CASE("plunge roughing refuses what it can't do")
+{
+    SequenceStep step = PlungeStep();
+    const Tool tool = Mill(6);
+
+    PlungeRoughToolpathInput input = Input(step, tool);
+    input.tool = nullptr;
+    CHECK_FALSE(GeneratePlungeRoughToolpath(input).ok);
+
+    input = Input(step, tool);
+    input.outlines = { Rectangle(0, 0, 5, 5) };     // narrower than the tool and the stock to leave
+    CHECK_FALSE(GeneratePlungeRoughToolpath(input).ok);
+
+    input = Input(step, tool);
+    input.outlines[0].closed = false;
+    CHECK_FALSE(GeneratePlungeRoughToolpath(input).ok);
+
+    input = Input(step, tool);
+    input.partTriangles = Box({ 0, 0, 0 }, { 40, 30, 10 });     // the part fills the stock
+    CHECK_FALSE(GeneratePlungeRoughToolpath(input).ok);
+
+    step.plungeRoughing.stepover = { false, 0.0, 0.0 };
+    input = Input(step, tool);
+    CHECK_FALSE(GeneratePlungeRoughToolpath(input).ok);
+
+    step = PlungeStep();
+    step.plungeRoughing.approach = 15;                          // above the clearance plane
+    input = Input(step, tool);
+    CHECK_FALSE(GeneratePlungeRoughToolpath(input).ok);
+
+    CHECK_FALSE(ValidatePlungeRoughing({ -1.0 }).empty());
+}
+
+TEST_CASE("the stepover has no maximum: plunges wider apart than the tool leave plugs")
+{
+    SequenceStep step = PlungeStep();
+    const Tool tool = Mill(6);
+    step.plungeRoughing.stepover = { true, 250.0, 0.0 };       // 15 mm apart
+    CHECK(ValidatePlungeRoughing(step.plungeRoughing).empty());
+    const ToolpathResult result = GeneratePlungeRoughToolpath(Input(step, tool));
+    REQUIRE(result.ok);
+    const std::vector<Vec3> bottoms = Bottoms(result.toolpath);
+    REQUIRE(bottoms.size() >= 2);
+    CHECK(std::hypot(bottoms[1].x - bottoms[0].x, bottoms[1].y - bottoms[0].y) > 6.0);
+
+    step.plungeRoughing.stepover = { false, 0.0, 20.0 };
+    CHECK(ValidatePlungeRoughing(step.plungeRoughing).empty());
+    CHECK(GeneratePlungeRoughToolpath(Input(step, tool)).ok);
+}
+
+TEST_CASE("a plunge roughing operation saves its settings")
+{
+    CHECK(IsOperation(StepType::PlungeRoughing));
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "AlibreCAM-plunge-test.cam";
+
+    Job job;
+    job.assembly.name = "Mould";
+    job.assembly.guid = "{guid}";
+    SequenceStep origin;
+    origin.type = StepType::SetOrigin;
+    origin.id = NewStableId();
+    origin.name = "Set Origin 1";
+    job.sequence.push_back(origin);
+    SequenceStep group;
+    group.type = StepType::Group;
+    group.id = NewStableId();
+    group.name = "Folder 1";
+    SequenceStep plunge = PlungeStep();
+    plunge.id = NewStableId();
+    plunge.name = "Plunge Roughing 1";
+    plunge.plungeRoughing.direction = PlungePathDirection::Zig;
+    plunge.plungeRoughing.start = PlungeStartSide::Top;
+    plunge.plungeRoughing.cutAngle = 30;
+    plunge.plungeRoughing.stepover = { false, 60.0, 3.25 };
+    plunge.plungeRoughing.approach = 1.5;
+    group.children.push_back(plunge);
+    job.sequence.push_back(group);
+    REQUIRE(SaveJob(job, path).ok);
+
+    const LoadResult loaded = LoadJob(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    const SequenceStep& back = loaded.job.sequence[1].children[0];
+    CHECK(back.type == StepType::PlungeRoughing);
+    const PlungeRoughingSettings& settings = back.plungeRoughing;
+    CHECK(settings.stockToLeave == 0.5);
+    CHECK(settings.direction == PlungePathDirection::Zig);
+    CHECK(settings.start == PlungeStartSide::Top);
+    CHECK(settings.cutAngle == 30);
+    CHECK_FALSE(settings.stepover.usePercent);
+    CHECK(settings.stepover.distance == 3.25);
+    CHECK(settings.stepover.percent == 60.0);
+    CHECK(settings.approach == 1.5);
+    CHECK(SameSettings(plunge, back));
+
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+}

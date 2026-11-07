@@ -33,6 +33,7 @@ namespace
         case StepType::Chamfer: return L"Chamfer";
         case StepType::Engrave: return L"Engrave";
         case StepType::HolePocketing: return L"Hole Pocketing";
+        case StepType::PlungeRoughing: return L"Plunge Roughing";
         default:               return L"Operation";
         }
     }
@@ -1987,6 +1988,82 @@ void CProfilingPage::OnChoiceChanged()
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// CPlungeRoughingPage
+
+BEGIN_MESSAGE_MAP(CPlungeRoughingPage, COperationPage)
+    ON_BN_CLICKED(IDC_PLUNGE_STEP_PERCENT_RADIO, &CPlungeRoughingPage::OnStepoverChanged)
+    ON_BN_CLICKED(IDC_PLUNGE_STEP_DISTANCE_RADIO, &CPlungeRoughingPage::OnStepoverChanged)
+END_MESSAGE_MAP()
+
+CPlungeRoughingPage::CPlungeRoughingPage(COperationDlg* pOwner)
+    : COperationPage(IDD_OP_PLUNGE_ROUGHING, pOwner)
+{
+}
+
+void CPlungeRoughingPage::Load(const SequenceStep& step)
+{
+    const PlungeRoughingSettings& plunge = step.plungeRoughing;
+    SetNumber(IDC_PLUNGE_STOCK, plunge.stockToLeave);
+    CheckRadioButton(IDC_PLUNGE_ZIG, IDC_PLUNGE_ZIGZAG,
+                     plunge.direction == PlungePathDirection::Zig ? IDC_PLUNGE_ZIG : IDC_PLUNGE_ZIGZAG);
+    CheckRadioButton(IDC_PLUNGE_BOTTOM, IDC_PLUNGE_TOP,
+                     plunge.start == PlungeStartSide::Top ? IDC_PLUNGE_TOP : IDC_PLUNGE_BOTTOM);
+    SetNumber(IDC_PLUNGE_ANGLE, plunge.cutAngle);
+    CheckRadioButton(IDC_PLUNGE_STEP_PERCENT_RADIO, IDC_PLUNGE_STEP_DISTANCE_RADIO,
+                     plunge.stepover.usePercent ? IDC_PLUNGE_STEP_PERCENT_RADIO : IDC_PLUNGE_STEP_DISTANCE_RADIO);
+    SetNumber(IDC_PLUNGE_STEP_PERCENT, plunge.stepover.percent);
+    SetNumber(IDC_PLUNGE_STEP_DISTANCE, plunge.stepover.distance);
+    SetNumber(IDC_PLUNGE_APPROACH, plunge.approach);
+    UpdateFields();
+}
+
+bool CPlungeRoughingPage::Save(SequenceStep& step, std::wstring& problems)
+{
+    PlungeRoughingSettings plunge = step.plungeRoughing;
+    std::wstring found;
+
+    ReadNumber(IDC_PLUNGE_STOCK, L"The stock to leave", plunge.stockToLeave, found);
+    plunge.direction =
+        IsDlgButtonChecked(IDC_PLUNGE_ZIG) == BST_CHECKED ? PlungePathDirection::Zig : PlungePathDirection::ZigZag;
+    plunge.start = IsDlgButtonChecked(IDC_PLUNGE_TOP) == BST_CHECKED ? PlungeStartSide::Top : PlungeStartSide::Bottom;
+    ReadNumber(IDC_PLUNGE_ANGLE, L"The angle of cuts", plunge.cutAngle, found);
+
+    // Only the stepover box in use is read.
+    plunge.stepover.usePercent = IsDlgButtonChecked(IDC_PLUNGE_STEP_DISTANCE_RADIO) != BST_CHECKED;
+    if (plunge.stepover.usePercent)
+        ReadNumber(IDC_PLUNGE_STEP_PERCENT, L"The stepover percentage", plunge.stepover.percent, found);
+    else
+        ReadNumber(IDC_PLUNGE_STEP_DISTANCE, L"The stepover distance", plunge.stepover.distance, found);
+    ReadNumber(IDC_PLUNGE_APPROACH, L"The approach", plunge.approach, found);
+
+    if (found.empty())
+    {
+        for (const std::string& problem : ValidatePlungeRoughing(plunge))
+            AppendProblem(found, FromUtf8(problem));
+    }
+    if (!found.empty())
+    {
+        AppendProblem(problems, found);
+        return false;
+    }
+
+    step.plungeRoughing = plunge;
+    return true;
+}
+
+void CPlungeRoughingPage::UpdateFields()
+{
+    const bool percent = IsDlgButtonChecked(IDC_PLUNGE_STEP_DISTANCE_RADIO) != BST_CHECKED;
+    GetDlgItem(IDC_PLUNGE_STEP_PERCENT)->EnableWindow(percent);
+    GetDlgItem(IDC_PLUNGE_STEP_DISTANCE)->EnableWindow(!percent);
+}
+
+void CPlungeRoughingPage::OnStepoverChanged()
+{
+    UpdateFields();
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // CPocketingPage
 
 BEGIN_MESSAGE_MAP(CPocketingPage, COperationPage)
@@ -2548,6 +2625,7 @@ void COperationDlg::OnHelpButton()
                              : (page == IDD_OP_ENGRAVING)      ? L"tab-engraving"
                              : (page == IDD_OP_POCKETING)      ? L"tab-pocketing"
                              : (page == IDD_OP_HOLE_POCKETING) ? L"tab-hole-pocketing"
+                             : (page == IDD_OP_PLUNGE_ROUGHING) ? L"tab-plunge-roughing"
                              : (page == IDD_OP_DRILLING)       ? L"tab-drilling"
                                                                : L"operation";
     ShowHelp(section);
@@ -2591,6 +2669,7 @@ std::unique_ptr<COperationPage> COperationDlg::MakePage(UINT templateId)
     case IDD_OP_POCKETING:      return std::make_unique<CPocketingPage>(this);
     case IDD_OP_DRILLING:       return std::make_unique<CDrillingPage>(this);
     case IDD_OP_HOLE_POCKETING: return std::make_unique<CHolePocketingPage>(this);
+    case IDD_OP_PLUNGE_ROUGHING: return std::make_unique<CPlungeRoughingPage>(this);
     default:                    return std::make_unique<COperationPage>(templateId, this);
     }
 }
@@ -2666,7 +2745,7 @@ BOOL COperationDlg::OnInitDialog()
     // Drill, Hole Pocketing, Facing, Profiling and Pocketing have no Sorting tab.
     if (!bulk && m_step.type != StepType::Drill && m_step.type != StepType::Facing &&
         m_step.type != StepType::Profiling && m_step.type != StepType::Pocketing && m_step.type != StepType::Chamfer &&
-        m_step.type != StepType::Engrave &&
+        m_step.type != StepType::Engrave && m_step.type != StepType::PlungeRoughing &&
         m_step.type != StepType::HolePocketing)
         AddPage(L"Sorting", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
 
@@ -2709,6 +2788,10 @@ BOOL COperationDlg::OnInitDialog()
         AddPage(L"Drilling", std::move(drilling));
         if (pDrilling->GetSafeHwnd() != nullptr)
             m_pDrilling = pDrilling;
+    }
+    else if (m_step.type == StepType::PlungeRoughing)
+    {
+        AddPage(L"Plunge Roughing", std::make_unique<CPlungeRoughingPage>(this));
     }
     else if (m_step.type == StepType::HolePocketing)
     {
@@ -2893,7 +2976,7 @@ FeatureFilter COperationDlg::GetFeatureFilter() const
     // Profiling and Pocketing borrow Facing's until their own are decided.
     const bool area = m_step.type == StepType::Facing || m_step.type == StepType::Profiling ||
                       m_step.type == StepType::Pocketing || m_step.type == StepType::Chamfer ||
-                      m_step.type == StepType::Engrave;
+                      m_step.type == StepType::Engrave || m_step.type == StepType::PlungeRoughing;
     return area ? FeatureFilter::FacingArea : FeatureFilter::Points;
 }
 

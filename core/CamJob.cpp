@@ -906,6 +906,39 @@ namespace camcore
             return true;
         }
 
+        json WritePlungeRoughing(const PlungeRoughingSettings& plunge)
+        {
+            return
+            {
+                { "stockToLeave", plunge.stockToLeave },
+                { "direction", plunge.direction == PlungePathDirection::Zig ? "zig" : "zigZag" },
+                { "start", plunge.start == PlungeStartSide::Top ? "top" : "bottom" },
+                { "cutAngle", plunge.cutAngle },
+                { "stepover", WriteSize(plunge.stepover) },
+                { "approach", plunge.approach }
+            };
+        }
+
+        // Plunge Roughing missing its settings has the defaults.
+        bool ReadPlungeRoughing(const json& step, PlungeRoughingSettings& plunge)
+        {
+            plunge = PlungeRoughingSettings();
+            const auto item = step.find("plungeRoughing");
+            if (item == step.end())
+                return true;
+            if (!item->is_object())
+                return false;
+            if (item->find("stepover") != item->end() && !ReadSize(*item, "stepover", plunge.stepover))
+                return false;
+            return ReadOptionalNumber(*item, "stockToLeave", plunge.stockToLeave) &&
+                   ReadOptionalNumber(*item, "cutAngle", plunge.cutAngle) &&
+                   ReadOptionalNumber(*item, "approach", plunge.approach) &&
+                   ReadChoice(*item, "direction", "zig", PlungePathDirection::Zig, "zigZag", PlungePathDirection::ZigZag,
+                              plunge.direction) &&
+                   ReadChoice(*item, "start", "bottom", PlungeStartSide::Bottom, "top", PlungeStartSide::Top,
+                              plunge.start);
+        }
+
         json WriteChamfer(const ChamferSettings& chamfer)
         {
             return { { "width", chamfer.width }, { "tipClearance", chamfer.tipClearance },
@@ -1402,6 +1435,12 @@ namespace camcore
                          { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
                          { "holePocketing", WriteHolePocketing(step.holePocketing) } };
 
+            if (step.type == StepType::PlungeRoughing)
+                return { { "type", "plungeRoughing" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
+                         { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
+                         { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
+                         { "plungeRoughing", WritePlungeRoughing(step.plungeRoughing) } };
+
             if (step.type == StepType::Drill)
                 return { { "type", "drill" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
                          { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
@@ -1509,6 +1548,14 @@ namespace camcore
                        ReadClearance(item, step.clearance);
             }
 
+            if (type == "plungeRoughing")
+            {
+                step.type = StepType::PlungeRoughing;
+                return ReadTool(item, step.toolId) && ReadFeeds(item, step.feeds) && ReadToolpath(item, step.toolpath) &&
+                       ReadFeatures(item, step.features) && ReadPlungeRoughing(item, step.plungeRoughing) &&
+                       ReadClearance(item, step.clearance);
+            }
+
             if (type == "drill")
             {
                 // Drills saved before the Drilling tab existed have no settings yet.
@@ -1565,7 +1612,7 @@ namespace camcore
     {
         return type == StepType::Drill || type == StepType::Facing || type == StepType::Profiling ||
                type == StepType::Pocketing || type == StepType::HolePocketing || type == StepType::Chamfer ||
-               type == StepType::Engrave;
+               type == StepType::Engrave || type == StepType::PlungeRoughing;
     }
 
     std::string NewStableId()
@@ -1622,7 +1669,7 @@ namespace camcore
         // simply don't have, so they read as they are. Version 4 added the stock
         // to the setup section; older files have none. Version 5 added the
         // machine and material, and stopped saving the tool library. Version 6
-        // added Chamfer operations, and version 7 Engrave.
+        // added Chamfer operations, version 7 Engrave, and version 8 Plunge Roughing.
 
         const auto assembly = root.find("assembly");
         if (assembly == root.end() || !assembly->is_object())
