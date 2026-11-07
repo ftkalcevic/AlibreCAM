@@ -213,6 +213,11 @@ TEST_CASE("a ball's contacts are moved onto the true surface")
     CHECK(exact.refinedPoints > 1000);
     CHECK(exact.refineCalls == calls);
     CHECK(worst(exact) < 0.002);
+    // About every second point is refined, the rest share; under two calls each
+    // (it was about 2.5 before stopping early and starting from the neighbour).
+    CHECK(exact.refineShared > exact.refinedPoints / 2);
+    CHECK(static_cast<double>(exact.refineCalls) / exact.refinedPoints < 2.0);
+    MESSAGE("refined " << exact.refinedPoints << ", shared " << exact.refineShared << ", calls " << exact.refineCalls);
     CHECK(exact.refinedPoints + exact.refineNoAnswer + exact.refineOnSurface + exact.refineSideContact +
               exact.refineUnsettled + exact.refineOffFace + exact.refineTooFar ==
           exact.refineTries);

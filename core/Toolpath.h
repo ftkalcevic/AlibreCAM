@@ -62,5 +62,6 @@ namespace camcore
         size_t refineUnsettled = 0;     // Newton's method didn't settle in 8 steps
         size_t refineOffFace = 0;       // it settled past the face's edges
         size_t refineTooFar = 0;        // it settled more than 0.5 mm from the triangles' answer
+        size_t refineShared = 0;        // between two refined points, sharing their correction
     };
 }

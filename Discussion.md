@@ -6811,6 +6811,56 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > check the logs
 
+### 🤖 Claude
+
+> Skipping flat faces works, and nothing failed. Your 20:26 run compared with the same job at 20:10:
+>
+> | | 20:10 (before) | 20:26 (now) |
+> |---|---|---|
+> | Faces sent to Alibre | 7 | 1 (6 planes skipped) |
+> | Points refined | 271,133 of 271,133 | 154,940 of 154,940 |
+> | Closest-point calls | 500,773 | 384,580 |
+> | Generate time | 45 s | 39 s |
+>
+> The new "kept the triangles' answer" line is all zeros, and there were no Alibre failures. Every point on the dome landed on the true surface. The toolpath has the same 10,231 moves as before.
+>
+> The dome still averages about 2.5 calls a point at roughly 0.1 ms each, so most of the time is now spent there. There are two more speed-ups:
+> 1. **Skip the confirming call:** each step towards the surface roughly squares the remaining error. Once a step is tiny, the next answer is known to be within about a micron, so I can stop without asking Alibre again. I can also start each point from its neighbour's correction rather than from the triangles. That should bring the dome to about 1–1.5 calls a point, so Generate would take roughly 15–20 s.
+> 2. **Space the refined points further apart:** points along each row are now 0.075 mm apart with a 6 mm ball. Refining every second point and letting the rest follow from their neighbours would halve the calls again, at the cost of a small, smooth error between refined points.
+
+### 🧑 Frank · 20:29
+
+> Yes, both speed-ups
+
+### 🤖 Claude
+
+> Both builds pass every test. Now the docs, then the install:
+
+> Both speed-ups are in, and all tests pass in Debug and Release. **Not installed:** the administrator prompt was cancelled.
+>
+> - **Fewer calls per point:** each refined point now starts from the previous point's correction on the same face. It stops without a final confirming call once the remaining error is known to be below about 0.01 microns. On its own, this took the coarse test mesh from 2.3 to 1.7 calls per refined point.
+> - **Every second point:** along each row every second point (and the last) is refined. A point between two refined points on the same face takes the middle of their heights. My first version averaged their corrections instead. That was 0.01 mm off, because the triangles' answer has kinks where the contact moves from one facet to the next, so I changed it. Averaging the refined heights is accurate to about a micron on a smooth face. If it disagrees with the triangles by more than 0.05 mm, the point is refined on its own instead.
+> - **In the coarse-mesh test:** 0.86 calls per point instead of about 2.5, and still within 0.002 mm of the true sphere. On `Rough 2` that should bring Generate from 39 s to somewhere around 15 s, though I haven't measured it in Alibre yet.
+> - **Log:** the `true surface` line now also says how many points shared their neighbours' heights.
+> - **Docs:** the help and `CLAUDE.md` are updated.
+>
+> After installing, test:
+> 1. Generate Parallel Finishing on `Rough 2` with the ball mill, and compare the log's time and call count with the last run (39 s, 384,580 calls).
+> 2. The rows over the dome should still be smooth.
+> 3. The "kept the triangles' answer" line should still be all zeros.
+
+### 🧑 Frank · 20:44
+
+> Install it
+
+### 🤖 Claude
+
+> It's installed, and the add-on and help match the Release build. Start Alibre and generate Parallel Finishing on `Rough 2` with the ball mill. The log line to compare is `true surface`: the last run took 39 s and 384,580 closest-point calls. Say "check the logs" when you've run it and I'll compare them.
+
+### 🧑 Frank · 20:46
+
+> check the logs
+
 ---
 
 # Side conversation

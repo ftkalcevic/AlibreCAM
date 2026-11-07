@@ -1357,31 +1357,37 @@ namespace camcore
                             !input.partTriangleFaces.empty();
         const double ballRadius = input.tool->diameter / 2.0;
         size_t refined = 0, refineTries = 0, refineCalls = 0;
-        size_t noAnswer = 0, onSurface = 0, sideContact = 0, unsettled = 0, offFace = 0, tooFar = 0;
-        const auto refineAt = [&](double x, double y, const DropCutter::Contact& contact) {
+        size_t noAnswer = 0, onSurface = 0, sideContact = 0, unsettled = 0, offFace = 0, tooFar = 0, shared = 0;
+        // Refines one contact, starting with the centre moved by guess from the
+        // triangles' answer (a neighbour's correction, as it changes slowly). Each
+        // step squares the error, so once the next would be under 0.01 microns
+        // it stops without asking again. False, keeping the triangles' answer, if
+        // it can't be done.
+        const auto refineOnce = [&](double x, double y, const DropCutter::Contact& contact, double guess,
+                                    double& tip) {
             if (contact.face < 0)
-                return contact.tip;
+                return false;
             ++refineTries;
             const double gap = ballRadius + w.s;
-            double centreZ = contact.tip + ballRadius;
+            double centreZ = contact.tip + ballRadius + guess;
             bool settled = false;
             Vec3 closest;
             bool onFace = false;
-            for (int k = 0; k < 8; ++k)
+            for (int k = 0; k < 8 && !settled; ++k)
             {
                 const Vec3 centre{ x, y, centreZ };
                 ++refineCalls;
                 if (!input.closestPoint(contact.face, centre, closest, onFace))
                 {
                     ++noAnswer;
-                    return contact.tip;
+                    return false;
                 }
                 const Vec3 d = centre - closest;
                 const double distance = Length(d);
                 if (distance < 1e-9)
                 {
                     ++onSurface;
-                    return contact.tip;
+                    return false;
                 }
                 const double nz = d.z / distance;
                 const double error = distance - gap;
@@ -1393,30 +1399,40 @@ namespace camcore
                 if (nz < 0.05)
                 {
                     ++sideContact;
-                    return contact.tip;     // a contact on the ball's side: leave it to the triangles
+                    return false;   // a contact on the ball's side: leave it to the triangles
                 }
-                centreZ -= error / nz;
+                const double step = error / nz;
+                centreZ -= step;
+                // How far off the next answer would be, from the distance's curvature.
+                const double next = (1.0 - nz * nz) / (2.0 * gap * nz * nz * nz) * step * step;
+                settled = next < 1e-5;
             }
             if (!settled || !onFace)
             {
                 ++(settled ? offFace : unsettled);
-                return contact.tip;
+                return false;
             }
-            const double tip = centreZ - ballRadius;
+            tip = centreZ - ballRadius;
             if (std::fabs(tip - contact.tip) > 0.5)
             {
                 ++tooFar;
-                return contact.tip;
+                return false;
             }
             ++refined;
-            return (std::max)(tip, contact.others);
+            return true;
         };
-        // The height at (x, y), refined when it can be: one thread only.
+        // The height for a contact, refined when it can be: one thread only.
+        const auto refinedHeight = [&](double x, double y, const DropCutter::Contact& contact, double guess) {
+            double tip = 0.0;
+            if (refineOnce(x, y, contact, guess, tip))
+                return (std::max)({ tip, contact.others, floorZ });
+            return (std::max)(contact.tip, floorZ);
+        };
         const auto exactAt = [&](double x, double y) {
             DropCutter::Contact contact;
             if (!cutter.ContactAt(x, y, contact))
                 return floorZ;
-            return (std::max)(refine ? refineAt(x, y, contact) : contact.tip, floorZ);
+            return refine ? refinedHeight(x, y, contact, 0.0) : (std::max)(contact.tip, floorZ);
         };
         const double tolerance = (std::min)(w.cell / 4.0, 0.01);
         const auto inArea = [&](double x, double y) {
@@ -1504,12 +1520,15 @@ namespace camcore
         }
         // The surface under every point, on all cores.
         std::vector<Vec3*> samples;
+        std::vector<std::pair<size_t, size_t>> runSpans;   // each run's samples
         for (std::vector<Run>& runs : rows)
         {
             for (Run& run : runs)
             {
+                const size_t first = samples.size();
                 for (Vec3& p : run.points)
                     samples.push_back(&p);
+                runSpans.push_back({ first, samples.size() });
             }
         }
         if (refine)
@@ -1523,10 +1542,71 @@ namespace camcore
             std::for_each(std::execution::par, order.begin(), order.end(), [&](size_t k) {
                 found[k] = cutter.ContactAt(samples[k]->x, samples[k]->y, contacts[k]) ? 1 : 0;
             });
-            for (size_t k = 0; k < samples.size(); ++k)
-            {
+            // Along each run, every second point (and the last) is refined, starting
+            // from the one before's correction. The point between two refined on
+            // the same face shares their correction (the true surface less the
+            // triangles', which changes smoothly); others are refined themselves.
+            std::vector<char> done(samples.size(), 0);
+            std::vector<double> correction(samples.size(), 0.0);
+            const auto refinePoint = [&](size_t k, double guess) {
                 Vec3& p = *samples[k];
-                p.z = found[k] ? (std::max)(refineAt(p.x, p.y, contacts[k]), floorZ) : floorZ;
+                if (!found[k])
+                {
+                    p.z = floorZ;
+                    return;
+                }
+                double tip = 0.0;
+                if (refineOnce(p.x, p.y, contacts[k], guess, tip))
+                {
+                    done[k] = 1;
+                    correction[k] = tip - contacts[k].tip;
+                    p.z = (std::max)({ tip, contacts[k].others, floorZ });
+                }
+                else
+                {
+                    p.z = (std::max)(contacts[k].tip, floorZ);
+                }
+            };
+            for (const auto& [first, last] : runSpans)
+            {
+                double guess = 0.0;
+                int guessFace = -1;
+                for (size_t k = first; k < last; ++k)
+                {
+                    if ((k - first) % 2 == 1 && k + 1 != last)
+                        continue;
+                    const int face = found[k] ? contacts[k].face : -1;
+                    refinePoint(k, face == guessFace ? guess : 0.0);
+                    guess = correction[k];
+                    guessFace = done[k] ? face : -1;
+                }
+                for (size_t k = first + 1; k + 1 < last; k += 2)
+                {
+                    // Within one face the true heights are smooth, so the middle of two
+                    // refined ones is off by only the curvature times the spacing
+                    // squared over 8; the triangles' answer has kinks, so it isn't used,
+                    // except as a check that nothing odd lies between.
+                    const int face = found[k] ? contacts[k].face : -1;
+                    bool sharedHere = false;
+                    if (face >= 0 && done[k - 1] && done[k + 1] && contacts[k - 1].face == face &&
+                        contacts[k + 1].face == face)
+                    {
+                        const double before = contacts[k - 1].tip + correction[k - 1];
+                        const double after = contacts[k + 1].tip + correction[k + 1];
+                        const double tip = 0.5 * (before + after);
+                        const double check = contacts[k].tip + 0.5 * (correction[k - 1] + correction[k + 1]);
+                        if (std::fabs(tip - check) < 0.05)
+                        {
+                            samples[k]->z = (std::max)({ tip, contacts[k].others, floorZ });
+                            ++shared;
+                            sharedHere = true;
+                        }
+                    }
+                    if (!sharedHere)
+                    {
+                        refinePoint(k, done[k - 1] && contacts[k - 1].face == face ? correction[k - 1] : 0.0);
+                    }
+                }
             }
         }
         else
@@ -1640,6 +1720,7 @@ namespace camcore
         result.refineUnsettled = unsettled;
         result.refineOffFace = offFace;
         result.refineTooFar = tooFar;
+        result.refineShared = shared;
         return result;
     }
 }

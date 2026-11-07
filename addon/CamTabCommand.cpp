@@ -2335,8 +2335,9 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         Log(L"[generate] roughing: %zu moves, in %llu ms", roughResult.toolpath.moves.size(), GetTickCount64() - start);
         if (exactSurfaces)
         {
-            Log(L"[generate] true surface: %zu of %zu points moved onto it, %zu closest point calls",
-                roughResult.refinedPoints, roughResult.refineTries, roughResult.refineCalls);
+            Log(L"[generate] true surface: %zu of %zu points moved onto it, %zu closest point calls, %zu more between "
+                L"them sharing their correction",
+                roughResult.refinedPoints, roughResult.refineTries, roughResult.refineCalls, roughResult.refineShared);
             Log(L"[generate] true surface: kept the triangles' answer for %zu with no closest point, %zu with the "
                 L"centre on the surface, %zu side contacts, %zu unsettled, %zu off the face, %zu too far",
                 roughResult.refineNoAnswer, roughResult.refineOnSurface, roughResult.refineSideContact,
