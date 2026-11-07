@@ -2,8 +2,10 @@
 
 #pragma once
 
+#include <memory>
 #include <vector>
 
+#include "Nurbs.h"
 #include "Origin.h"
 
 namespace camcore
@@ -15,7 +17,8 @@ namespace camcore
         Cylinder,       // a point on the axis (centre), axis, radius
         Cone,           // a point on the axis (centre) where the radius is `radius`, axis; it widens by
                         // `slope` (the radius gained per unit along the axis; negative narrows)
-        Torus           // centre, axis, radius (to the tube's middle), minorRadius (the tube's)
+        Torus,          // centre, axis, radius (to the tube's middle), minorRadius (the tube's)
+        Nurbs           // nurbs, prepared (NurbsSurface::Prepare)
     };
 
     // A face's surface, unbounded, in the frame, in millimetres.
@@ -30,6 +33,7 @@ namespace camcore
         // How far a point may be from the face's own facets and still be on the
         // face: twice Alibre's 0.05 mm facets.
         double onFaceTolerance = 0.1;
+        std::shared_ptr<const NurbsSurface> nurbs;
     };
 
     // The closest point on the (unbounded) surface to p. False where there's no

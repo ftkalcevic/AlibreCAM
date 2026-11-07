@@ -498,7 +498,7 @@ namespace camcore
                 for (const Vec3& p : face)
                     grow(p.x, p.x, p.y, p.y);
             }
-            const double extension = (type == StepType::WaterlineFinishing) ? 0.0 : settings.extension;
+            const double extension = settings.extension;    // Waterline Finishing's and Parallel Finishing's overtravel
             const double margin = reach + extension + 1.0;
             PlungeArea area;
             area.Reset(boxLowX, boxLowY, boxHighX, boxHighY, (std::min)(0.25, (std::max)(0.02, tool.diameter / 40.0)),
@@ -662,6 +662,142 @@ namespace camcore
             }
             return pieces;
         }
+    }
+
+    size_t RemoveThinFingers(Polyline& lap, bool closed,
+                             const std::function<bool(const Vec3& from, const Vec3& to)>& shortcutClear)
+    {
+        const double kWidth = 0.2, kShortest = 0.4, kLongest = 3.0;
+        size_t removed = 0;
+        for (int pass = 0; pass < 1000; ++pass)
+        {
+            const size_t n = lap.size();
+            if (n < 5)
+                break;
+            bool cut = false;
+            const size_t starts = closed ? n : n - 2;
+            for (size_t i = 0; i < starts && !cut; ++i)
+            {
+                // The points j coming back near i, furthest along first.
+                std::vector<size_t> near;
+                double path = 0.0;
+                for (size_t step = 1; step + 1 < n; ++step)
+                {
+                    const size_t j = closed ? (i + step) % n : i + step;
+                    if (!closed && j >= n)
+                        break;
+                    const size_t before = closed ? (j + n - 1) % n : j - 1;
+                    path += std::hypot(lap[j].x - lap[before].x, lap[j].y - lap[before].y);
+                    if (path > kLongest)
+                        break;
+                    if (path >= kShortest && std::hypot(lap[j].x - lap[i].x, lap[j].y - lap[i].y) <= kWidth)
+                        near.push_back(step);
+                }
+                for (auto it = near.rbegin(); it != near.rend() && !cut; ++it)
+                {
+                    const size_t step = *it;
+                    const size_t j = closed ? (i + step) % n : i + step;
+                    // Thin: what it goes round, closed by the shortcut, is under the
+                    // width on average (twice its area over its length).
+                    double area = 0.0, length = 0.0;
+                    for (size_t k = 0; k <= step; ++k)
+                    {
+                        const Vec3& a = lap[(i + k) % n];
+                        const Vec3& b = lap[(i + (k + 1) % (step + 1)) % n];
+                        area += a.x * b.y - b.x * a.y;
+                        length += std::hypot(b.x - a.x, b.y - a.y);
+                    }
+                    if (length <= 0.0 || std::fabs(area) / length > kWidth)
+                        continue;
+                    // At the finger's base: just outside the cut the lap spreads apart
+                    // again (otherwise this is partway up a longer finger, which stays).
+                    const auto along = [&](size_t from, bool forward, double distance) {
+                        size_t k = from;
+                        double gone = 0.0;
+                        while (gone < distance)
+                        {
+                            size_t next;
+                            if (forward)
+                            {
+                                if (!closed && k + 1 >= n)
+                                    break;
+                                next = (k + 1) % n;
+                            }
+                            else
+                            {
+                                if (!closed && k == 0)
+                                    break;
+                                next = (k + n - 1) % n;
+                            }
+                            gone += std::hypot(lap[next].x - lap[k].x, lap[next].y - lap[k].y);
+                            k = next;
+                        }
+                        return lap[k];
+                    };
+                    const Vec3 outsideI = along(i, false, 0.3), outsideJ = along(j, true, 0.3);
+                    if (std::hypot(outsideI.x - outsideJ.x, outsideI.y - outsideJ.y) <= 2.0 * kWidth)
+                        continue;
+                    if (!shortcutClear(lap[i], lap[j]))
+                        continue;
+                    // Drop the points between i and j.
+                    Polyline kept;
+                    if (!closed || j > i)
+                    {
+                        kept.assign(lap.begin(), lap.begin() + static_cast<std::ptrdiff_t>(i) + 1);
+                        kept.insert(kept.end(), lap.begin() + static_cast<std::ptrdiff_t>(j), lap.end());
+                    }
+                    else
+                    {
+                        kept.assign(lap.begin() + static_cast<std::ptrdiff_t>(j),
+                                    lap.begin() + static_cast<std::ptrdiff_t>(i) + 1);
+                    }
+                    lap.swap(kept);
+                    ++removed;
+                    cut = true;
+                }
+            }
+            if (!cut)
+                break;
+        }
+
+        // Then tiny back steps: walking along the lap, a point that goes backwards
+        // against the lap's own direction (over 0.3 mm either side) is left out, if
+        // the tool keeps clear going on from the last point kept.
+        const size_t n = lap.size();
+        if (n >= 5)
+        {
+            std::vector<double> at(n, 0.0);     // path length to each point
+            for (size_t k = 1; k < n; ++k)
+                at[k] = at[k - 1] + std::hypot(lap[k].x - lap[k - 1].x, lap[k].y - lap[k - 1].y);
+            Polyline kept;
+            kept.push_back(lap[0]);
+            size_t dropped = 0;
+            for (size_t k = 1; k < n; ++k)
+            {
+                // The lap's direction here, from points 0.3 mm of path either side.
+                size_t a = k, b = k;
+                while (a > 0 && at[k] - at[a] < 0.3)
+                    --a;
+                while (b + 1 < n && at[b] - at[k] < 0.3)
+                    ++b;
+                const Vec3 direction{ lap[b].x - lap[a].x, lap[b].y - lap[a].y, 0.0 };
+                const Vec3 step{ lap[k].x - kept.back().x, lap[k].y - kept.back().y, 0.0 };
+                const bool last = (k + 1 == n);
+                if (!last && Length(direction) > 1e-9 && Dot(step, direction) <= 0.0 && k + 1 < n &&
+                    shortcutClear(kept.back(), lap[k + 1]))
+                {
+                    ++dropped;
+                    continue;
+                }
+                kept.push_back(lap[k]);
+            }
+            if (dropped > 0)
+            {
+                lap.swap(kept);
+                ++removed;
+            }
+        }
+        return removed;
     }
 
     ToolpathResult GenerateWaterlineRoughToolpath(const WaterlineRoughToolpathInput& input)
@@ -1203,12 +1339,87 @@ namespace camcore
             double m_ball;
             bool m_refine = false;
         };
-        // Glitches left in the laps (not the links between them): turns of more than
-        // 120 degrees between moves at least 0.02 long, and S-bends within 1 mm with
-        // a turn of more than 90 degrees.
-        void CountLapGlitches(const std::vector<std::vector<Piece>>& levelLaps, size_t& turnBacks, size_t& zigzags)
+        // A lap with fewer points: Douglas-Peucker, a straight move from a to b taking
+        // the place of the points between if they're all within `sideways` of it, or
+        // within `furthest` of it and spanOk(a, b) says so.
+        void SimplifySpan(const Polyline& p, size_t first, size_t last, double sideways, double furthest,
+                          const std::function<bool(const Vec3&, const Vec3&)>& spanOk, std::vector<char>& keep)
         {
-            turnBacks = zigzags = 0;
+            if (last <= first + 1)
+                return;
+            double worst = -1.0;
+            size_t at = first;
+            for (size_t i = first + 1; i < last; ++i)
+            {
+                const double d = SegmentDistance(p[i], p[first], p[last]);
+                if (d > worst)
+                {
+                    worst = d;
+                    at = i;
+                }
+            }
+            if (worst <= sideways || (worst <= furthest && spanOk(p[first], p[last])))
+                return;
+            if (worst <= 1e-12)
+                at = (first + last) / 2;
+            keep[at] = 1;
+            SimplifySpan(p, first, at, sideways, furthest, spanOk, keep);
+            SimplifySpan(p, at, last, sideways, furthest, spanOk, keep);
+        }
+
+        Polyline SimplifyByHeight(const Polyline& points, bool closed, double sideways, double furthest,
+                                  const std::function<bool(const Vec3&, const Vec3&)>& spanOk)
+        {
+            if (points.size() < 3)
+                return points;
+            Polyline work = points;
+            size_t middle = 0;
+            if (closed)
+            {
+                // Split at the point furthest from the start, and close the loop.
+                double best = -1.0;
+                for (size_t i = 1; i < points.size(); ++i)
+                {
+                    const double d = std::hypot(points[i].x - points[0].x, points[i].y - points[0].y);
+                    if (d > best)
+                    {
+                        best = d;
+                        middle = i;
+                    }
+                }
+                work.push_back(points[0]);
+            }
+            std::vector<char> keep(work.size(), 0);
+            keep.front() = keep.back() = 1;
+            if (closed)
+            {
+                keep[middle] = 1;
+                SimplifySpan(work, 0, middle, sideways, furthest, spanOk, keep);
+                SimplifySpan(work, middle, work.size() - 1, sideways, furthest, spanOk, keep);
+            }
+            else
+            {
+                SimplifySpan(work, 0, work.size() - 1, sideways, furthest, spanOk, keep);
+            }
+            Polyline result;
+            const size_t count = closed ? work.size() - 1 : work.size();
+            for (size_t i = 0; i < count; ++i)
+            {
+                if (keep[i])
+                    result.push_back(work[i]);
+            }
+            return result;
+        }
+
+        // Glitches left in the laps (not the links between them): turns of more than
+        // 120 degrees between moves at least 0.02 long, S-bends within 1 mm with a
+        // turn of more than 90 degrees, and wobbles: a turn of more than 10 degrees
+        // one way then the next the other, the move between them under 0.5 mm.
+        void CountLapGlitches(const std::vector<std::vector<Piece>>& levelLaps, size_t& turnBacks, size_t& zigzags,
+                              size_t& wobbles)
+        {
+            turnBacks = zigzags = wobbles = 0;
+            const double tenDegrees = std::sin(10.0 * 3.14159265358979323846 / 180.0);
             for (const std::vector<Piece>& pieces : levelLaps)
             {
                 for (const Piece& piece : pieces)
@@ -1247,6 +1458,10 @@ namespace camcore
                         if (lu + lv + Length(x) < 1.0 && c0 * c1 < 0.0 && std::fabs(c0) > 1e-4 &&
                             std::fabs(c1) > 1e-4 && (std::min)(Dot(u, v), Dot(v, x)) < 0.0)
                             ++zigzags;
+                        const double lx = Length(x);
+                        if (lu > 1e-9 && lv > 1e-9 && lx > 1e-9 && lv < 0.5 && c0 * c1 < 0.0 &&
+                            std::fabs(c0) > tenDegrees * lu * lv && std::fabs(c1) > tenDegrees * lv * lx)
+                            ++wobbles;
                     }
                 }
             }
@@ -1260,9 +1475,29 @@ namespace camcore
         // level can't be bracketed near it stays where the grid put it.
         void MoveLapsOntoLevels(const WaterlineRoughToolpathInput& input, const WaterlineSetup& w,
                                 const std::vector<double>& levels, std::vector<std::vector<Piece>>& levelLaps,
-                                RefineCounts& totals, size_t& smoothed)
+                                RefineCounts& totals, size_t& smoothed, size_t& fingers, size_t& pointsBefore,
+                                size_t& pointsAfter)
         {
             const ExactHeights heights(input, w.s, w.bottom - 1.0);
+            const auto record = [&](std::vector<std::vector<Polyline>>& stage) {
+                stage.assign(levelLaps.size(), {});
+                for (size_t li = 0; li < levelLaps.size(); ++li)
+                {
+                    for (const Piece& piece : levelLaps[li])
+                        stage[li].push_back(piece.points);
+                }
+            };
+            if (input.lapStages != nullptr)
+            {
+                input.lapStages->levels = levels;
+                record(input.lapStages->grid);
+                input.lapStages->closed.assign(levelLaps.size(), {});
+                for (size_t li = 0; li < levelLaps.size(); ++li)
+                {
+                    for (const Piece& piece : levelLaps[li])
+                        input.lapStages->closed[li].push_back(piece.closed);
+                }
+            }
             struct Target
             {
                 Vec3* point;
@@ -1633,8 +1868,94 @@ namespace camcore
             });
             for (size_t c : counts)
                 smoothed += c;
+            if (input.lapStages != nullptr)
+            {
+                for (size_t k = 0; k < targets.size(); ++k)
+                    *targets[k].point = moved[k];
+                record(input.lapStages->moved);
+            }
             for (size_t k = 0; k < targets.size(); ++k)
                 *targets[k].point = ends[k];
+            if (input.lapStages != nullptr)
+                record(input.lapStages->cleaned);
+
+            // Thin fingers and small loops in the level line itself (the ball just
+            // grazing a slight ridge) are cut across where the tool keeps clear of
+            // the part along the shortcut: its lowest tip no higher than the level
+            // and the moves' 0.01 mm.
+            struct PieceRef
+            {
+                Piece* piece;
+                double z;
+            };
+            std::vector<PieceRef> pieces;
+            for (size_t li = 0; li < levelLaps.size(); ++li)
+            {
+                for (Piece& piece : levelLaps[li])
+                    pieces.push_back({ &piece, levels[li] + kHeightTolerance });
+            }
+            std::vector<size_t> cutOff(pieces.size(), 0);
+            std::vector<size_t> pieceOrder(pieces.size());
+            for (size_t k = 0; k < pieceOrder.size(); ++k)
+                pieceOrder[k] = k;
+            std::for_each(std::execution::par, pieceOrder.begin(), pieceOrder.end(), [&](size_t k) {
+                const double z = pieces[k].z;
+                RefineCounts ignored;
+                const auto clear = [&](const Vec3& from, const Vec3& to) {
+                    const double length = std::hypot(to.x - from.x, to.y - from.y);
+                    const int samples = (std::max)(1, static_cast<int>(std::ceil(length / 0.02)));
+                    for (int s = 0; s <= samples; ++s)
+                    {
+                        const double f = static_cast<double>(s) / samples;
+                        const double x = from.x + (to.x - from.x) * f, y = from.y + (to.y - from.y) * f;
+                        double height = 0.0;
+                        if (!heights.Height(x, y, ignored, false, height))
+                            height = heights.TriangleHeight(x, y);
+                        if (height > z + 0.01)
+                            return false;
+                    }
+                    return true;
+                };
+                cutOff[k] = RemoveThinFingers(pieces[k].piece->points, pieces[k].piece->closed, clear);
+            });
+            for (size_t c : cutOff)
+                fingers += c;
+
+            // Simplified by height: a straight move may replace points where it stays
+            // within 0.01 mm sideways of them (as on steep walls), or where the tool's
+            // lowest tip along it stays within 0.01 mm of the level, up or down, and it's
+            // within 0.5 mm sideways (so on shallow ground the lap runs smoothly
+            // instead of following tiny sideways wanderings of the level line).
+            const double sideways = (std::min)(w.cell / 4.0, 0.01);
+            std::vector<size_t> pointCounts(pieces.size() * 2, 0);
+            std::for_each(std::execution::par, pieceOrder.begin(), pieceOrder.end(), [&](size_t k) {
+                Piece& piece = *pieces[k].piece;
+                const double z = pieces[k].z;
+                RefineCounts ignored;
+                const auto inBand = [&](const Vec3& from, const Vec3& to) {
+                    const double length = std::hypot(to.x - from.x, to.y - from.y);
+                    const int samples = (std::max)(1, static_cast<int>(std::ceil(length / 0.05)));
+                    for (int s = 1; s < samples; ++s)
+                    {
+                        const double f = static_cast<double>(s) / samples;
+                        const double x = from.x + (to.x - from.x) * f, y = from.y + (to.y - from.y) * f;
+                        double height = 0.0;
+                        if (!heights.Height(x, y, ignored, false, height))
+                            height = heights.TriangleHeight(x, y);
+                        if (std::fabs(height - z) > 0.01)
+                            return false;
+                    }
+                    return true;
+                };
+                pointCounts[2 * k] = piece.points.size();
+                piece.points = SimplifyByHeight(piece.points, piece.closed, sideways, 0.5, inBand);
+                pointCounts[2 * k + 1] = piece.points.size();
+            });
+            for (size_t k = 0; k < pieces.size(); ++k)
+            {
+                pointsBefore += pointCounts[2 * k];
+                pointsAfter += pointCounts[2 * k + 1];
+            }
         }
     }
 
@@ -1666,22 +1987,33 @@ namespace camcore
             return pieces;
         };
 
-        // More levels where the laps of two levels would be further apart across
-        // than the stepover, on shallow slopes.
+        // The levels: the stepdown's (and Clear Flats'), or with Optimise Stepover,
+        // each chosen to suit the slope: from each level the next stepdown level is
+        // tried, and the step halved (to no less than 0.01 mm) until the laps there are
+        // no further across than the stepover from where the tool was blocked at the
+        // level above. Steep parts keep the whole stepdown; shallow ones get more.
         std::vector<double> levels;
-        double previous = w.top;
-        bool havePrevious = false;
-        for (double z : w.levels)
+        if (!settings.optimiseStepover)
         {
-            if (havePrevious)
-            {
-                std::vector<char> blocked(cells);
-                for (size_t q = 0; q < cells; ++q)
-                    blocked[q] = w.Blocked(q, previous) ? 1 : 0;
-                bool any = false;
-                const std::vector<float> fromAbove = DistanceFrom(blocked, nx, ny, w.cell, any);
+            levels = w.levels;
+        }
+        else
+        {
+            // How far across the laps at z are from the cells blocked at `above`.
+            double distanceLevel = std::numeric_limits<double>::quiet_NaN();
+            std::vector<float> fromAbove;
+            bool anyAbove = false;
+            const auto gapAt = [&](double above, double z) {
+                if (!(above == distanceLevel))
+                {
+                    std::vector<char> blocked(cells);
+                    for (size_t q = 0; q < cells; ++q)
+                        blocked[q] = w.Blocked(q, above) ? 1 : 0;
+                    fromAbove = DistanceFrom(blocked, nx, ny, w.cell, anyAbove);
+                    distanceLevel = above;
+                }
                 double gap = 0.0;
-                if (any)
+                if (anyAbove)
                 {
                     for (const Piece& piece : laps(z))
                     {
@@ -1693,14 +2025,28 @@ namespace camcore
                         }
                     }
                 }
-                const int extra = (std::min)(200, (std::max)(0, static_cast<int>(std::ceil(gap / w.pitch - 1e-9)) - 1));
-                const int pieces = (std::max)(1, (std::min)(extra + 1, static_cast<int>((previous - z) / 0.01)));
-                for (int k = 1; k < pieces; ++k)
-                    levels.push_back(previous - (previous - z) * k / pieces);
+                return gap;
+            };
+            bool first = true;
+            double from = w.top;
+            for (double target : w.levels)
+            {
+                if (first)
+                {
+                    levels.push_back(target);
+                    from = target;
+                    first = false;
+                    continue;
+                }
+                while (from - target > 1e-9 && levels.size() < 5000)
+                {
+                    double z = target;
+                    while (from - z > 0.02 + 1e-9 && gapAt(from, z) > w.pitch)
+                        z = from - (from - z) / 2.0;
+                    levels.push_back(z);
+                    from = z;
+                }
             }
-            levels.push_back(z);
-            previous = z;
-            havePrevious = true;
         }
 
         // Each lap, with the part it goes round: the separate parts at the bottom
@@ -1826,16 +2172,19 @@ namespace camcore
             }
         }
         RefineCounts totals;
-        size_t smoothed = 0;
-        MoveLapsOntoLevels(input, w, levels, levelLaps, totals, smoothed);
-        const double tolerance = (std::min)(w.cell / 4.0, 0.01);
-        for (std::vector<Piece>& pieces : levelLaps)
+        size_t smoothed = 0, fingers = 0, pointsBefore = 0, pointsAfter = 0;
+        MoveLapsOntoLevels(input, w, levels, levelLaps, totals, smoothed, fingers, pointsBefore, pointsAfter);
+        size_t turnBacks = 0, zigzags = 0, wobbles = 0;
+        CountLapGlitches(levelLaps, turnBacks, zigzags, wobbles);
+        if (input.lapStages != nullptr)
         {
-            for (Piece& piece : pieces)
-                piece.points = piece.closed ? SimplifyLoop(piece.points, tolerance) : SimplifyRun(piece.points, tolerance);
+            input.lapStages->simplified.assign(levelLaps.size(), {});
+            for (size_t li = 0; li < levelLaps.size(); ++li)
+            {
+                for (const Piece& piece : levelLaps[li])
+                    input.lapStages->simplified[li].push_back(piece.points);
+            }
         }
-        size_t turnBacks = 0, zigzags = 0;
-        CountLapGlitches(levelLaps, turnBacks, zigzags);
 
         struct Lap
         {
@@ -1913,8 +2262,8 @@ namespace camcore
             }
             else
             {
-                const double above = (lap.level > 0) ? levels[lap.level - 1] : w.top;
-                writer.Enter(start, (std::min)(above + 1.0, w.clearance), feeds.plunge);
+                // At rapid to the approach distance above the lap's start, then at the plunge feed.
+                writer.Enter(start, (std::min)(start.z + settings.approachDistance, w.clearance), feeds.plunge);
             }
             down = true;
             lastIsland = lap.island;
@@ -1934,8 +2283,12 @@ namespace camcore
         result.ok = true;
         totals.Into(result);
         result.lapPointsSmoothed = smoothed;
+        result.lapFingersRemoved = fingers;
         result.lapTurnBacks = turnBacks;
         result.lapZigzags = zigzags;
+        result.lapWobbles = wobbles;
+        result.lapPointsBefore = pointsBefore;
+        result.lapPointsAfter = pointsAfter;
         return result;
     }
 
@@ -2356,8 +2709,9 @@ namespace camcore
             }
             else
             {
-                const double above = (pass.level > 0) ? levels[pass.level - 1] : w.top;
-                writer.Enter(start, (std::min)((std::max)(above, start.z) + 1.0, w.clearance), feeds.plunge);
+                // At rapid to the approach distance above the row's start, then at the plunge
+                // feed (not from above the stock's top through what roughing cleared).
+                writer.Enter(start, (std::min)(start.z + settings.approachDistance, w.clearance), feeds.plunge);
             }
             down = true;
             lastLevel = pass.level;

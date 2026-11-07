@@ -1012,7 +1012,9 @@ namespace camcore
                 { "useBottom", w.useBottom },
                 { "bottom", w.bottom },
                 { "clearFlats", w.clearFlats },
-                { "finishFlats", w.finishFlats }
+                { "finishFlats", w.finishFlats },
+                { "optimiseStepover", w.optimiseStepover },
+                { "approachDistance", w.approachDistance }
             };
         }
 
@@ -1055,7 +1057,9 @@ namespace camcore
                    ReadOptionalBool(item, "useTop", w.useTop) && ReadOptionalNumber(item, "top", w.top) &&
                    ReadOptionalBool(item, "useBottom", w.useBottom) && ReadOptionalNumber(item, "bottom", w.bottom) &&
                    ReadOptionalBool(item, "clearFlats", w.clearFlats) &&
-                   ReadOptionalBool(item, "finishFlats", w.finishFlats);
+                   ReadOptionalBool(item, "finishFlats", w.finishFlats) &&
+                   ReadOptionalBool(item, "optimiseStepover", w.optimiseStepover) &&
+                   ReadOptionalNumber(item, "approachDistance", w.approachDistance);
         }
 
         json WriteChamfer(const ChamferSettings& chamfer)

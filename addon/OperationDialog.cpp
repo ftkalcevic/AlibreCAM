@@ -2140,6 +2140,7 @@ void CWaterlineRoughingPage::OnChoiceChanged()
 // CWaterlineFinishingPage
 
 BEGIN_MESSAGE_MAP(CWaterlineFinishingPage, COperationPage)
+    ON_BN_CLICKED(IDC_WL_OPTIMISE_STEPOVER, &CWaterlineFinishingPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_WL_STEP_PERCENT_RADIO, &CWaterlineFinishingPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_WL_STEP_DISTANCE_RADIO, &CWaterlineFinishingPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_WL_SCALLOP_RADIO, &CWaterlineFinishingPage::OnChoiceChanged)
@@ -2154,6 +2155,8 @@ void CWaterlineFinishingPage::Load(const SequenceStep& step)
 {
     const WaterlineRoughingSettings& w = step.waterlineFinishing;
     SetNumber(IDC_WATERLINE_STOCK, w.stockToLeave);
+    SetNumber(IDC_WATERLINE_EXTENSION, w.extension);
+    SetNumber(IDC_WL_APPROACH, w.approachDistance);
     CheckRadioButton(IDC_WL_CLIMB, IDC_WL_MIXED,
                      w.direction == CutDirection::Conventional ? IDC_WL_CONVENTIONAL
                      : w.direction == CutDirection::Mixed      ? IDC_WL_MIXED
@@ -2166,6 +2169,7 @@ void CWaterlineFinishingPage::Load(const SequenceStep& step)
     SetNumber(IDC_WL_STEP_DISTANCE, w.stepoverDistance);
     SetNumber(IDC_WL_SCALLOP, w.scallop);
     CheckDlgButton(IDC_WL_FINISH_FLATS, w.finishFlats ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(IDC_WL_OPTIMISE_STEPOVER, w.optimiseStepover ? BST_CHECKED : BST_UNCHECKED);
     UpdateFields();
 }
 
@@ -2174,6 +2178,8 @@ bool CWaterlineFinishingPage::Save(SequenceStep& step, std::wstring& problems)
     WaterlineRoughingSettings w = step.waterlineFinishing;
     std::wstring found;
     ReadNumber(IDC_WATERLINE_STOCK, L"The stock to leave", w.stockToLeave, found);
+    ReadNumber(IDC_WATERLINE_EXTENSION, L"The overtravel", w.extension, found);
+    ReadNumber(IDC_WL_APPROACH, L"The approach distance", w.approachDistance, found);
     w.direction = IsDlgButtonChecked(IDC_WL_CONVENTIONAL) == BST_CHECKED ? CutDirection::Conventional
                   : IsDlgButtonChecked(IDC_WL_MIXED) == BST_CHECKED      ? CutDirection::Mixed
                                                                          : CutDirection::Climb;
@@ -2187,6 +2193,7 @@ bool CWaterlineFinishingPage::Save(SequenceStep& step, std::wstring& problems)
     else
         ReadNumber(IDC_WL_SCALLOP, L"The scallop height", w.scallop, found);
     w.finishFlats = IsDlgButtonChecked(IDC_WL_FINISH_FLATS) == BST_CHECKED;
+    w.optimiseStepover = IsDlgButtonChecked(IDC_WL_OPTIMISE_STEPOVER) == BST_CHECKED;
     if (found.empty())
     {
         for (const std::string& problem : ValidateWaterlineRoughing(w))
@@ -2200,20 +2207,30 @@ bool CWaterlineFinishingPage::Save(SequenceStep& step, std::wstring& problems)
     // The Cut Levels tab's settings are its own.
     WaterlineRoughingSettings& saved = step.waterlineFinishing;
     saved.stockToLeave = w.stockToLeave;
+    saved.extension = w.extension;
+    saved.approachDistance = w.approachDistance;
     saved.direction = w.direction;
     saved.stepoverMode = w.stepoverMode;
     saved.stepoverPercent = w.stepoverPercent;
     saved.stepoverDistance = w.stepoverDistance;
     saved.scallop = w.scallop;
     saved.finishFlats = w.finishFlats;
+    saved.optimiseStepover = w.optimiseStepover;
     return true;
 }
 
 void CWaterlineFinishingPage::UpdateFields()
 {
-    GetDlgItem(IDC_WL_STEP_PERCENT)->EnableWindow(IsDlgButtonChecked(IDC_WL_STEP_PERCENT_RADIO) == BST_CHECKED);
-    GetDlgItem(IDC_WL_STEP_DISTANCE)->EnableWindow(IsDlgButtonChecked(IDC_WL_STEP_DISTANCE_RADIO) == BST_CHECKED);
-    GetDlgItem(IDC_WL_SCALLOP)->EnableWindow(IsDlgButtonChecked(IDC_WL_SCALLOP_RADIO) == BST_CHECKED);
+    // The stepover is chosen only with Optimise Stepover ticked (Frank's choice;
+    // Finish Flats still uses whatever it's set to).
+    const bool stepover = IsDlgButtonChecked(IDC_WL_OPTIMISE_STEPOVER) == BST_CHECKED;
+    for (int id : { IDC_WL_STEP_PERCENT_RADIO, IDC_WL_STEP_DISTANCE_RADIO, IDC_WL_SCALLOP_RADIO })
+        GetDlgItem(id)->EnableWindow(stepover);
+    GetDlgItem(IDC_WL_STEP_PERCENT)->EnableWindow(stepover &&
+                                                  IsDlgButtonChecked(IDC_WL_STEP_PERCENT_RADIO) == BST_CHECKED);
+    GetDlgItem(IDC_WL_STEP_DISTANCE)->EnableWindow(stepover &&
+                                                   IsDlgButtonChecked(IDC_WL_STEP_DISTANCE_RADIO) == BST_CHECKED);
+    GetDlgItem(IDC_WL_SCALLOP)->EnableWindow(stepover && IsDlgButtonChecked(IDC_WL_SCALLOP_RADIO) == BST_CHECKED);
 }
 
 void CWaterlineFinishingPage::OnChoiceChanged()
@@ -2240,6 +2257,7 @@ void CParallelFinishingPage::Load(const SequenceStep& step)
     const WaterlineRoughingSettings& w = step.parallelFinishing;
     SetNumber(IDC_WATERLINE_STOCK, w.stockToLeave);
     SetNumber(IDC_WATERLINE_EXTENSION, w.extension);
+    SetNumber(IDC_WL_APPROACH, w.approachDistance);
     CheckRadioButton(IDC_WL_CLIMB, IDC_WL_MIXED,
                      w.direction == CutDirection::Conventional ? IDC_WL_CONVENTIONAL
                      : w.direction == CutDirection::Mixed      ? IDC_WL_MIXED
@@ -2263,6 +2281,7 @@ bool CParallelFinishingPage::Save(SequenceStep& step, std::wstring& problems)
     std::wstring found;
     ReadNumber(IDC_WATERLINE_STOCK, L"The stock to leave", w.stockToLeave, found);
     ReadNumber(IDC_WATERLINE_EXTENSION, L"The overtravel", w.extension, found);
+    ReadNumber(IDC_WL_APPROACH, L"The approach distance", w.approachDistance, found);
     w.direction = IsDlgButtonChecked(IDC_WL_CONVENTIONAL) == BST_CHECKED ? CutDirection::Conventional
                   : IsDlgButtonChecked(IDC_WL_MIXED) == BST_CHECKED      ? CutDirection::Mixed
                                                                          : CutDirection::Climb;
@@ -2292,6 +2311,7 @@ bool CParallelFinishingPage::Save(SequenceStep& step, std::wstring& problems)
     WaterlineRoughingSettings& saved = step.parallelFinishing;
     saved.stockToLeave = w.stockToLeave;
     saved.extension = w.extension;
+    saved.approachDistance = w.approachDistance;
     saved.direction = w.direction;
     saved.linearStart = w.linearStart;
     saved.cutAngle = w.cutAngle;

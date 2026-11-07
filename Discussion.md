@@ -7353,6 +7353,711 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Install it
 
+### 🤖 Claude
+
+> It's installed, and the add-on and help match the Release build. Start Alibre and regenerate Waterline Finishing on `Rough 3` (about 6 minutes). The log line `[generate] laps: … turn-backs and … zigzags left` should show 0 and 0. If you still see glitches, save the job and say "check the logs".
+
+### 🧑 Frank · 06:24
+
+> check the logs.  Better but still loops.  Lets stop trying to make alibre work, and look at the alternative in todo.md, to read the nurbs information from alibre, and do our own surface calculations.
+
+### 🤖 Claude
+
+> Plan:
+>
+> # Spline faces worked out by AlibreCAM: NURBS from `GetBSplineCurvesData`
+>
+> ## Context
+>
+> Waterline Finishing and Parallel Finishing move the ball's contacts onto each face's true surface. Spheres, cylinders, cones and tori are already worked out by AlibreCAM, on all cores. Spline faces still go through Alibre's `GetClosestPoint`, one call at a time.
+>
+> On `Rough 3` that's slow and imperfect:
+> - **Slow:** Waterline Finishing takes 327 s, for 381,211 calls.
+> - **Imperfect:** after several rounds of cleanup, the laps still have 5 turn-backs and 7 zigzags (06:21 run), and Frank still sees loops.
+>
+> Frank's decision: stop working around Alibre's answers. Read each spline face's NURBS definition with `IADFace::GetBSplineCurvesData` and do the surface calculations in CamCore, as the `TODO.md` Performance item proposed.
+>
+> **Unknown:** the 27.0.1 headers have the call, but the reference docs list its 16 output arrays with no description. The layout is guessed below and confirmed against each face's own facets. If nothing fits, the face goes through Alibre as now, and the log has the raw arrays to work the layout out from.
+>
+> ## Core
+>
+> ### `core\Nurbs.h/.cpp` (new; add to `CamCore.vcxproj`)
+>
+> **`NurbsSurface`:**
+> - orders u and v (degree + 1);
+> - control-point counts u and v;
+> - knot vectors u and v;
+> - control points (`Vec3`), u varying fastest;
+> - weights (empty when not rational).
+>
+> **Functions:**
+> - **`Evaluate(u, v, point, du, dv, duu, duv, dvv)`:** evaluates the point and its first and second derivatives. Uses Piegl and Tiller's basis functions with derivatives (the A2.3 algorithm), extended to rational surfaces.
+> - **`ClosestPoint(p, closest, u, v)`:**
+>   1. A seed from a grid of samples made once per surface (about 64 × 64), held in buckets so the nearest sample is found quickly.
+>   2. Then Newton's method on (u, v), clamped to the parameter range, with a fallback to the best sample if Newton wanders off.
+> - **`Validate()`:** checks knot counts, orders and sizes, and rejects anything inconsistent.
+> - **Thread safety:** the surface and its sample grid are read-only after construction, so it's safe on all cores.
+>
+> ### `core\SurfaceGeometry`
+> - Add `SurfaceKind::Nurbs`, and give `AnalyticSurface` a `std::shared_ptr<const NurbsSurface> nurbs`.
+> - `ClosestPointOn` and `SurfaceFitsPoints` call it for that kind.
+> - **Nothing else changes:** `ExactHeights`, Parallel Finishing and Waterline Finishing already treat any `AnalyticSurface` face as worked out here, on all cores. The on-face check stays `DropCutter::NearFace` against the face's own facets (within 0.1 mm), so the trimming loops aren't needed.
+>
+> ### Moving into the frame
+> - NURBS are unchanged in shape by moving, turning and scaling their control points, and the weights stay as they are.
+> - So the add-on moves the control points from the part into the assembly with `PartToAssembly`, and Generate moves them into the origin's frame, as it does for the other surfaces now.
+> - The sample grid is built after that.
+>
+> ## Add-on
+>
+> ### Reading (`PartSurfaces` in `addon\GeometryReader`, `ReadAnalyticSurface`)
+> - For a face that isn't a plane, sphere, cylinder, cone or torus, call `GetBSplineCurvesData` and read the surface arrays: orders, info, control-point counts, knot counts, control points, weights, and the u and v knot vectors. The trimming arrays aren't used.
+> - **Likely layout:**
+>   - orders (u, v);
+>   - counts (u, v);
+>   - control points as x, y, z triplets in the part's units;
+>   - weights, one per control point, or empty;
+>   - knot vectors with counts + orders entries each.
+> - **Readings tried:** u fastest or v fastest; weights applied or already multiplied into the points; and knot vectors swapped if the counts suggest it.
+> - **Which reading is kept:** the first one whose facet points all lie on the surface within 0.1 mm (`SurfaceFitsPoints`), as cones are chosen now.
+> - **Logging, for each spline face:**
+>   - each array's variant type, dimensions and length, and its first values;
+>   - which reading fitted, or that none did.
+>
+>   The log is enough to work the layout out if no reading fits.
+> - **Fallback:** if the call fails or no reading fits, the face stays asked of Alibre.
+>
+> ### Log
+> - The `[surfaces]` line counts spline faces worked out here separately from those asked of Alibre.
+>
+> ## Tests (`tests\NurbsTests.cpp`, new; add to `CamCoreTests.vcxproj`)
+> - **Evaluation and derivatives:**
+>   - a bilinear patch (degree 1) against known points;
+>   - a bicubic patch against finite differences of `Evaluate`;
+>   - a rational quadratic quarter-cylinder (weights 1, √2/2, 1) whose points lie exactly on its radius.
+> - **Closest points:**
+>   - on the quarter-cylinder, from points inside and outside, against the exact answer;
+>   - on a wavy bicubic patch, against a dense brute-force search.
+> - **`Validate`** rejects bad knot counts.
+> - **`SurfaceFitsPoints`** with a NURBS: a mesh of the quarter-cylinder fits, and a shifted mesh doesn't.
+> - **Waterline Finishing and Parallel Finishing:**
+>   - with a spline face given as a NURBS `AnalyticSurface` (a bicubic dome-like patch) and no `closestPoint`: no Alibre calls, refined points > 0, no lap turn-backs or zigzags;
+>   - with the NURBS patch, the rows and laps match the version that asks a callback with the same exact closest points, within 0.001 mm.
+> - **Timing:** a skipped test for Waterline Finishing on the NURBS patch.
+>
+> ## Docs
+> - **Help:** the Parallel and Waterline Finishing text says spline faces are now worked out by AlibreCAM too.
+> - **`TODO.md`:** remove the Performance item, or narrow it to faces that still fall back.
+> - **`CLAUDE.md`, the spec (doc and `docs\SPEC.md`), and `Discussion.md`.**
+>
+> ## Verification
+> 1. Build Debug and Release, and run `CamCoreTests.exe`.
+> 2. Install.
+> 3. Frank generates Waterline Finishing on `Rough 3`. Then I check the log:
+>    - `[surfaces]` should count the spline face as worked out here;
+>    - which reading fitted;
+>    - about 0 asked of Alibre;
+>    - the time, against 327 s;
+>    - `laps: … 0 turn-backs and 0 zigzags left`.
+> 4. **If no reading fitted,** I work the layout out from the logged arrays, fix the reading, and Frank runs it again.
+> 5. Frank checks for loops in Alibre, and tries Parallel Finishing on `Rough 3` too.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Now hook NURBS into the surface types, and add the files to the project:
+
+> The surface-type changes went in; only the project file failed, because there's no `PocketToolpath.cpp` entry to anchor on. I'll anchor on `Simulation.cpp` instead.
+
+> Now the NURBS tests: evaluation, derivatives, the exact rational quarter-cylinder, closest points against brute force, validation, the facet fit, and both finishing operations on a NURBS bump.
+
+> I left a stray line in the fit test. Fixing it so it simply shifts the mesh sideways by 0.5 mm:
+
+> Both builds are clean and every test passes. Now the docs: the help, `TODO.md` (narrowing the Performance item), `CLAUDE.md` and the spec.
+
+> The NURBS approach is built and installed (the add-on and help match the Release build). All tests pass in Debug and Release. What I don't know yet is whether Alibre's data reads correctly; `Rough 3` will tell us.
+>
+> **From your last run on `Rough 3`:** 327 s, 381,211 Alibre calls, and 5 turn-backs and 7 zigzags left in the laps. That's better than before, but not clean.
+>
+> **What's new:**
+> - **`core\Nurbs`:** AlibreCAM's own NURBS surface. It evaluates the surface with its first and second derivatives, and finds the closest point to any point by starting from the nearest of thousands of samples and refining with Newton's method. It's safe on all cores.
+> - **Spline faces join the fast path:** they're now handled like spheres, cylinders, cones and tori. Both Parallel Finishing and Waterline Finishing work them out on all cores, with no calls to Alibre.
+> - **Reading the spline:** the add-on calls `IADFace::GetBSplineCurvesData`. Alibre's docs don't say how its 16 arrays are laid out, so it tries each likely reading and keeps the first that the face's own facets lie on (within 0.1 mm). If none fits, the face is asked of Alibre as before.
+>
+> **In the tests:**
+> - An exact rational quarter-cylinder comes out exact.
+> - Closest points match a dense brute-force search.
+> - On a NURBS bump, both finishing operations give the same moves (within 0.001 mm) as asking a callback point by point, with no calls and no glitches.
+> - Waterline Finishing on the bump takes 0.7 s.
+>
+> **Docs:** the help, `TODO.md` (the Performance item now only covers faces that still fall back), `CLAUDE.md` and the spec (rev 200) are updated.
+>
+> Restart Alibre, then test:
+> 1. Generate Waterline Finishing on `Rough 3`. It should take seconds, not minutes.
+> 2. Check the log:
+>    - the `[surfaces]` line should show the spline counted as worked out here;
+>    - a line saying which reading of the spline fitted its facets;
+>    - `true surface: … 0 asked of Alibre`;
+>    - `laps: … 0 turn-backs and 0 zigzags left`.
+> 3. Look for loops in Alibre.
+> 4. Try Parallel Finishing on `Rough 3` too.
+>
+> If the log says no reading fitted, it also lists the spline's arrays (sizes and first values). Say "check the logs" and I'll work the layout out from them.
+
+### 🧑 Frank · 06:44
+
+> That now process lightning fast, but there are still loops and glitches - check the logs.  Why is that happening now?  Is this rounding error?  Algorithm error?  Are we using float or double in the maths routines?
+
+### 🤖 Claude
+
+> The log answers part of it already, so I'll scan the saved toolpath too.
+
+> Plan:
+>
+> # Find the real cause of Waterline Finishing's loops on `Rough 3`
+>
+> ## Context
+>
+> Spline faces are now read as NURBS and worked out by CamCore. `Rough 3`'s Waterline Finishing now takes 7.6 s, down from 327 s, with no Alibre calls. But the loops are still there: the 06:39 run left 7 turn-backs and 7 zigzags, with 1,079 points put back by the cleanup.
+>
+> **Frank's questions, answered from the code and the log:**
+> - **Float or double:** the maths that places the final laps is all double. That covers the drop cutter, the NURBS (`Evaluate`, `ClosestPoint`), the Newton steps, the root search along each lap and the cleanup. Float is used only for the grid that makes the first rough laps (`PartHeightField`, `TipHeights`, `IsoContours`' input), where it resolves about 1e-6 mm at these heights.
+> - **Rounding error:** no.
+> - **Alibre's answers:** no. Exact NURBS answers give the same glitches as Alibre's answers did.
+> - **So it's an algorithm error,** in `MoveLapsOntoLevels` or in how the grid laps are formed. Until now I've guessed at causes from scans of the finished toolpath, and each guess has only reduced the glitches.
+>
+> **The surface,** from the log: a cubic spline profile of 106 control points, swept along a slightly sloping straight line (4 collinear control points in v). Its knots come in pairs, so it's only C1 at about 52 joins. The glitches cluster at a few places, such as (1–2, 20–22) at levels 13.5–13.6, and (−12, 23.5) at 15.4.
+>
+> **The fix for the method:** capture `Rough 3`'s real Generate input, replay it in the tests, and look at what happens at exactly those points. Then fix the cause, and prove the fix on the real data.
+>
+> ## Steps
+>
+> 1. **Dump the input (add-on).**
+>    - Every Waterline Finishing and Parallel Finishing Generate writes its `WaterlineRoughToolpathInput` to `%LOCALAPPDATA%\AlibreCAM\last-finishing.json`, replacing the last one. The file holds:
+>      - the operation's settings, as the `.cam` saves them (`WriteWaterlineRoughing`, the feeds, the clearance);
+>      - the tool;
+>      - the area's faces and loops;
+>      - the part triangles, with each one's face;
+>      - the stock and part heights;
+>      - each face's `AnalyticSurface`, including a NURBS surface's orders, knots, control points and weights.
+>    - The writing is in core (`core\FinishingDump`, `SaveFinishingInput` and `LoadFinishingInput`), so it's tested both ways.
+>    - It's a few hundred kB for `Rough 3`, written with `WriteFileAtomically`. A failed write only goes in the log.
+> 2. **Replay it (tests).** A skipped test, run by name, does the following:
+>    - loads the dump named by the environment variable `ALIBRECAM_REPLAY`;
+>    - runs the operation;
+>    - prints the glitch counts;
+>    - for each glitch, prints the lap points around it before and after each stage: grid lap, triangle root, true surface, middles, cleanup;
+>    - prints the surface's height around it, sampled along the lap's normal.
+>
+>    That shows which stage makes each loop, and whether the true level line itself turns there.
+> 3. **Find the cause and fix it,** in `MoveLapsOntoLevels`, or in how the grid laps are made, or in the level choice.
+>    - I'll tell Frank the cause in plain terms before or with the fix.
+>    - **If the true level line really does loop there** (a tiny real island or a pinch at that height), the fix is to drop or merge those tiny real features, rather than to keep cleaning up.
+> 4. **Prove it:**
+>    - the replay of `Rough 3`'s dump gives 0 turn-backs and 0 zigzags;
+>    - a small test that reproduces the cause joins the test suite, so it stays fixed without the dump.
+> 5. **Keep the dump and the replay as a tool** for future reports. `CLAUDE.md` says where the file is and how to run the replay.
+>
+> ## Verification
+> 1. Build Debug and Release, and run `CamCoreTests.exe`. That includes a round trip of the dump (save, load, same moves).
+> 2. Install. Frank regenerates Waterline Finishing on `Rough 3`. It doesn't need saving, as the dump is written anyway.
+> 3. I replay `last-finishing.json`, find and fix the cause, and replay again until both counts are 0.
+> 4. Install again. Frank checks `Rough 3` in Alibre, with Waterline Finishing and Parallel Finishing.
+> 5. Docs: `CLAUDE.md` (the dump, the replay, and the cause and fix), and `Discussion.md`.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> I'll start with the dump. First, what JSON helpers exist for tools and jobs:
+
+> Now the dump code (core), its round-trip test, the replay test with per-point diagnostics, and the Generate hook:
+
+> `getenv` is flagged as unsafe under these settings; switching to `_dupenv_s`:
+
+> The save-and-reload round trip gives exactly the same toolpath. Now Generate writes the dump for both finishing operations, beside the log. First, how the log's folder is found:
+
+> Both builds are clean. Installing, so you can produce `Rough 3`'s dump:
+
+> It isn't rounding error, and it isn't float. It's an algorithm error in my code, and I've built what I need to find it exactly. Nothing has changed in the toolpath yet.
+>
+> **Your questions, from the code and the log**
+> - **Float or double?** Everything that places the final laps is double. That's the drop cutter, the NURBS evaluation and closest points, the Newton steps, the search along each lap and the cleanup. Float is used only in the grid that makes the first rough laps, and at these heights it's precise to about 0.000001 mm, which can't make loops.
+> - **Rounding error?** No.
+> - **Alibre's answers?** No. The 06:39 run used no Alibre calls at all (the spline was read as NURBS, 106 × 4 control points), yet it still left 7 turn-backs and 7 zigzags. That's the same as when Alibre gave the answers.
+> - **So it's an algorithm error**, in how I move the lap points onto their levels, or in the rough laps they start from. So far I've been guessing at the cause from scans of the finished toolpath, which is why each fix only reduced the glitches.
+>
+> **What I've built to find it**
+> - **A capture:** every Waterline Finishing and Parallel Finishing Generate now saves its whole input (settings, tool, area, part triangles and each face's surface, including the NURBS) to `%LOCALAPPDATA%\AlibreCAM\last-finishing.json`. The operation itself goes beside it in `last-finishing.json.cam`.
+> - **A replay test:** it runs that exact input and, for each glitch, prints the lap points around it at every stage: the rough grid lap, after moving onto the level, after the cleanup, and as cut. That shows which stage makes each loop, and whether the true level line itself loops there.
+> - **Checked:** a test saves an input, loads it back and gets an identical toolpath.
+>
+> All tests pass in Debug and Release, but it isn't installed yet because the administrator prompt was cancelled. Once it's installed, Generate Waterline Finishing on `Rough 3` (it takes seconds now, and needn't be saved). Then say "replay it" and I'll find the cause from your real data and fix it there.
+
+### 🧑 Frank · 07:09
+
+> Install it
+
+### 🤖 Claude
+
+> It's installed, and the add-on and help match the Release build. Start Alibre and generate Waterline Finishing on `Rough 3`; it only takes seconds now, and you don't need to save. Then say "replay it" and I'll run your captured input to find what makes the loops.
+
+### 🧑 Frank · 07:17
+
+> Check the logs.  That didn't look any different.  If we can't fix the issue, can we add a post-check on the generated toolpath and filter out these glitches?  There shouldn't be tiny loops, or tiny zig-zags
+
+### 🤖 Claude
+
+> The dump was written. I'll replay it now; this only reads the file and runs the test program.
+
+> Plan:
+>
+> # Filter thin fingers and loops out of Waterline Finishing's laps
+>
+> ## Context
+>
+> Frank still sees tiny loops and zigzags in Waterline Finishing on `Rough 3`. He asked for a check after generating that filters them out: "There shouldn't be tiny loops, or tiny zig-zags."
+>
+> The replay of `Rough 3`'s captured input (`last-finishing.json`, 07:15 run: 7 turn-backs, 7 zigzags) shows what they are.
+>
+> **It's not misplaced points.** After moving, every point lies exactly on its level. But at a few places the level line itself doubles back in a thin finger:
+> - **Level 13.50, lap 2:** the line runs right to x = 1.74, comes back left along y ≈ 22.15–22.20 to x = 1.10, then turns and runs right again. That's about 0.05–0.1 mm wide and 0.6 mm long. The grid lap shows a bulge in the same place (out to y = 22.69), as the grid's coarser heights make the finger look wider.
+> - **Level 13.62, lap 4,** around (0.6–1.8, 19.8–20.6), and **level 15.44, lap 1,** around (−12, 23.4): the same thing.
+>
+> **Why the earlier fixes only reduced it:** following such a finger exactly is a tiny back-and-forth, which is exactly the glitch. The moving steps were right; the cleanup only trimmed the finger's ends.
+>
+> **The fix:** remove thin fingers and small loops from each lap, by cutting straight across the finger's mouth. That's only allowed where the shortcut keeps the tool out of the part.
+>
+> ## Change: `RemoveThinFingers` in `core\WaterlineRoughToolpath.cpp`
+>
+> Applied to each lap after the points are moved and cleaned up, before simplifying.
+>
+> 1. **Find the finger.** For each point i, look ahead along the lap, up to 3 mm of path, for the furthest point j that comes back within 0.2 mm of it, with at least 0.4 mm of path between them.
+>    - Closed laps wrap round.
+>    - An open lap isn't cut across its own ends.
+> 2. **Check the shortcut is safe.**
+>    - Sample the straight line from i to j every 0.02 mm.
+>    - The tool's lowest tip there (`ExactHeights`, with true surfaces where they're worked out here, else the facets) must be no higher than the level plus 0.01 mm, the moves' own tolerance.
+>    - If it is higher, the shortcut would dip into the part, so try a nearer j. If none is safe, keep the finger.
+> 3. **Cut it.** Drop the points between i and j, then carry on from j.
+> 4. **Count it.** Add `ToolpathResult::lapFingersRemoved` and log it: `[generate] laps: … f fingers and loops cut off`.
+>
+> **What it costs:** cutting across a finger leaves the tool out of a strip under 0.2 mm wide and at most 3 mm long, at that level only. The finger is free space reaching into the part, so skipping it leaves a little material at that level, and the next level down covers most of it. The tool never goes into the part, because of the check in step 2.
+>
+> **Limits:** 0.2 mm wide and 3 mm along are my choices, and constants in the code. A finger longer than 3 mm is treated as a real feature and kept.
+>
+> ## Tests (`tests\WaterlineFinishToolpathTests.cpp`)
+> - **A thin free finger in a lap** (0.1 wide, 0.6 long) over a part that allows the shortcut: it's cut off, and the lap has no turn-backs.
+> - **A thin finger whose mouth crosses higher ground,** where the shortcut would dip into the part: it's kept.
+> - **A small loop** (the path crossing itself within 0.2 mm): it's cut off.
+> - **A wide lobe** (1 mm wide) and **a long finger** (5 mm): both are kept.
+> - **No change elsewhere:** the existing waterline tests still pass unchanged, including the exact sphere within 0.001 mm and the saddle with no reversals.
+> - **On the real data:** the replay of `Rough 3`'s dump gives 0 turn-backs and 0 zigzags. I'll run that here. It isn't a test in the suite, because the dump file isn't part of the repository.
+>
+> ## Docs
+> - **`CLAUDE.md`:**
+>   - the cause (thin fingers in the true level line, seen by replaying `Rough 3`);
+>   - the filter and its limits;
+>   - the dump (`last-finishing.json` and `.json.cam`) and the replay (`ALIBRECAM_REPLAY`, `-tc="replay*" --no-skip`).
+> - **Help:** one sentence in the Waterline Finishing section: thin fingers and loops under 0.2 mm wide in a lap are cut across where that keeps clear of the part.
+> - **`Discussion.md`.**
+>
+> ## Verification
+> 1. Build Debug and Release, run `CamCoreTests.exe`, and replay `Rough 3`'s dump: 0 turn-backs, 0 zigzags, and the count of fingers cut.
+> 2. Install. Frank regenerates Waterline Finishing on `Rough 3` and checks it in Alibre.
+> 3. If anything is left, the new dump replays it straight away.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Timing is unchanged (2.4 s for the timing case, about 5.7 s for the `Rough 3` replay), and Debug passes too. Now the docs and the install:
+
+> I found the cause by replaying `Rough 3`, and added the filter you asked for. On your real data it now gives **0 turn-backs and 0 zigzags**, down from 7 and 7. All tests pass in Debug and Release. **Not installed:** Alibre is running, so close it first.
+>
+> **Why you saw no difference last time:** that build only added the capture and the replay. It didn't change the toolpath, so the log showed the same 7 turn-backs and 7 zigzags. The replay of that run is what showed the cause.
+>
+> **The cause:** the replay showed every point sitting exactly on its level, so they weren't misplaced. But at a few places the waterline itself doubles back:
+> - **Thin fingers**, about 0.05–0.1 mm wide and 0.6 mm long, where the ball just grazes a slight ridge in the spline. On level 13.50, for example, the line runs to x = 1.74, comes back along itself to x = 1.10, then carries on.
+> - **A tiny back step** of 0.016 mm (on level 13.38).
+>
+> Following those exactly is the glitch. That's why each earlier fix only trimmed it: the earlier steps were placing points correctly all along.
+>
+> **The filter, run on every lap at the end:**
+> - **Thin fingers and tiny loops** (under 0.2 mm wide, up to 3 mm long) are cut straight across at their base. A longer finger is kept as a real feature.
+> - **Tiny back steps** (points that move backwards along the lap) are left out.
+> - **Safety:** before any shortcut, the tool's height is checked along it every 0.02 mm. If it would go into the part by more than 0.01 mm, the shortcut isn't taken.
+> - **Log:** the `laps:` line now also says how many fingers and loops were cut off.
+>
+> **Tests:**
+> - New: a thin finger is cut off; it stays when the shortcut would go into the part; a wide lobe and a long finger stay; a tiny loop in a closed lap is cut off; a small round lap stays.
+> - All the existing tests are unchanged, including the exact sphere within 0.001 mm.
+> - The help and `CLAUDE.md` describe the filter and how to replay a capture.
+>
+> After installing:
+> 1. Generate Waterline Finishing on `Rough 3` and look for loops in Alibre. The log's `laps:` line should end with 0 turn-backs and 0 zigzags.
+> 2. If anything is still left, generate again and say "replay it". The capture is written on every Generate.
+
+### 🧑 Frank · 07:31
+
+> Install it
+
+### 🤖 Claude
+
+> Alibre is still running, so the install script stopped before installing anything. Close Alibre completely and say "install it" again.
+
+### 🧑 Frank · 07:32
+
+> install it
+
+### 🤖 Claude
+
+> It's installed, and the add-on and help match the Release build. Start Alibre, generate Waterline Finishing on `Rough 3`, and look for loops. The log's `laps:` line should end with 0 turn-backs and 0 zigzags. If anything is left, say "replay it" and I'll replay the input captured by that Generate.
+
+### 🧑 Frank · 07:35
+
+> Check the logs.  Better, but there are still some little wobbles in the paths.  Again, on the shallow areas.  Is that tuning the algorithm?
+
+### 🤖 Claude
+
+> Plan:
+>
+> # Simplify Waterline Finishing's laps by height, not sideways distance
+>
+> ## Context
+>
+> Frank sees little wobbles left in Waterline Finishing on `Rough 3`, on the shallow areas. The 07:33 run log shows the glitch filter working: 9 thin fingers cut off, and 0 turn-backs and 0 zigzags left. What remains are gentle sideways wobbles, below my "glitch" measures.
+>
+> **Cause:**
+> - On shallow ground a tiny height difference becomes a big sideways shift. On a slope of 1 in 20, 0.001 mm of height moves the level line 0.02 mm sideways.
+> - The spline has slight ridges at its knot joins (it's only C1 at about 50 places), so on shallow ground the exact level line itself wanders sideways by a few hundredths of a millimetre.
+> - The laps are then simplified to within 0.01 mm sideways, so the wobbles are kept faithfully.
+>
+> **What actually matters for the finish** is the tool's height. Judged by height, a lap on shallow ground could run straight through the wobbles and stay within 0.01 mm of its level everywhere, while staying exact on steep walls, where a small sideways move is a big change in height.
+>
+> So this isn't a matter of tuning numbers: the laps should be simplified by height, not by sideways distance.
+>
+> ## Change (`core\WaterlineRoughToolpath.cpp`)
+>
+> **`SimplifyByHeight`** replaces Waterline Finishing's sideways simplification of its laps (`SimplifyLoop` and `SimplifyRun` at `min(cell / 4, 0.01)`, after the moving, cleanup and finger filter).
+>
+> 1. **Method:** Douglas–Peucker, but a span from point a to point b is accepted only if, sampled every 0.05 mm along the straight line between them, the tool's lowest tip stays within the band level ± 0.01 mm.
+>    - **Not above the band:** the tool never goes into the part by more than 0.01 mm. That's the same allowance as now, and the same check as the finger filter.
+>    - **Not below the band:** the tool never stands off the part by more than 0.01 mm. So material isn't left beyond the moves' tolerance.
+> 2. **A sideways limit as well:** a span must also stay within 0.5 mm sideways of the points it replaces. That stops it cutting across a real bend in the lap where the ground happens to be flat. It's my choice of limit.
+> 3. **Heights:**
+>    - `ExactHeights::Height` is used: true surfaces worked out here, and the facets for a face asked of Alibre, so Alibre isn't called here.
+>    - It runs on all cores, a lap at a time.
+>    - Each span check is cheap because spans are short. The cost is measured below.
+> 4. **Count it:** log the points left against the points before (`[generate] laps: … simplified from n to m points by height`). `ToolpathResult::lapPointsBefore` and `lapPointsAfter` get the counts.
+>
+> **Unchanged:** Parallel Finishing (its rows follow the surface in height already); Waterline Roughing; the levels; the finger filter; links between laps.
+>
+> ## Measure: a wobble count
+>
+> `CountLapGlitches` also counts **wobbles**: turns that alternate left and right of more than 10° each within 0.5 mm of path. That's the gentle back-and-forth Frank sees.
+> - Logged with the turn-backs and zigzags.
+> - Added to `ToolpathResult` as `lapWobbles`.
+>
+> ## Tests (`tests\WaterlineFinishToolpathTests.cpp`)
+> - **The shallow wobbly cap** (radius 120, 6 high, coarse facets, answers wobbling 0.01): wobbles fall to 0, and every point along the moves is within level ± 0.01 mm of the true sphere's ball height, checked every 0.05 mm along each move.
+> - **The steep dome:**
+>   - the laps are still within the existing 0.025 × 18 / r mm sideways;
+>   - the exact sphere is still within 0.001 mm (± the 0.01 mm height band);
+>   - the number of moves isn't more than before.
+> - **Unchanged:** the saddle, the two spheres and the finger tests.
+> - **Timing:** the waterline timing test stays near 2.4 s.
+> - **On the real data:** the replay of `Rough 3`'s dump gives 0 wobbles, 0 turn-backs and 0 zigzags. It also reports the number of moves, expected to be fewer.
+>
+> ## Docs
+> - **Help (Waterline Finishing):** laps are kept within 0.01 mm of their level in height, so on shallow ground they run smoothly rather than following tiny sideways wanderings.
+> - **`CLAUDE.md`, `Discussion.md`.**
+>
+> ## Verification
+> 1. Build Debug and Release, run `CamCoreTests.exe`, and replay `Rough 3`. Check the wobble count and the time.
+> 2. Install. Frank regenerates Waterline Finishing on `Rough 3` and checks the shallow areas in Alibre.
+> 3. **Later, if Frank wants it:** many CAM systems finish only the steep parts with waterline and leave shallow ground to a parallel or scallop pass, with a slope limit set in the operation. That would be a new setting, so it's for Frank to decide. It isn't part of this plan.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> The build failed: `counts` is already used earlier in the same function. Renaming mine to `pointCounts`:
+
+> The Release compiler crashed while linking (the same internal error as earlier in the session). A full rebuild clears it:
+
+> Mostly it wasn't tuning: the laps were being judged the wrong way on shallow ground. That's fixed and installed (the add-on and help match the Release build), and all tests pass in Debug and Release. It hasn't been looked at in Alibre yet.
+>
+> **What your 07:33 log showed:** the glitch filter worked, with 9 thin fingers cut off and 0 turn-backs and 0 zigzags left. What you saw were gentler sideways wobbles.
+>
+> **The cause:** where the ground is nearly flat, a tiny difference in height moves the level line a long way sideways. On a 1-in-20 slope, 0.001 mm of height is 0.02 mm sideways. The spline has slight ridges where its pieces join, so on shallow ground the exact level line wanders sideways by a few hundredths of a millimetre. I simplified the laps to within 0.01 mm *sideways*, so they followed every wander.
+>
+> **The fix:** a straight move may now replace several lap points if either of these holds:
+> - it's within 0.01 mm of them sideways, which is the old rule and still what governs steep walls; or
+> - the tool's height along it, checked every 0.05 mm, stays within 0.01 mm of the level up or down (and it's within 0.5 mm of the points).
+>
+> So the tool never cuts into the part or stands off it by more than 0.01 mm, and on shallow ground the laps run straight through the wanderings. Steep walls simplify just as before.
+>
+> **On `Rough 3`, by replaying your captured input:**
+> - lap points: from 191,880 down to 8,792;
+> - moves: from 14,154 down to 10,067;
+> - still 0 turn-backs and 0 zigzags;
+> - 16 wobbles left, by a new count of gentle left-right turns.
+>
+> **What those 16 are:** I looked at two places.
+> - **The V notches near x ≈ −17:** on several levels the level line really dips into a narrow V. A few points near its tip couldn't be moved onto the level and stayed where the grid put them, which leaves a jog of about 0.1 mm.
+> - **The bumps near (−0.89, 23.7):** about 0.06 mm. These are real: a straight line there would be more than 0.01 mm off the level.
+>
+> **The one tuning choice** is that ±0.01 mm band. A wider band would straighten more, but follow the surface less closely.
+>
+> **Other changes:** the log's `laps:` line now gives the point counts and the wobble count. The help and `CLAUDE.md` are updated.
+>
+> Restart Alibre, generate Waterline Finishing on `Rough 3`, and look at the shallow areas. If a wobble still bothers you, generate and say "replay it" with roughly where it is, and I'll look at that spot. Another option many CAM systems use: Waterline Finishing only on steep areas, with shallow ground left to a parallel pass, set by a slope limit in the operation. That would be a new setting, so it's your call.
+
+### 🧑 Frank · 08:01
+
+> Not perfect, but it will work for now.  The next issue is the spacing of the layers.  Check the logs, there seem to be areas where horizontal layers are more tightly packed.  That example had a fixed stepdown of 0.5mm.  I suspect this is because step over is being included.  Add a checkbox to the Waterline Finishing tab to enable/disable stepover - call it Optimise Stepover.  Off by default.  When off, just use step down.  When on, combine the stepover and stepdown to determine the best horizontal level to match the slope of the surface.
+
+### 🤖 Claude
+
+> First, the settings Generate used, from the captured operation:
+
+> Plan:
+>
+> # Waterline Finishing: an Optimise Stepover check box
+>
+> ## Context
+>
+> On `Rough 3`, Waterline Finishing's levels bunch up in places, although the stepdown is a fixed 0.5 mm. Frank suspects the stepover, and he's right.
+>
+> **What happens now** (`GenerateWaterlineFinishToolpath`, "More levels where the laps of two levels would be further apart across than the stepover"):
+> - Between each pair of stepdown levels, if any lap at the lower level is more than one stepover across from the higher level's blocked area, the whole gap is split evenly into extra levels.
+> - On `Rough 3` the stepover is 50% of the 3 mm tool, so 1.5 mm.
+> - The extra levels apply everywhere at that height, not just on the shallow patch.
+>
+> **A second, smaller source:** Clear Flats (Cut Levels tab, on in this job) adds a level at each flat face's height. Two of `Rough 3`'s flats are at 12.130 and 12.118, only 0.012 mm apart. That's separate from the stepover and isn't changed here.
+>
+> **Frank's decision:**
+> - An **Optimise Stepover** check box on the Waterline Finishing tab, off by default.
+> - **Off:** levels from the stepdown only (plus Clear Flats' levels, as the Cut Levels tab says).
+> - **On:** the stepover and stepdown together choose each level to suit the slope of the surface.
+>
+> ## Core
+> - **`WaterlineRoughingSettings::optimiseStepover`** (`core\WaterlineRoughing.h`), default false.
+>   - Saved as `optimiseStepover` in `WriteWaterlineRoughing` and `ReadWaterlineRoughing` (`core\CamJob.cpp`).
+>   - A file without it reads as off. That includes existing jobs, which so far always added levels; they'll now use the stepdown only, as Frank chose.
+>   - `.cam` format stays 11, since an older add-on just ignores the field.
+> - **`GenerateWaterlineFinishToolpath`:**
+>   - **Off:** the levels are `w.levels` (from the stepdown and Clear Flats), with nothing added.
+>   - **On:** the levels follow the slope. Working down from each stepdown level to the next:
+>     1. Try the next stepdown level.
+>     2. If its laps are more than one stepover across from the area blocked at the level above, halve the step (no smaller than 0.01 mm) until they aren't.
+>     3. Take that level, and carry on from it.
+>   - Steep areas then keep the full stepdown, and shallow areas get just the levels they need.
+>   - The lap gap is measured as now: the distance from the blocked cells at the level above, read at the new level's grid laps.
+>   - Levels are still shared by the whole area at each height. That's how waterline works, so a shallow patch anywhere still adds levels across the whole area.
+> - The Finish Flats passes keep using the stepover as their spacing, whatever the check box says.
+>
+> ## Add-on
+> - **Waterline Finishing tab (`IDD_OP_WATERLINE_FINISHING`):** a check box **Optimise Stepover** (`IDC_WL_OPTIMISE_STEPOVER`, 13448; next control 13449) below Finish Flats, at about 10,98.
+> - **`CWaterlineFinishingPage`:** `Load` and `Save` handle it. Bulk editing picks it up through the existing control snapshot.
+> - The Stepover group stays enabled, because Finish Flats uses it too.
+>
+> ## Tests (`tests\WaterlineFinishToolpathTests.cpp`)
+> - **The half sphere with a 1 mm stepdown and a fine stepover:**
+>   - Off: the levels are exactly 1 mm apart.
+>   - On: there are more levels near the top, where it's shallow, and the bottom levels, where it's steep, are still 1 mm apart.
+> - **The existing "a small stepover adds levels" test** sets the box on.
+> - **Saving and loading** keeps the setting, and an old file without it reads as off.
+> - All other tests pass unchanged.
+> - **Replaying `Rough 3`** (I run this here), check the number of levels with the box off and with it on.
+>
+> ## Docs
+> - **Help (Waterline Finishing tab):**
+>   - Optimise Stepover described;
+>   - the Stepover field's text: "used for extra levels when Optimise Stepover is ticked, and for Finish Flats' passes";
+>   - a note that Clear Flats can add levels close together where flats are near the same height.
+> - **The spec** (doc and `docs\SPEC.md`), **`CLAUDE.md`, `Discussion.md`.**
+>
+> ## Verification
+> 1. Build Debug and Release, and run `CamCoreTests.exe`.
+> 2. Install. Frank regenerates `Rough 3` with the box off (the default) and checks the levels are 0.5 mm apart, apart from the flats. Then he tries it on.
+> 3. The log's `[generate]` lines say how many levels were used.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> I'll implement it: the setting and its saving, the new level choice, the check box, and tests.
+
+> Both builds pass. Updating the spec doc, then installing:
+
+> You were right: the stepover was adding the extra levels. Optimise Stepover is now a check box on the Waterline Finishing tab, off by default, and it's installed (the add-on and help match the Release build). All tests pass in Debug and Release. I haven't tried it in Alibre.
+>
+> **What was happening:** with a 3 mm tool and a 50% stepover (1.5 mm), any lap more than 1.5 mm across from the level above it added extra levels. Those levels applied to the whole area at that height, not just the shallow patch, so the layers bunched up.
+>
+> **Optimise Stepover:**
+> - **Off (the default):** the levels are the stepdown's only, every 0.5 mm in your job. Existing jobs will now generate this way too, since they don't have the setting yet.
+> - **On:** the levels are chosen to suit the slope. From each level, the next stepdown level is tried, and the step is halved until the laps there are no more than one stepover across from where the tool reached on the level above. Steep sides keep the full stepdown, and shallow areas get more levels. That's adaptive, rather than the old even split.
+> - **The Stepover field** still sets the spacing of Finish Flats' passes, whichever way the box is set.
+>
+> **On `Rough 3`, by replaying your captured input:**
+> - **Off:** 83 levels and 2,403 moves.
+> - **On:** 152 levels and 10,012 moves.
+>
+> **One more source of close layers:** Clear Flats on the Cut Levels tab, which is ticked in this job, adds a level at each flat face's height. Two of `Rough 3`'s flats are only 0.012 mm apart (12.130 and 12.118), so those two levels will always be very close. Unticking Clear Flats would remove them. The help now mentions this.
+>
+> The help, spec (rev 201) and `CLAUDE.md` are updated.
+>
+> Restart Alibre, then test:
+> 1. Open Waterline Finishing on `Rough 3`. The tab should show an **Optimise Stepover** check box, unticked, under Finish Flats.
+> 2. Generate: the levels should be evenly 0.5 mm apart, apart from the two flats.
+> 3. Tick Optimise Stepover and generate again: there should be more levels, but only on the shallow parts' heights.
+> 4. Save and reopen the job: the tick should stay.
+
+### 🧑 Frank · 08:15
+
+> That will do for now in the nurbs and finishing operations
+
+### 🤖 Claude
+
+> Good, I'll leave the NURBS and finishing work there; none of it is committed yet. Two things to remember from this round:
+>
+> - **For future glitch reports:** every Waterline or Parallel Finishing Generate still saves its input to `last-finishing.json` in the log's folder. Say "replay it" and I can see exactly what happened in that run.
+> - **Still open:** the few small wobbles left on `Rough 3`'s shallow areas, and the idea of a slope limit that leaves shallow ground to a parallel pass. Both are in `CLAUDE.md`, but neither is in `TODO.md`. I can add them there if you'd like.
+
+### 🧑 Frank · 08:17
+
+> Move the "optimise stepover" checkbox to inside the stepover group.  Disable the other controls in the stepover group is "optimise stepover" isn't selected.
+
+### 🤖 Claude
+
+> Questions:
+> - On the Waterline Finishing tab, Finish Flats also uses the Stepover settings (as the spacing of its passes over flats). If the Stepover controls are greyed whenever Optimise Stepover is off, how should Finish Flats get its spacing?
+>   - Enable for either box (Recommended): The Stepover controls are enabled when Optimise Stepover or Finish Flats is ticked, and greyed only when both are off.
+>   - Only Optimise Stepover: Exactly as asked: greyed unless Optimise Stepover is ticked. Finish Flats still uses whatever stepover is set, even while the controls are greyed.
+
+### 🧑 Frank · 08:17
+
+> Answers:
+> - On the Waterline Finishing tab, Finish Flats also uses the Stepover settings (as the spacing of its passes over flats). If the Stepover controls are greyed whenever Optimise Stepover is off, how should Finish Flats get its spacing?
+>   **Only Optimise Stepover**
+
+### 🤖 Claude
+
+> Exactly as you asked, then: the Stepover controls are greyed unless Optimise Stepover is ticked, and Finish Flats keeps using whatever stepover is set. First, the current template and code:
+
+> I've moved Optimise Stepover into the Stepover group and installed it (the add-on and help match the Release build). Debug and Release both build cleanly. I haven't seen the tab in Alibre yet.
+>
+> - **Layout:** Optimise Stepover is now the first line inside the Stepover group. The % Tool Dia, Distance and Scallop rows have moved down beneath it, and the group is a little taller to fit.
+> - **Greying:** with Optimise Stepover unticked, the three choices and their boxes are all greyed. Tick it and they come back, with only the chosen row's box editable, as before.
+> - **Finish Flats:** as you chose, it still spaces its passes by the stepover as set, even while the controls are greyed. The help says so.
+>
+> The help and `CLAUDE.md` are updated.
+>
+> Restart Alibre, then test:
+> 1. Open Waterline Finishing: Optimise Stepover should be at the top of the Stepover group, unticked, with the rest of the group greyed.
+> 2. Tick it: the choices come back, and only the chosen row's box can be edited. Untick it, and the group greys again.
+> 3. Press the help button on the tab: the section describes Optimise Stepover in the Stepover group.
+
+### 🧑 Frank · 08:30
+
+> There's a problem with waterline roughing.  It is no longer cutting the stock from the whole level - it looks like a finishing cut.  Is there shared code between waterline roughing and waterline finishing?
+
+### 🤖 Claude
+
+> The last runs in the log are all Waterline Finishing. I'll find the most recent Waterline Roughing run.
+
+> I'll add a second replay that runs a captured finishing input as Waterline Roughing instead. It's useful for this check, and for later ones.
+
+> The Release linker crashed again (the same internal compiler error as before). A full rebuild clears it:
+
+*(Frank stopped Claude here.)*
+
+### 🧑 Frank · 08:33
+
+> There's no problem.  Operator error.
+
+### 🤖 Claude
+
+> Good, nothing to fix. A few loose ends from this check:
+>
+> - **New replay test:** I added "replay as waterline roughing" to `tests\ReplayTests.cpp`. It runs a captured finishing input as Waterline Roughing. It's built into the Release tests but skipped unless run by name, and nothing in the add-on changed.
+> - **Interrupted command:** the last one was stopped while it ran. It may already have added a sentence about that replay to `CLAUDE.md`, and the Debug build and the `Discussion.md` update may not have finished. I've left them as they are; say if you want me to check or tidy them.
+
+### 🧑 Frank · 08:35
+
+> check and tidy
+
+### 🤖 Claude
+
+> The `CLAUDE.md` sentence was written, once, and the line endings are still CRLF. Now the Debug build and tests, then `Discussion.md`:
+
+> It's all tidy. The interrupted command had finished its main step: the `CLAUDE.md` sentence about the new roughing replay was written once, with CRLF line endings kept. I've now finished the rest:
+> - the Debug build is clean;
+> - all tests pass in Debug and Release;
+> - `Discussion.md` is rebuilt.
+>
+> The installed add-on is unchanged and up to date; the only addition since the last install is a skipped test. Nothing is committed. The new files from this round (`core\Nurbs`, `core\FinishingDump`, `tests\NurbsTests.cpp`, `tests\ReplayTests.cpp`) are untracked, so they'll need adding when you commit.
+
+### 🧑 Frank · 08:40
+
+> Add overtravel to waterline finishing, providing the same functionality as parallel finishing.  Add approach distance to both waterline finishing and parallel finishing.  Ths is to slow the cutter down to cut speed, rather than plunging through the roughed areas.
+
+### 🤖 Claude
+
+> Before I build this, a couple of choices are yours.
+
+> Questions:
+> - How should the new Approach Distance work, when the tool comes down to start a lap or row?
+>   - Rapid, then cut feed (Recommended): Rapid down to Approach Distance above the cut's start point, then feed the rest of the way at the cut feed rather than the plunge feed. Today it rapids to 1 mm above the level before and then feeds down at the plunge feed.
+>   - Rapid, then plunge feed: As today, but the 1 mm is replaced by Approach Distance above the start point; the last part is still fed at the plunge feed.
+> - What should Approach Distance default to?
+>   - 1 mm (Recommended): The same height above the cut as today's fixed 1 mm.
+>   - 2 mm: A little more room above the cut.
+
+### 🧑 Frank · 08:41
+
+> Answers:
+> - How should the new Approach Distance work, when the tool comes down to start a lap or row?
+>   **Rapid, then plunge feed**
+> - What should Approach Distance default to?
+>   **2 mm**
+
+### 🤖 Claude
+
+> All pass. One test name overstates what it checks ("is saved" but it only checks the default), so I'll make it a real save-and-load check.
+
+> Both builds pass every test. Now the help, spec and `CLAUDE.md`, then the install:
+
+> Both changes are built, and all tests pass in Debug and Release. **Not installed:** Alibre is running, so close it first.
+>
+> **Overtravel on Waterline Finishing:** it works exactly as in Parallel Finishing. The tool's centre may run that far past the area's edge, and the parts are always kept clear. A test checks that laps around a dome go about 3 mm past a 20 × 20 area with an Overtravel of 3, and stop at its edge with 0.
+>
+> **Approach Distance on both finishing operations,** default 2 mm, as you chose. To start a cut, the tool comes down at rapid to that far above the cut's start point, then at the plunge feed the rest of the way. It replaces fixed rules:
+> - **Parallel Finishing:** each row used to rapid only to 1 mm above the stock's top, then plunge all the way down through the roughed area. That's the slow plunging you saw, and it's gone.
+> - **Waterline Finishing:** each lap used to start from 1 mm above the level before. It now starts from 2 mm above the lap itself by default.
+>
+> The one thing to watch: Approach Distance is measured from the start of each cut, so the roughing needs to have cleared at least that far above it.
+>
+> **Tab layout:**
+> - Both tabs have Approach Distance under Overtravel, and the groups below have moved down to fit.
+> - Waterline Finishing also gains an Overtravel field, with Approach Distance under it.
+>
+> **Other changes:** existing jobs get 2 mm when opened. The help, spec (rev 202) and `CLAUDE.md` are updated.
+>
+> After installing:
+> 1. Open Waterline Finishing: Overtravel and Approach Distance (2) should be under Stock to Leave.
+> 2. Open Parallel Finishing: Approach Distance (2) should be under Overtravel.
+> 3. Generate Parallel Finishing: each row should rapid down to 2 mm above where it starts, rather than plunge from the stock's top.
+> 4. Generate Waterline Finishing with an Overtravel: the laps should run past the area's edge by that much.
+> 5. Save and reopen the job: both values should stay.
+
+### 🧑 Frank · 09:09
+
+> Install it
+
 ---
 
 # Side conversation

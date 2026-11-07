@@ -23,6 +23,11 @@ namespace
     }
 }
 
+std::wstring LogFolderPath()
+{
+    return LogFolder();
+}
+
 void LogInit()
 {
     g_path = LogFolder() + L"AlibreCAM.log";

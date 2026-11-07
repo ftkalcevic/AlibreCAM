@@ -12,6 +12,7 @@
 #include "EngraveToolpath.h"
 #include "PlungeRoughToolpath.h"
 #include "WaterlineRoughToolpath.h"
+#include "FinishingDump.h"
 #include "ProfileToolpath.h"
 #include "FileIO.h"
 #include "PostDialog.h"
@@ -2340,7 +2341,16 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
                 waterlineInput.partTriangleFaces = std::move(partTriangleFaces);
                 for (camcore::AnalyticSurface surface : surfaces.Analytic())
                 {
-                    if (surface.kind != camcore::SurfaceKind::None)
+                    if (surface.kind == camcore::SurfaceKind::Nurbs && surface.nurbs != nullptr)
+                    {
+                        // Its control points into the frame (the shape follows them), sampled again.
+                        auto moved = std::make_shared<camcore::NurbsSurface>(*surface.nurbs);
+                        for (camcore::Vec3& point : moved->points)
+                            point = camcore::WorldToFrame(frame.frame, point);
+                        moved->Prepare();
+                        surface.nurbs = moved;
+                    }
+                    else if (surface.kind != camcore::SurfaceKind::None)
                     {
                         const camcore::Vec3 tip = camcore::WorldToFrame(frame.frame, surface.centre + surface.axis);
                         surface.centre = camcore::WorldToFrame(frame.frame, surface.centre);
@@ -2364,6 +2374,17 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
                 flatText += (flatText.empty() ? L"" : L", ") + std::to_wstring(h);
             Log(L"[generate] waterline: flat faces at %s (frame Z), stock %.3f to %.3f",
                 flatText.empty() ? L"none" : flatText.c_str(), stockMaxZ, stockMinZ);
+            if (operation.type == camcore::StepType::WaterlineFinishing ||
+                operation.type == camcore::StepType::ParallelFinishing)
+            {
+                // The whole input, for replaying in the tests if something's wrong (the last one only).
+                const std::wstring dumpPath = LogFolderPath() + L"last-finishing.json";
+                std::string dumpProblem;
+                if (camcore::SaveFinishingInput(waterlineInput, dumpPath, dumpProblem))
+                    Log(L"[generate] input saved for replaying: %s", dumpPath.c_str());
+                else
+                    Log(L"[generate] input couldn't be saved for replaying: %s", FromUtf8(dumpProblem).c_str());
+            }
             roughResult = (operation.type == camcore::StepType::WaterlineFinishing)
                               ? camcore::GenerateWaterlineFinishToolpath(waterlineInput)
                           : (operation.type == camcore::StepType::ParallelFinishing)
@@ -2383,8 +2404,10 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
             surfaces.LogFailures();
         }
         if (operation.type == camcore::StepType::WaterlineFinishing)
-            Log(L"[generate] laps: %zu points put back between their neighbours; %zu turn-backs and %zu zigzags left",
-                roughResult.lapPointsSmoothed, roughResult.lapTurnBacks, roughResult.lapZigzags);
+            Log(L"[generate] laps: %zu points put back between their neighbours, %zu thin fingers and loops cut "
+                L"off, simplified by height from %zu to %zu points; %zu turn-backs, %zu zigzags and %zu wobbles left",
+                roughResult.lapPointsSmoothed, roughResult.lapFingersRemoved, roughResult.lapPointsBefore,
+                roughResult.lapPointsAfter, roughResult.lapTurnBacks, roughResult.lapZigzags, roughResult.lapWobbles);
         if (!roughResult.ok)
         {
             problem = roughResult.problem;

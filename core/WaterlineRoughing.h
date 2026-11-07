@@ -75,6 +75,12 @@ namespace camcore
 
         // Waterline Finishing only: also clear each up-facing flat at its level.
         bool finishFlats = false;
+        // Waterline Finishing only: more levels where the laps would be further
+        // apart across than the stepover (the slope shallow); off, the stepdown only.
+        bool optimiseStepover = false;
+        // Waterline and Parallel Finishing: entering a cut, the tool comes down at
+        // rapid to this far above where the cut starts, then at the plunge feed.
+        double approachDistance = 2.0;
     };
 
     // Returns a sentence for each problem. Empty means the settings are valid.

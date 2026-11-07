@@ -7,6 +7,7 @@
 #include "Log.h"
 
 #include <cmath>
+#include <limits>
 
 using camcore::PickedGeometry;
 using camcore::PickKind;
@@ -1482,12 +1483,212 @@ namespace
         return camcore::Normalise(toAssembly.Point(from + v) - toAssembly.Point(from), direction);
     }
 
+    // Every number in a SAFEARRAY of any number of dimensions, whatever its
+    // element type, and a line describing it for the log.
+    bool ReadNumbers(SAFEARRAY* pArray, std::vector<double>& values, std::wstring& about)
+    {
+        values.clear();
+        about = L"none";
+        if (pArray == nullptr)
+            return false;
+        VARTYPE vt = VT_EMPTY;
+        SafeArrayGetVartype(pArray, &vt);
+        const UINT dims = SafeArrayGetDim(pArray);
+        size_t total = 1;
+        std::wstring shape;
+        for (UINT d = 1; d <= dims; ++d)
+        {
+            LONG low = 0, high = -1;
+            SafeArrayGetLBound(pArray, d, &low);
+            SafeArrayGetUBound(pArray, d, &high);
+            const size_t length = (high >= low) ? static_cast<size_t>(high - low + 1) : 0;
+            total *= length;
+            shape += (d > 1 ? L"x" : L"") + std::to_wstring(length);
+        }
+        if (dims == 0)
+            total = 0;
+        void* pData = nullptr;
+        if (total > 0 && SUCCEEDED(SafeArrayAccessData(pArray, &pData)))
+        {
+            for (size_t k = 0; k < total; ++k)
+            {
+                double value = 0.0;
+                switch (vt)
+                {
+                case VT_R8: value = static_cast<const double*>(pData)[k]; break;
+                case VT_R4: value = static_cast<const float*>(pData)[k]; break;
+                case VT_I4: value = static_cast<const LONG*>(pData)[k]; break;
+                case VT_UI4: value = static_cast<const ULONG*>(pData)[k]; break;
+                case VT_INT: value = static_cast<const INT*>(pData)[k]; break;
+                case VT_I2: value = static_cast<const SHORT*>(pData)[k]; break;
+                case VT_UI1: value = static_cast<const BYTE*>(pData)[k]; break;
+                case VT_BOOL: value = static_cast<const VARIANT_BOOL*>(pData)[k] ? 1.0 : 0.0; break;
+                case VT_VARIANT:
+                {
+                    VARIANT converted;
+                    VariantInit(&converted);
+                    if (SUCCEEDED(VariantChangeType(&converted, &static_cast<const VARIANT*>(pData)[k], 0, VT_R8)))
+                        value = converted.dblVal;
+                    VariantClear(&converted);
+                    break;
+                }
+                default: value = std::numeric_limits<double>::quiet_NaN(); break;
+                }
+                values.push_back(value);
+            }
+            SafeArrayUnaccessData(pArray);
+        }
+        about = L"vt " + std::to_wstring(vt) + L", " + (shape.empty() ? L"no dimensions" : shape) + L":";
+        for (size_t k = 0; k < values.size() && k < 12; ++k)
+            about += L" " + std::to_wstring(values[k]);
+        if (values.size() > 12)
+            about += L" ...";
+        return true;
+    }
+
+    // A spline face's surface from GetBSplineCurvesData, its layout not
+    // documented: orders, info, control point counts, knot counts, control points,
+    // weights, then the u and v knot vectors. Each likely way of reading them (which
+    // knot vector goes with which count, which way the control points run, whether
+    // the weights are already in the points) is tried, and the first whose surface
+    // the face's facets lie on is kept. The arrays are logged either way.
+    bool ReadSplineSurface(IADFace* pFace, const PartToAssembly& toAssembly, const std::vector<Vec3>& facets,
+                           camcore::AnalyticSurface& surface, const std::wstring& name)
+    {
+        if (pFace == nullptr)
+            return false;
+        SAFEARRAY* arrays[16] = {};
+        try
+        {
+            pFace->GetBSplineCurvesData(&arrays[0], &arrays[1], &arrays[2], &arrays[3], &arrays[4], &arrays[5],
+                                        &arrays[6], &arrays[7], &arrays[8], &arrays[9], &arrays[10], &arrays[11],
+                                        &arrays[12], &arrays[13], &arrays[14], &arrays[15]);
+        }
+        catch (const _com_error& error)
+        {
+            Log(L"[surfaces] %s: a spline face's data couldn't be read, hr=0x%08X, so Alibre is asked", name.c_str(),
+                static_cast<unsigned>(error.Error()));
+            for (SAFEARRAY* p : arrays)
+            {
+                if (p != nullptr)
+                    SafeArrayDestroy(p);
+            }
+            return false;
+        }
+        static const wchar_t* kNames[16] = { L"surfaceOrderUV", L"surfaceInfo", L"surfaceNumControlPointsUV",
+                                             L"surfaceNoOfKnotsUV", L"surfaceControlPoints", L"surfaceWeights",
+                                             L"surfaceKnotVectorU", L"surfaceKnotVectorV", L"regionInfoForLoops",
+                                             L"noOfTrimmedCurvesForLoops", L"noOfControlPoints", L"noOfKnots",
+                                             L"surfaceIndices", L"controlPoints", L"knots", L"weights" };
+        std::vector<double> values[16];
+        for (int k = 0; k < 16; ++k)
+        {
+            std::wstring about;
+            ReadNumbers(arrays[k], values[k], about);
+            if (k < 8)
+                Log(L"[surfaces] %s: spline %s %s", name.c_str(), kNames[k], about.c_str());
+            if (arrays[k] != nullptr)
+                SafeArrayDestroy(arrays[k]);
+        }
+        const std::vector<double>& counts = values[2];
+        const std::vector<double>& points = values[4];
+        const std::vector<double>& weights = values[5];
+        if (counts.size() != 2 || values[6].empty() || values[7].empty())
+        {
+            Log(L"[surfaces] %s: the spline data isn't one surface as expected, so Alibre is asked", name.c_str());
+            return false;
+        }
+        const int c0 = static_cast<int>(std::lround(counts[0])), c1 = static_cast<int>(std::lround(counts[1]));
+        const size_t n = static_cast<size_t>((std::max)(0, c0)) * static_cast<size_t>((std::max)(0, c1));
+        const size_t stride = (n > 0 && points.size() == 4 * n) ? 4 : 3;
+        if (n == 0 || points.size() != stride * n)
+        {
+            Log(L"[surfaces] %s: the spline's %zu control point values don't match %d x %d, so Alibre is asked",
+                name.c_str(), points.size(), c0, c1);
+            return false;
+        }
+        std::vector<double> pointWeights;
+        if (stride == 4)
+        {
+            for (size_t k = 0; k < n; ++k)
+                pointWeights.push_back(points[4 * k + 3]);
+        }
+        else if (weights.size() == n)
+        {
+            pointWeights = weights;
+        }
+        bool rational = false;
+        for (double w : pointWeights)
+            rational = rational || std::fabs(w - 1.0) > 1e-12;
+
+        for (int knotsSwapped = 0; knotsSwapped < 2; ++knotsSwapped)
+        {
+            for (int vFastest = 0; vFastest < 2; ++vFastest)
+            {
+                for (int premultiplied = 0; premultiplied < (rational ? 2 : 1); ++premultiplied)
+                {
+                    camcore::NurbsSurface s;
+                    s.countU = c0;
+                    s.countV = c1;
+                    s.knotsU = knotsSwapped ? values[7] : values[6];
+                    s.knotsV = knotsSwapped ? values[6] : values[7];
+                    s.orderU = static_cast<int>(s.knotsU.size()) - s.countU;
+                    s.orderV = static_cast<int>(s.knotsV.size()) - s.countV;
+                    if (s.orderU < 1 || s.orderV < 1 || s.orderU > 16 || s.orderV > 16)
+                        continue;
+                    s.points.resize(n);
+                    if (rational)
+                        s.weights.resize(n);
+                    for (int j = 0; j < s.countV; ++j)
+                    {
+                        for (int i = 0; i < s.countU; ++i)
+                        {
+                            // The k-th control point in the arrays, for (i, j).
+                            const size_t k = vFastest ? static_cast<size_t>(j) + static_cast<size_t>(i) * s.countV
+                                                      : static_cast<size_t>(i) + static_cast<size_t>(j) * s.countU;
+                            Vec3 p{ points[stride * k], points[stride * k + 1], points[stride * k + 2] };
+                            const double w = rational ? pointWeights[k] : 1.0;
+                            if (premultiplied && w != 0.0)
+                                p = p * (1.0 / w);
+                            const size_t index = static_cast<size_t>(i) + static_cast<size_t>(j) * s.countU;
+                            s.points[index] = toAssembly.Point(p);
+                            if (rational)
+                                s.weights[index] = w;
+                        }
+                    }
+                    if (!s.Validate())
+                        continue;
+                    auto shared = std::make_shared<camcore::NurbsSurface>(std::move(s));
+                    shared->Prepare();
+                    camcore::AnalyticSurface candidate;
+                    candidate.kind = camcore::SurfaceKind::Nurbs;
+                    candidate.nurbs = shared;
+                    if (camcore::SurfaceFitsPoints(candidate, facets, 0.1))
+                    {
+                        Log(L"[surfaces] %s: a spline, order %d x %d, %d x %d control points%s, fits its facets read "
+                            L"with the knot vectors %s, the control points %s fastest%s",
+                            name.c_str(), shared->orderU, shared->orderV, shared->countU, shared->countV,
+                            rational ? L", rational" : L"", knotsSwapped ? L"swapped" : L"as given",
+                            vFastest ? L"v" : L"u", premultiplied ? L", weights already in the points" : L"");
+                        surface = candidate;
+                        return true;
+                    }
+                }
+            }
+        }
+        Log(L"[surfaces] %s: no reading of the spline (%d x %d control points, knots %zu and %zu) fits its facets, "
+            L"so Alibre is asked",
+            name.c_str(), c0, c1, values[6].size(), values[7].size());
+        return false;
+    }
+
     // A face's surface as a sphere, cylinder, cone or torus, in the assembly in
     // mm, kept only if its facets lie on it (within 0.1 mm, twice their
     // tolerance). A cone's angle may be in radians or degrees and widen either
     // way along its axis; the way that fits is used.
-    bool ReadAnalyticSurface(IADSurface* pSurface, const PartToAssembly& toAssembly, const std::vector<Vec3>& points,
-                             camcore::AnalyticSurface& surface, const std::wstring& name)
+    bool ReadAnalyticSurface(IADFace* pFace, IADSurface* pSurface, const PartToAssembly& toAssembly,
+                             const std::vector<Vec3>& points, camcore::AnalyticSurface& surface,
+                             const std::wstring& name)
     {
         using camcore::SurfaceKind;
         surface = camcore::AnalyticSurface();
@@ -1555,7 +1756,7 @@ namespace
                 return false;
             }
             if (kind == nullptr)
-                return false;
+                return ReadSplineSurface(pFace, toAssembly, points, surface, name);
             if (!camcore::SurfaceFitsPoints(s, points, kFit))
             {
                 Log(L"[surfaces] %s: a %s doesn't fit its facets, so Alibre is asked", name.c_str(), kind);
@@ -1633,7 +1834,7 @@ bool PartSurfaces::Read(IADSession* pAssembly, const std::wstring& leaveOutPath,
 
             // Each face's facets, about 0.05 mm from its surface, in the part's units.
             const double partMm = MillimetresPerModelUnit(design);
-            size_t partTriangles = 0, partFaces = 0, planes = 0, analyticFaces = 0;
+            size_t partTriangles = 0, partFaces = 0, planes = 0, analyticFaces = 0, splineFaces = 0;
             try
             {
                 IADBodiesPtr bodies = QI<IADPartSessionPtr>(design)->GetBodies();
@@ -1680,8 +1881,9 @@ bool PartSurfaces::Read(IADSession* pAssembly, const std::wstring& leaveOutPath,
                             for (const Vec3& p : points)
                                 assemblyPoints.push_back(toAssembly.Point(p));
                             camcore::AnalyticSurface surface;
-                            if (ReadAnalyticSurface(entry.surface, toAssembly, assemblyPoints, surface, name))
-                                ++analyticFaces;
+                            if (ReadAnalyticSurface(entry.face, entry.surface, toAssembly, assemblyPoints, surface,
+                                                    name))
+                                ++(surface.kind == camcore::SurfaceKind::Nurbs ? splineFaces : analyticFaces);
                             m_impl->analytic.push_back(surface);
                         }
                         for (const Vec3& p : points)
@@ -1721,9 +1923,10 @@ bool PartSurfaces::Read(IADSession* pAssembly, const std::wstring& leaveOutPath,
             }
             else
             {
-                Log(L"[surfaces] %s: %zu faces (%zu planes, %zu spheres, cylinders, cones or tori worked out "
-                    L"here, %zu others asked of Alibre), %zu triangles",
-                    name.c_str(), partFaces, planes, analyticFaces, partFaces - planes - analyticFaces, partTriangles);
+                Log(L"[surfaces] %s: %zu faces (%zu planes, %zu spheres, cylinders, cones or tori and %zu splines "
+                    L"worked out here, %zu others asked of Alibre), %zu triangles",
+                    name.c_str(), partFaces, planes, analyticFaces, splineFaces,
+                    partFaces - planes - analyticFaces - splineFaces, partTriangles);
             }
             if (partTriangles > 0)
                 ++read;

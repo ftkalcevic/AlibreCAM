@@ -373,6 +373,8 @@
 #define IDC_WL_DOWN_SCALLOP_RADIO       13439
 #define IDC_WL_DOWN_SCALLOP             13440
 #define IDC_WL_FINISH_FLATS             13441
+#define IDC_WL_OPTIMISE_STEPOVER        13448
+#define IDC_WL_APPROACH                 13449
 #define IDC_WL_STEPDOWN_GROUP           13442
 #define IDC_WL_ORDER_GROUP              13443
 #define IDC_WL_LEVELS_GROUP             13444
@@ -416,7 +418,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        13048
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13448
+#define _APS_NEXT_CONTROL_VALUE         13450
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

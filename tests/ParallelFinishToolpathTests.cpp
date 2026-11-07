@@ -592,6 +592,7 @@ TEST_CASE("a parallel finishing operation saves its settings, with its own defau
     parallel.parallelFinishing.cutAngle = 45;
     parallel.parallelFinishing.linearStart = PocketLinearStart::Top;
     parallel.parallelFinishing.direction = CutDirection::Conventional;
+    parallel.parallelFinishing.approachDistance = 3.5;
 
     const std::filesystem::path path = std::filesystem::temp_directory_path() / "AlibreCAM-parallel-test.cam";
     Job job;
@@ -619,6 +620,7 @@ TEST_CASE("a parallel finishing operation saves its settings, with its own defau
     CHECK(back.parallelFinishing.extension == 2.5);
     CHECK(back.parallelFinishing.cutAngle == 45);
     CHECK(back.parallelFinishing.linearStart == PocketLinearStart::Top);
+    CHECK(back.parallelFinishing.approachDistance == 3.5);
     CHECK(&WaterlineSettingsOf(back) == &back.parallelFinishing);
     std::error_code ignored;
     std::filesystem::remove(path, ignored);
@@ -636,4 +638,33 @@ TEST_CASE("parallel finishing timing on a half sphere" * doctest::skip())
     REQUIRE(result.ok);
     MESSAGE("parallel finishing: " << result.toolpath.moves.size() << " moves in "
             << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms");
+}
+
+TEST_CASE("parallel finishing enters each row at rapid to the approach distance above its start")
+{
+    SequenceStep step = ParallelStep();
+    step.parallelFinishing.direction = CutDirection::Climb;     // a lift and entry each row
+    step.parallelFinishing.approachDistance = 2.0;
+    const Tool tool = Ball(6);
+    const ToolpathResult result = GenerateParallelFinishToolpath(Input(step, tool));
+    REQUIRE(result.ok);
+    int entries = 0;
+    const auto& m = result.toolpath.moves;
+    for (size_t i = 1; i < m.size(); ++i)
+    {
+        if (m[i].kind != MoveKind::Feed || m[i].feed != 150)
+            continue;
+        CHECK(m[i - 1].kind == MoveKind::Rapid);
+        // Not from above the stock's top (20) down through what roughing cleared.
+        CHECK(m[i - 1].to.z == doctest::Approx(m[i].to.z + 2.0));
+        ++entries;
+    }
+    CHECK(entries > 10);
+}
+
+TEST_CASE("the approach distance defaults to 2 mm")
+{
+    SequenceStep fresh;
+    CHECK(fresh.parallelFinishing.approachDistance == 2.0);
+    CHECK(fresh.waterlineFinishing.approachDistance == 2.0);
 }

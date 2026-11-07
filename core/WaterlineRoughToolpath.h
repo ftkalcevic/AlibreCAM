@@ -16,6 +16,18 @@
 
 namespace camcore
 {
+    // For finding problems: Waterline Finishing's laps at each stage of moving them
+    // onto their levels, by level, then lap, as each stage left them.
+    struct LapStages
+    {
+        std::vector<double> levels;
+        std::vector<std::vector<Polyline>> grid;       // from the grid
+        std::vector<std::vector<Polyline>> moved;      // each point moved onto its level
+        std::vector<std::vector<Polyline>> cleaned;    // after the clean up
+        std::vector<std::vector<Polyline>> simplified; // as cut
+        std::vector<std::vector<bool>> closed;
+    };
+
     // Everything a waterline roughing toolpath is worked out from.
     struct WaterlineRoughToolpathInput
     {
@@ -42,6 +54,10 @@ namespace camcore
         // Told how far along the calculation is (0 to 1 within each stage) and what
         // it's doing, from the calling thread only, often.
         std::function<void(double fraction, const std::string& stage)> progress;
+
+        // Waterline Finishing only, for finding problems: filled in with the laps at
+        // each stage when set.
+        LapStages* lapStages = nullptr;
 
         bool havePartMaxZ = false;
         double partMaxZ = 0.0;
@@ -93,6 +109,14 @@ namespace camcore
     // each part's laps down to the bottom first. The tool stays down from one lap
     // to the next round the same part when the move is short and clear.
     ToolpathResult GenerateWaterlineFinishToolpath(const WaterlineRoughToolpathInput& input);
+
+    // Cuts thin fingers and small loops out of a lap: where the lap comes back
+    // within 0.2 mm of itself after 0.4 to 3 mm of path, and what it went round is
+    // under 0.2 mm wide on average, it goes straight across instead, if
+    // shortcutClear says the tool can (it isn't lower than the part along it).
+    // The furthest such point is taken. Returns how many were cut off.
+    size_t RemoveThinFingers(Polyline& lap, bool closed,
+                             const std::function<bool(const Vec3& from, const Vec3& to)>& shortcutClear);
 
     // Parallel Finishing: straight rows a stepover apart along the angle of cuts,
     // the tool following the parts' surface with its own shape, over the area (its

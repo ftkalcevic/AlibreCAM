@@ -82,6 +82,8 @@ namespace camcore
             closest = middle + v * (s.minorRadius / length);
             return true;
         }
+        case SurfaceKind::Nurbs:
+            return s.nurbs != nullptr && s.nurbs->ClosestPoint(p, closest);
         default:
             return false;
         }

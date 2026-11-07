@@ -5,5 +5,10 @@
 
 #pragma once
 
+#include <string>
+
 void LogInit();
 void Log(const wchar_t* format, ...);
+
+// The log's folder, ending in a backslash.
+std::wstring LogFolderPath();

@@ -84,6 +84,8 @@
     <ClCompile Include="ProgramSettings.cpp" />
     <ClCompile Include="Stock.cpp" />
     <ClCompile Include="DropCutter.cpp" />
+    <ClCompile Include="FinishingDump.cpp" />
+    <ClCompile Include="Nurbs.cpp" />
     <ClCompile Include="Simulation.cpp" />
     <ClCompile Include="SurfaceGeometry.cpp" />
     <ClCompile Include="EngraveToolpath.cpp" />
@@ -117,6 +119,8 @@
     <ClInclude Include="ProgramSettings.h" />
     <ClInclude Include="Stock.h" />
     <ClInclude Include="DropCutter.h" />
+    <ClInclude Include="FinishingDump.h" />
+    <ClInclude Include="Nurbs.h" />
     <ClInclude Include="Simulation.h" />
     <ClInclude Include="SurfaceGeometry.h" />
     <ClInclude Include="Engraving.h" />

@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <set>
 
 #include "CamJob.h"
@@ -200,6 +201,7 @@ TEST_CASE("climb goes round the part clockwise, conventional anticlockwise")
 TEST_CASE("a small stepover adds levels where the slope is shallow")
 {
     SequenceStep step = FinishStep();
+    step.waterlineFinishing.optimiseStepover = true;
     const Tool tool = Ball(6);
     const auto levelCount = [&](double stepover) {
         step.waterlineFinishing.stepoverDistance = stepover;
@@ -654,4 +656,223 @@ TEST_CASE("laps on a nearly flat surface with coarse facets and wobbling answers
     // of a lap where the area's corner cuts one off, which isn't counted.
     CHECK(result.lapTurnBacks == 0);
     CHECK(result.lapZigzags == 0);
+}
+
+namespace
+{
+    // A straight lap along x from 0 to 10 at y = 0, with a finger at x = 5 going up
+    // to y = length and back, width apart.
+    Polyline FingerLap(double width, double length)
+    {
+        Polyline lap;
+        for (double x = 0.0; x < 5.0; x += 0.1)
+            lap.push_back({ x, 0, 0 });
+        for (double y = 0.0; y <= length + 1e-9; y += 0.05)
+            lap.push_back({ 5.0, y, 0 });
+        for (double y = length; y >= -1e-9; y -= 0.05)
+            lap.push_back({ 5.0 + width, y, 0 });
+        for (double x = 5.0 + width + 0.1; x <= 10.0 + 1e-9; x += 0.1)
+            lap.push_back({ x, 0, 0 });
+        return lap;
+    }
+
+    // How far the lap reaches up from y = 0: the finger's tip, or 0 once it's gone.
+    double Reach(const Polyline& p)
+    {
+        double reach = 0.0;
+        for (const Vec3& q : p)
+            reach = (std::max)(reach, q.y);
+        return reach;
+    }
+}
+
+TEST_CASE("a thin finger in a lap is cut across where the tool keeps clear of the part")
+{
+    const auto clear = [](const Vec3&, const Vec3&) { return true; };
+    Polyline lap = FingerLap(0.1, 0.6);
+    REQUIRE(Reach(lap) == doctest::Approx(0.6));
+    CHECK(RemoveThinFingers(lap, false, clear) == 1);
+    CHECK(Reach(lap) < 1e-9);
+    CHECK(lap.front().x == 0.0);
+    CHECK(lap.back().x == doctest::Approx(10.0));
+
+    // Where the shortcut would dip into the part, the finger stays.
+    Polyline blocked = FingerLap(0.1, 0.6);
+    const auto never = [](const Vec3&, const Vec3&) { return false; };
+    CHECK(RemoveThinFingers(blocked, false, never) == 0);
+    CHECK(blocked.size() == FingerLap(0.1, 0.6).size());
+
+    // A wide lobe and a long finger are real, and stay.
+    Polyline wide = FingerLap(1.0, 0.6);
+    CHECK(RemoveThinFingers(wide, false, clear) == 0);
+    Polyline longer = FingerLap(0.1, 5.0);
+    CHECK(RemoveThinFingers(longer, false, clear) == 0);
+}
+
+TEST_CASE("a small loop in a closed lap is cut off, and a small real lap stays")
+{
+    const auto clear = [](const Vec3&, const Vec3&) { return true; };
+    // A square lap 10 across with a little loop (0.15 across) on one side.
+    Polyline lap;
+    for (double x = 0.0; x < 5.0; x += 0.1)
+        lap.push_back({ x, 0, 0 });
+    for (int k = 0; k < 12; ++k)
+    {
+        const double a = 2.0 * 3.14159265358979 * k / 12.0;
+        lap.push_back({ 5.0 + 0.075 * std::sin(a), 0.075 - 0.075 * std::cos(a), 0 });
+    }
+    for (double x = 5.0; x < 10.0; x += 0.1)
+        lap.push_back({ x, 0, 0 });
+    for (double y = 0.0; y < 10.0; y += 0.1)
+        lap.push_back({ 10, y, 0 });
+    for (double x = 10.0; x > 0.0; x -= 0.1)
+        lap.push_back({ x, 10, 0 });
+    for (double y = 10.0; y > 0.0; y -= 0.1)
+        lap.push_back({ 0, y, 0 });
+    const size_t before = lap.size();
+    CHECK(RemoveThinFingers(lap, true, clear) == 1);
+    CHECK(lap.size() < before);
+
+    // A small round lap of radius 0.5 is a real lap round a peak.
+    Polyline ring;
+    for (int k = 0; k < 40; ++k)
+    {
+        const double a = 2.0 * 3.14159265358979 * k / 40.0;
+        ring.push_back({ 0.5 * std::cos(a), 0.5 * std::sin(a), 0 });
+    }
+    CHECK(RemoveThinFingers(ring, true, clear) == 0);
+    CHECK(ring.size() == 40);
+}
+
+namespace
+{
+    // The heights the cuts are at, lowest first.
+    std::vector<double> CutLevels(const Toolpath& toolpath)
+    {
+        std::set<long long> found;
+        for (const ToolpathMove& move : toolpath.moves)
+        {
+            if (move.kind == MoveKind::Feed && move.feed == 1200)
+                found.insert(std::llround(move.to.z * 1e6));
+        }
+        std::vector<double> levels;
+        for (long long z : found)
+            levels.push_back(z * 1e-6);
+        return levels;
+    }
+}
+
+TEST_CASE("without Optimise Stepover the levels are the stepdown's; with it, more where the slope is shallow")
+{
+    SequenceStep step = FinishStep();
+    step.waterlineFinishing.stepoverDistance = 1.0;
+    const Tool tool = Ball(6);
+
+    step.waterlineFinishing.optimiseStepover = false;
+    const ToolpathResult plain = GenerateWaterlineFinishToolpath(Input(step, tool));
+    REQUIRE(plain.ok);
+    const std::vector<double> even = CutLevels(plain.toolpath);
+    REQUIRE(even.size() >= 10);
+    for (size_t k = 1; k < even.size(); ++k)
+        CHECK(even[k] - even[k - 1] == doctest::Approx(1.0).epsilon(1e-6));
+
+    step.waterlineFinishing.optimiseStepover = true;
+    const ToolpathResult optimised = GenerateWaterlineFinishToolpath(Input(step, tool));
+    REQUIRE(optimised.ok);
+    const std::vector<double> slope = CutLevels(optimised.toolpath);
+    CHECK(slope.size() > even.size());
+    // Low down, where the dome is steep, the full stepdown is kept.
+    for (size_t k = 1; k < slope.size() && slope[k] < 6.0; ++k)
+        CHECK(slope[k] - slope[k - 1] == doctest::Approx(1.0).epsilon(1e-6));
+    // Near the top, where it's shallow, the levels are closer.
+    CHECK(slope.back() - slope[slope.size() - 2] < 1.0);
+}
+
+TEST_CASE("Optimise Stepover is saved, and a file without it reads as off")
+{
+    SequenceStep finishing = FinishStep();
+    finishing.id = NewStableId();
+    finishing.name = "Waterline Finishing 1";
+    finishing.waterlineFinishing.optimiseStepover = true;
+    Job job;
+    job.assembly.name = "Mould";
+    job.assembly.guid = "{guid}";
+    SequenceStep origin;
+    origin.type = StepType::SetOrigin;
+    origin.id = NewStableId();
+    origin.name = "Set Origin 1";
+    job.sequence.push_back(origin);
+    SequenceStep group;
+    group.type = StepType::Group;
+    group.id = NewStableId();
+    group.name = "Folder 1";
+    group.children.push_back(finishing);
+    job.sequence.push_back(group);
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "AlibreCAM-optimise-test.cam";
+    REQUIRE(SaveJob(job, path).ok);
+    LoadResult loaded = LoadJob(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    CHECK(loaded.job.sequence[1].children[0].waterlineFinishing.optimiseStepover);
+
+    // The same file without the field: off.
+    std::ifstream in(path, std::ios::binary);
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+    // Renamed to something nothing reads, as if it had never been written.
+    const std::string field = "\"optimiseStepover\"";
+    const size_t at = text.find(field);
+    REQUIRE(at != std::string::npos);
+    text.replace(at, field.size(), "\"notRead\"");
+    {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out << text;
+    }
+    loaded = LoadJob(path);
+    REQUIRE(loaded.status == LoadStatus::Ok);
+    CHECK_FALSE(loaded.job.sequence[1].children[0].waterlineFinishing.optimiseStepover);
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+}
+
+TEST_CASE("waterline finishing's laps reach past the area's edge by the overtravel")
+{
+    const Tool tool = Ball(6);
+    const auto furthest = [&](double overtravel) {
+        SequenceStep step = FinishStep();
+        step.waterlineFinishing.extension = overtravel;
+        WaterlineRoughToolpathInput input = Input(step, tool);
+        // A 20 x 20 area in the middle, smaller than the dome's laps.
+        input.outlines[0].path = StockFootprint(Frame(), { { 20, 20, 0 }, { 40, 40, 20 } });
+        const ToolpathResult result = GenerateWaterlineFinishToolpath(input);
+        REQUIRE(result.ok);
+        double reach = 0.0;
+        for (const Vec3& p : Cuts(result.toolpath))
+            reach = (std::max)(reach, (std::max)(std::fabs(p.x - 30), std::fabs(p.y - 30)));
+        return reach;
+    };
+    CHECK(furthest(0.0) < 10.3);
+    CHECK(furthest(3.0) > 12.5);
+    CHECK(furthest(3.0) < 13.3);
+}
+
+TEST_CASE("waterline finishing enters each lap at rapid to the approach distance above it, then the plunge feed")
+{
+    SequenceStep step = FinishStep();
+    step.waterlineFinishing.approachDistance = 2.0;
+    const Tool tool = Ball(6);
+    const ToolpathResult result = GenerateWaterlineFinishToolpath(Input(step, tool));
+    REQUIRE(result.ok);
+    int entries = 0;
+    const auto& m = result.toolpath.moves;
+    for (size_t i = 1; i < m.size(); ++i)
+    {
+        if (m[i].kind != MoveKind::Feed || m[i].feed != 150)
+            continue;
+        if (m[i].to.z + 2.0 > 30.0)
+            continue;   // capped at the clearance plane
+        CHECK(m[i - 1].kind == MoveKind::Rapid);
+        CHECK(m[i - 1].to.z == doctest::Approx(m[i].to.z + 2.0));
+        ++entries;
+    }
+    CHECK(entries > 0);
 }
