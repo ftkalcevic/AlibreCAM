@@ -5742,6 +5742,37 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > It's intact; the open probably failed because the file was locked for a moment. Retrying just the spec and `CLAUDE.md` edits:
 
+> Fixed. With a stepover of 100% or more, plunges no longer overlap.
+>
+> **The cause:** after laying the grid along a row, the code added an extra plunge at each end of the row whenever the grid stopped more than half a stepover short of the edge. With a 3.75 mm stepover and a 3 mm tool, that extra plunge could land as close as about 1.9 mm to the next one. Rows 1 and 3 had their grid points where that happened. Row 2 is shifted half a stepover, so its ends didn't trigger it. Squeezing the rows together evenly to fit the area could also bring diagonal neighbours too close.
+>
+> **What it does now:**
+> - **Stepover of 100% or more:** no two plunges come closer than the tool's diameter. Rows sit exactly the packing distance apart, centred across the area, and the grid is centred along the rows. A row's end only gets an extra plunge where it's at least a tool diameter from every plunge in its own row and the rows either side.
+> - **Under 100%:** the plunges overlap anyway, so it still spreads the rows and adds end plunges to clear right to the edges, as before.
+>
+> A new test uses your example: a 55 mm square, a 3 mm tool, and 0.5 mm Stock to Leave. It tries stepovers of 100%, 110%, 125%, 150% and 200% at angles of 0°, 90° and 30°, and checks that no two plunges are closer than 3 mm. It and every other test pass in Debug and Release.
+>
+> The add-on and the updated help are installed. The help, the spec (Claude doc and `docs\SPEC.md`, rev 185) and `CLAUDE.md` are updated. Nothing is committed.
+>
+> To test, restart Alibre, then:
+> 1. Regenerate your 55 mm example at 125%. The first and third rows' end plunges shouldn't overlap their neighbours.
+> 2. Try 100% and 150%. Rows should be evenly spaced and centred in the square.
+> 3. Try 75%. It should still clear right to the area's edges, with overlapping plunges.
+> 4. The help's Plunge Roughing section has changed.
+
+### 🧑 Frank · 14:31
+
+> Fixed.
+> Now, if the edge we are processing is at the edge of the part, and there is nothing else in the way, continue to plunge up till the tool center reaches the edge.
+
+### 🤖 Claude
+
+> The clearance rule changes from "the whole tool stays inside the area" to "the tool stays clear of anything in the way". Where the part carries on past the area's edge (a pocket's walls, a higher surface), plunges stay a tool radius plus Stock to Leave inside, as now. Where nothing of any visible part is beyond the edge, as at the part's own outside edge, the tool's centre may go right to the edge.
+>
+> Part material just at the edge counts as the part's own side, so it isn't treated as an obstacle. If the parts couldn't be read at all, it keeps the old rule. The plunge depth still keeps the whole tool above the model everywhere.
+
+> All pass. Building everything, then the docs:
+
 ---
 
 # Side conversation

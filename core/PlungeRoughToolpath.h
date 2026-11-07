@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -52,6 +53,9 @@ namespace camcore
         // nothing within stockToLeave of the parts. False if no part is under it.
         bool TipHeight(const ToolProfile& profile, double stockToLeave, double x, double y, double& tip) const;
 
+        // True if any part is over the cell holding (x, y).
+        bool HasPart(double x, double y) const;
+
         double Cell() const { return m_cell; }
 
     private:
@@ -73,19 +77,24 @@ namespace camcore
     class PlungeArea
     {
     public:
-        // An empty grid over the box, with a margin of empty cells round it.
-        void Reset(double xLow, double yLow, double xHigh, double yHigh, double cell);
+        // An empty grid over the box, with a margin of empty cells round it at
+        // least `padding` wide.
+        void Reset(double xLow, double yLow, double xHigh, double yHigh, double cell, double padding = 0.0);
         void AddLoop(const Path& loop);
         void AddFace(const std::vector<Vec3>& triangles);
 
-        // Works out the distances. Call after adding everything.
-        void Finish();
+        // Works out the distances. Call after adding everything. Without
+        // `blocked`, everything outside the area is in the tool's way. With it,
+        // only outside places it says are blocked, more than `margin` from the
+        // area (nearer is taken to be the area's own edge), so the tool may reach
+        // over an open edge up to its centre.
+        void Finish(const std::function<bool(double x, double y)>& blocked = {}, double margin = 0.0);
 
         bool Empty() const { return m_count == 0; }
         double Cell() const { return m_cell; }
 
-        // How far (x, y) is inside the area's edge, a little short to be safe;
-        // 0 or less outside it.
+        // How far (x, y) is from anything in the tool's way, a little short to be
+        // safe; negative outside the area, as the tool's centre stays inside it.
         double Clearance(double x, double y) const;
 
         // The lowest and highest of Dot(centre, direction) over the cells at least
@@ -104,7 +113,7 @@ namespace camcore
         int m_ny = 0;
         size_t m_count = 0;
         std::vector<unsigned char> m_in;
-        std::vector<float> m_distance;  // from each cell's centre to the nearest outside cell's centre, mm
+        std::vector<float> m_distance;  // from each cell's centre to the nearest blocked cell's centre, mm
     };
 
     // The plunge centres, row by row in the order they're cut. Each plunge's tool,

@@ -415,6 +415,71 @@ TEST_CASE("plunge roughing takes any face, and edges; facing still takes only fl
     CHECK_FALSE(FeatureAllowed(FeatureFilter::FacingArea, PickKind::CylindricalFace));
 }
 
+TEST_CASE("at an open edge the tool's centre goes up to it; where parts carry on, the tool stays inside")
+{
+    const SequenceStep step = PlungeStep();
+    const Tool tool = Mill(6);
+    const double reach = 3.0 + 0.5;
+    const auto extremes = [](const Toolpath& toolpath, double& xLow, double& xHigh, double& yLow, double& yHigh) {
+        const std::vector<Vec3> bottoms = Bottoms(toolpath);
+        REQUIRE_FALSE(bottoms.empty());
+        xLow = xHigh = bottoms[0].x;
+        yLow = yHigh = bottoms[0].y;
+        for (const Vec3& p : bottoms)
+        {
+            xLow = (std::min)(xLow, p.x);
+            xHigh = (std::max)(xHigh, p.x);
+            yLow = (std::min)(yLow, p.y);
+            yHigh = (std::max)(yHigh, p.y);
+        }
+    };
+    double xLow = 0, xHigh = 0, yLow = 0, yHigh = 0;
+
+    // The area is the part's whole footprint: nothing beyond its edges.
+    PlungeRoughToolpathInput input = Input(step, tool);
+    input.partTriangles = Box({ 0, 0, 0 }, { 40, 30, 4 });
+    ToolpathResult result = GeneratePlungeRoughToolpath(input);
+    REQUIRE(result.ok);
+    extremes(result.toolpath, xLow, xHigh, yLow, yHigh);
+    CHECK(xLow < 1.0);
+    CHECK(xLow >= -1e-6);
+    CHECK(xHigh > 39.0);
+    CHECK(xHigh <= 40 + 1e-6);
+    CHECK(yLow < 1.0);
+    CHECK(yHigh > 29.0);
+
+    // A pocket: walls all round, outside the area. The tool stays inside.
+    input.partTriangles = Box({ 0, 0, 0 }, { 40, 30, 2 });
+    for (const auto& wall : { Box({ -10, -10, 0 }, { 0, 40, 12 }), Box({ 40, -10, 0 }, { 50, 40, 12 }),
+                              Box({ 0, -10, 0 }, { 40, 0, 12 }), Box({ 0, 30, 0 }, { 40, 40, 12 }) })
+        input.partTriangles.insert(input.partTriangles.end(), wall.begin(), wall.end());
+    result = GeneratePlungeRoughToolpath(input);
+    REQUIRE(result.ok);
+    extremes(result.toolpath, xLow, xHigh, yLow, yHigh);
+    CHECK(xLow >= reach - 1e-6);
+    CHECK(xHigh <= 40 - reach + 1e-6);
+    CHECK(yLow >= reach - 1e-6);
+    CHECK(yHigh <= 30 - reach + 1e-6);
+
+    // One wall only, on the -X side: that edge is closed, the rest open.
+    input.partTriangles = Box({ 0, 0, 0 }, { 40, 30, 2 });
+    const std::vector<Vec3> wall = Box({ -10, -10, 0 }, { 0, 40, 12 });
+    input.partTriangles.insert(input.partTriangles.end(), wall.begin(), wall.end());
+    result = GeneratePlungeRoughToolpath(input);
+    REQUIRE(result.ok);
+    extremes(result.toolpath, xLow, xHigh, yLow, yHigh);
+    CHECK(xLow >= reach - 1e-6);
+    CHECK(xHigh > 39.0);
+
+    // Without the parts every edge is closed.
+    input.partTriangles.clear();
+    result = GeneratePlungeRoughToolpath(input);
+    REQUIRE(result.ok);
+    extremes(result.toolpath, xLow, xHigh, yLow, yHigh);
+    CHECK(xLow >= reach - 1e-6);
+    CHECK(yHigh <= 30 - reach + 1e-6);
+}
+
 TEST_CASE("a plunge roughing operation saves its settings")
 {
     CHECK(IsOperation(StepType::PlungeRoughing));

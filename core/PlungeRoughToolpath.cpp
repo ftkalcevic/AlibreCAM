@@ -71,19 +71,21 @@ namespace camcore
     /////////////////////////////////////////////////////////////////////////
     // The plunge area
 
-    void PlungeArea::Reset(double xLow, double yLow, double xHigh, double yHigh, double cell)
+    void PlungeArea::Reset(double xLow, double yLow, double xHigh, double yHigh, double cell, double padding)
     {
+        int ring = 2;
         for (;;)
         {
-            m_nx = (std::max)(1, static_cast<int>(std::ceil((xHigh - xLow) / cell))) + 4;
-            m_ny = (std::max)(1, static_cast<int>(std::ceil((yHigh - yLow) / cell))) + 4;
+            ring = (std::max)(2, static_cast<int>(std::ceil(padding / cell)) + 2);
+            m_nx = (std::max)(1, static_cast<int>(std::ceil((xHigh - xLow) / cell))) + 2 * ring;
+            m_ny = (std::max)(1, static_cast<int>(std::ceil((yHigh - yLow) / cell))) + 2 * ring;
             if (static_cast<size_t>(m_nx) * static_cast<size_t>(m_ny) <= kMostHeightCells)
                 break;
             cell *= 1.5;
         }
         m_cell = cell;
-        m_xLow = xLow - 2.0 * cell;
-        m_yLow = yLow - 2.0 * cell;
+        m_xLow = xLow - ring * cell;
+        m_yLow = yLow - ring * cell;
         m_count = 0;
         m_in.assign(static_cast<size_t>(m_nx) * m_ny, 0);
         m_distance.clear();
@@ -206,44 +208,79 @@ namespace camcore
         }
     }
 
-    void PlungeArea::Finish()
+    namespace
     {
-        // The squared distance to the nearest outside cell, columns then rows.
+        // Squared distances, in cells, from each cell to the nearest with 0 in
+        // grid; the others must hold a large number. Columns, then rows.
+        void SquaredDistances(std::vector<double>& grid, int nx, int ny)
+        {
+            const int longest = (std::max)(nx, ny);
+            std::vector<double> f, d, z(static_cast<size_t>(longest) + 1);
+            std::vector<int> v(static_cast<size_t>(longest));
+            f.resize(static_cast<size_t>(ny));
+            d.resize(static_cast<size_t>(ny));
+            for (int i = 0; i < nx; ++i)
+            {
+                for (int j = 0; j < ny; ++j)
+                    f[static_cast<size_t>(j)] = grid[static_cast<size_t>(j) * nx + i];
+                DistanceLine(f, d, v, z);
+                for (int j = 0; j < ny; ++j)
+                    grid[static_cast<size_t>(j) * nx + i] = d[static_cast<size_t>(j)];
+            }
+            f.resize(static_cast<size_t>(nx));
+            d.resize(static_cast<size_t>(nx));
+            for (int j = 0; j < ny; ++j)
+            {
+                for (int i = 0; i < nx; ++i)
+                    f[static_cast<size_t>(i)] = grid[static_cast<size_t>(j) * nx + i];
+                DistanceLine(f, d, v, z);
+                for (int i = 0; i < nx; ++i)
+                    grid[static_cast<size_t>(j) * nx + i] = d[static_cast<size_t>(i)];
+            }
+        }
+    }
+
+    void PlungeArea::Finish(const std::function<bool(double x, double y)>& blocked, double margin)
+    {
         const double big = 1e12;     // more than any squared distance in cells
-        std::vector<double> grid(m_in.size());
         m_count = 0;
-        for (size_t q = 0; q < m_in.size(); ++q)
+        for (unsigned char in : m_in)
+            m_count += in ? 1 : 0;
+
+        // How far each outside cell is from the area, when that matters.
+        std::vector<double> fromArea;
+        if (blocked)
         {
-            grid[q] = m_in[q] ? big : 0.0;
-            m_count += m_in[q] ? 1 : 0;
+            fromArea.resize(m_in.size());
+            for (size_t q = 0; q < m_in.size(); ++q)
+                fromArea[q] = m_in[q] ? 0.0 : big;
+            SquaredDistances(fromArea, m_nx, m_ny);
         }
-        const int longest = (std::max)(m_nx, m_ny);
-        std::vector<double> f(static_cast<size_t>(longest)), d(static_cast<size_t>(longest)),
-            z(static_cast<size_t>(longest) + 1);
-        std::vector<int> v(static_cast<size_t>(longest));
-        f.resize(static_cast<size_t>(m_ny));
-        d.resize(static_cast<size_t>(m_ny));
-        for (int i = 0; i < m_nx; ++i)
-        {
-            for (int j = 0; j < m_ny; ++j)
-                f[static_cast<size_t>(j)] = grid[static_cast<size_t>(j) * m_nx + i];
-            DistanceLine(f, d, v, z);
-            for (int j = 0; j < m_ny; ++j)
-                grid[static_cast<size_t>(j) * m_nx + i] = d[static_cast<size_t>(j)];
-        }
-        f.resize(static_cast<size_t>(m_nx));
-        d.resize(static_cast<size_t>(m_nx));
+
+        // Then the distance from each cell to the nearest place in the tool's way.
+        std::vector<double> grid(m_in.size(), big);
+        size_t seeds = 0;
         for (int j = 0; j < m_ny; ++j)
         {
             for (int i = 0; i < m_nx; ++i)
-                f[static_cast<size_t>(i)] = grid[static_cast<size_t>(j) * m_nx + i];
-            DistanceLine(f, d, v, z);
-            for (int i = 0; i < m_nx; ++i)
-                grid[static_cast<size_t>(j) * m_nx + i] = d[static_cast<size_t>(i)];
+            {
+                const size_t q = static_cast<size_t>(j) * m_nx + i;
+                if (m_in[q])
+                    continue;
+                const bool inTheWay =
+                    !blocked || (std::sqrt(fromArea[q]) * m_cell > margin && blocked(X(i), Y(j)));
+                if (inTheWay)
+                {
+                    grid[q] = 0.0;
+                    ++seeds;
+                }
+            }
         }
+        if (seeds > 0)
+            SquaredDistances(grid, m_nx, m_ny);
         m_distance.resize(grid.size());
         for (size_t q = 0; q < grid.size(); ++q)
-            m_distance[q] = static_cast<float>(std::sqrt(grid[q]) * m_cell);
+            m_distance[q] = static_cast<float>((std::min)(std::sqrt(grid[q]) * m_cell, 1e9));
     }
 
     double PlungeArea::Clearance(double x, double y) const
@@ -345,6 +382,15 @@ namespace camcore
                 }
             }
         }
+    }
+
+    bool PartHeightField::HasPart(double x, double y) const
+    {
+        const int i = static_cast<int>(std::floor((x - m_xLow) / m_cell));
+        const int j = static_cast<int>(std::floor((y - m_yLow) / m_cell));
+        if (i < 0 || j < 0 || i >= m_nx || j >= m_ny)
+            return false;
+        return m_height[static_cast<size_t>(j) * m_nx + i] != kNoHeight;
     }
 
     void PartHeightField::Raise(double x, double y, double z)
@@ -634,13 +680,33 @@ namespace camcore
             for (const Vec3& p : face)
                 grow(p.x, p.x, p.y, p.y);
         }
+        // The parts' heights over the area and a tool's reach round it.
+        const double margin = reach + 1.0;
+        PartHeightField heights;
+        heights.Build(input.partTriangles, boxLowX - margin, boxLowY - margin, boxHighX + margin, boxHighY + margin,
+                      (std::min)(0.5, (std::max)(0.02, tool.diameter / 20.0)));
+
         PlungeArea area;
-        area.Reset(boxLowX, boxLowY, boxHighX, boxHighY, (std::min)(0.25, (std::max)(0.02, tool.diameter / 40.0)));
+        const double areaCell = (std::min)(0.25, (std::max)(0.02, tool.diameter / 40.0));
+        area.Reset(boxLowX, boxLowY, boxHighX, boxHighY, areaCell, margin);
         for (const ProfileChain& outline : input.outlines)
             area.AddLoop(outline.path);
         for (const std::vector<Vec3>& face : input.faces)
             area.AddFace(face);
-        area.Finish();
+
+        // The tool stays clear of parts beyond the area's edge, but where none
+        // are, the edge is open and its centre may go right up to it. Parts just
+        // at the edge are the part's own side. Without the parts, every edge is
+        // treated as closed.
+        if (input.partTriangles.empty())
+        {
+            area.Finish();
+        }
+        else
+        {
+            const double sideMargin = 1.5 * heights.Cell() + 1.5 * area.Cell();
+            area.Finish([&](double x, double y) { return heights.HasPart(x, y); }, sideMargin);
+        }
         if (area.Empty())
             return Failure("The picked geometry covers no area seen from above.");
 
@@ -654,23 +720,6 @@ namespace camcore
         if (count == 0)
             return Failure("The tool doesn't fit inside the area with the stock to leave.");
 
-        double xLow = 0.0, xHigh = 0.0, yLow = 0.0, yHigh = 0.0;
-        bool first = true;
-        for (const auto& row : rows)
-        {
-            for (const Vec3& p : row)
-            {
-                xLow = first ? p.x : (std::min)(xLow, p.x);
-                xHigh = first ? p.x : (std::max)(xHigh, p.x);
-                yLow = first ? p.y : (std::min)(yLow, p.y);
-                yHigh = first ? p.y : (std::max)(yHigh, p.y);
-                first = false;
-            }
-        }
-        const double margin = reach + 1.0;
-        PartHeightField heights;
-        heights.Build(input.partTriangles, xLow - margin, yLow - margin, xHigh + margin, yHigh + margin,
-                      (std::min)(0.5, (std::max)(0.02, tool.diameter / 20.0)));
 
         const FeedSettings& feeds = pOperation->feeds;
         ToolpathResult result;
