@@ -240,6 +240,11 @@ namespace camcore
         }
     }
 
+    void SquaredDistanceTransform(std::vector<double>& grid, int nx, int ny)
+    {
+        SquaredDistances(grid, nx, ny);
+    }
+
     void PlungeArea::Finish(const std::function<bool(double x, double y)>& blocked, double margin)
     {
         const double big = 1e12;     // more than any squared distance in cells
@@ -382,6 +387,19 @@ namespace camcore
                 }
             }
         }
+    }
+
+    bool PartHeightField::HeightAt(double x, double y, double& height) const
+    {
+        const int i = static_cast<int>(std::floor((x - m_xLow) / m_cell));
+        const int j = static_cast<int>(std::floor((y - m_yLow) / m_cell));
+        if (i < 0 || j < 0 || i >= m_nx || j >= m_ny)
+            return false;
+        const float h = m_height[static_cast<size_t>(j) * m_nx + i];
+        if (h == kNoHeight)
+            return false;
+        height = h;
+        return true;
     }
 
     bool PartHeightField::HasPart(double x, double y) const

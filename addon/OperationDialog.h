@@ -420,6 +420,18 @@ private:
     camcore::PocketLinearStart m_linearStart;
 };
 
+// The Waterline Roughing operation's own tab.
+class CWaterlineRoughingPage : public COperationPage
+{
+public:
+    explicit CWaterlineRoughingPage(COperationDlg* pOwner);
+
+    void Load(const camcore::SequenceStep& step) override;
+    bool Save(camcore::SequenceStep& step, std::wstring& problems) override;
+
+    enum { IDD = IDD_OP_WATERLINE_ROUGHING };
+};
+
 // The Plunge Roughing operation's own tab.
 class CPlungeRoughingPage : public COperationPage
 {

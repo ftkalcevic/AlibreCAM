@@ -34,6 +34,7 @@ namespace
         case StepType::Engrave: return L"Engrave";
         case StepType::HolePocketing: return L"Hole Pocketing";
         case StepType::PlungeRoughing: return L"Plunge Roughing";
+        case StepType::WaterlineRoughing: return L"Waterline Roughing";
         default:               return L"Operation";
         }
     }
@@ -2005,6 +2006,40 @@ void CProfilingPage::OnChoiceChanged()
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// CWaterlineRoughingPage
+
+CWaterlineRoughingPage::CWaterlineRoughingPage(COperationDlg* pOwner)
+    : COperationPage(IDD_OP_WATERLINE_ROUGHING, pOwner)
+{
+}
+
+void CWaterlineRoughingPage::Load(const SequenceStep& step)
+{
+    SetNumber(IDC_WATERLINE_STOCK, step.waterlineRoughing.stockToLeave);
+    SetNumber(IDC_WATERLINE_STEP, step.waterlineRoughing.stepDown);
+}
+
+bool CWaterlineRoughingPage::Save(SequenceStep& step, std::wstring& problems)
+{
+    WaterlineRoughingSettings waterline = step.waterlineRoughing;
+    std::wstring found;
+    ReadNumber(IDC_WATERLINE_STOCK, L"The stock to leave", waterline.stockToLeave, found);
+    ReadNumber(IDC_WATERLINE_STEP, L"The cut depth step", waterline.stepDown, found);
+    if (found.empty())
+    {
+        for (const std::string& problem : ValidateWaterlineRoughing(waterline))
+            AppendProblem(found, FromUtf8(problem));
+    }
+    if (!found.empty())
+    {
+        AppendProblem(problems, found);
+        return false;
+    }
+    step.waterlineRoughing = waterline;
+    return true;
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // CPlungeRoughingPage
 
 BEGIN_MESSAGE_MAP(CPlungeRoughingPage, COperationPage)
@@ -2643,6 +2678,7 @@ void COperationDlg::OnHelpButton()
                              : (page == IDD_OP_POCKETING)      ? L"tab-pocketing"
                              : (page == IDD_OP_HOLE_POCKETING) ? L"tab-hole-pocketing"
                              : (page == IDD_OP_PLUNGE_ROUGHING) ? L"tab-plunge-roughing"
+                             : (page == IDD_OP_WATERLINE_ROUGHING) ? L"tab-waterline-roughing"
                              : (page == IDD_OP_DRILLING)       ? L"tab-drilling"
                                                                : L"operation";
     ShowHelp(section);
@@ -2687,6 +2723,7 @@ std::unique_ptr<COperationPage> COperationDlg::MakePage(UINT templateId)
     case IDD_OP_DRILLING:       return std::make_unique<CDrillingPage>(this);
     case IDD_OP_HOLE_POCKETING: return std::make_unique<CHolePocketingPage>(this);
     case IDD_OP_PLUNGE_ROUGHING: return std::make_unique<CPlungeRoughingPage>(this);
+    case IDD_OP_WATERLINE_ROUGHING: return std::make_unique<CWaterlineRoughingPage>(this);
     default:                    return std::make_unique<COperationPage>(templateId, this);
     }
 }
@@ -2763,6 +2800,7 @@ BOOL COperationDlg::OnInitDialog()
     if (!bulk && m_step.type != StepType::Drill && m_step.type != StepType::Facing &&
         m_step.type != StepType::Profiling && m_step.type != StepType::Pocketing && m_step.type != StepType::Chamfer &&
         m_step.type != StepType::Engrave && m_step.type != StepType::PlungeRoughing &&
+        m_step.type != StepType::WaterlineRoughing &&
         m_step.type != StepType::HolePocketing)
         AddPage(L"Sorting", std::make_unique<COperationPage>(IDD_OP_PAGE, this));
 
@@ -2809,6 +2847,10 @@ BOOL COperationDlg::OnInitDialog()
     else if (m_step.type == StepType::PlungeRoughing)
     {
         AddPage(L"Plunge Roughing", std::make_unique<CPlungeRoughingPage>(this));
+    }
+    else if (m_step.type == StepType::WaterlineRoughing)
+    {
+        AddPage(L"Waterline Roughing", std::make_unique<CWaterlineRoughingPage>(this));
     }
     else if (m_step.type == StepType::HolePocketing)
     {
@@ -2994,7 +3036,7 @@ FeatureFilter COperationDlg::GetFeatureFilter() const
     const bool area = m_step.type == StepType::Facing || m_step.type == StepType::Profiling ||
                       m_step.type == StepType::Pocketing || m_step.type == StepType::Chamfer ||
                       m_step.type == StepType::Engrave;
-    if (m_step.type == StepType::PlungeRoughing)
+    if (m_step.type == StepType::PlungeRoughing || m_step.type == StepType::WaterlineRoughing)
         return FeatureFilter::ProjectedArea;
     return area ? FeatureFilter::FacingArea : FeatureFilter::Points;
 }

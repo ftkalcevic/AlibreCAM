@@ -56,6 +56,9 @@ namespace camcore
         // True if any part is over the cell holding (x, y).
         bool HasPart(double x, double y) const;
 
+        // The parts' highest point over the cell holding (x, y). False if none is.
+        bool HeightAt(double x, double y, double& height) const;
+
         double Cell() const { return m_cell; }
 
     private:
@@ -93,6 +96,13 @@ namespace camcore
         bool Empty() const { return m_count == 0; }
         double Cell() const { return m_cell; }
 
+        // The grid: its cells, the centre of each, and whether it's in the area.
+        int CellsX() const { return m_nx; }
+        int CellsY() const { return m_ny; }
+        double X(int i) const { return m_xLow + (i + 0.5) * m_cell; }
+        double Y(int j) const { return m_yLow + (j + 0.5) * m_cell; }
+        bool Inside(int i, int j) const { return m_in[static_cast<size_t>(j) * m_nx + i] != 0; }
+
         // How far (x, y) is from anything in the tool's way, a little short to be
         // safe; negative outside the area, as the tool's centre stays inside it.
         double Clearance(double x, double y) const;
@@ -102,10 +112,6 @@ namespace camcore
         bool Extent(const Vec3& direction, double clearance, double& low, double& high) const;
 
     private:
-        bool Inside(int i, int j) const { return m_in[static_cast<size_t>(j) * m_nx + i] != 0; }
-        double X(int i) const { return m_xLow + (i + 0.5) * m_cell; }
-        double Y(int j) const { return m_yLow + (j + 0.5) * m_cell; }
-
         double m_xLow = 0.0;
         double m_yLow = 0.0;
         double m_cell = 1.0;
@@ -115,6 +121,10 @@ namespace camcore
         std::vector<unsigned char> m_in;
         std::vector<float> m_distance;  // from each cell's centre to the nearest blocked cell's centre, mm
     };
+
+    // Squared distances in cells from each cell of an nx by ny grid (row by row)
+    // to the nearest cell holding 0; the others must hold a large number, such as 1e12.
+    void SquaredDistanceTransform(std::vector<double>& grid, int nx, int ny);
 
     // The plunge centres, row by row in the order they're cut. Each plunge's tool,
     // reach (its radius plus the stock to leave) wide, stays inside the area.

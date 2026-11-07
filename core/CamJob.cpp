@@ -941,6 +941,22 @@ namespace camcore
                               plunge.start);
         }
 
+        json WriteWaterlineRoughing(const WaterlineRoughingSettings& waterline)
+        {
+            return { { "stockToLeave", waterline.stockToLeave }, { "stepDown", waterline.stepDown } };
+        }
+
+        // Waterline Roughing missing its settings has the defaults.
+        bool ReadWaterlineRoughing(const json& step, WaterlineRoughingSettings& waterline)
+        {
+            waterline = WaterlineRoughingSettings();
+            const auto item = step.find("waterlineRoughing");
+            if (item == step.end())
+                return true;
+            return item->is_object() && ReadOptionalNumber(*item, "stockToLeave", waterline.stockToLeave) &&
+                   ReadOptionalNumber(*item, "stepDown", waterline.stepDown);
+        }
+
         json WriteChamfer(const ChamferSettings& chamfer)
         {
             return { { "width", chamfer.width }, { "tipClearance", chamfer.tipClearance },
@@ -1437,6 +1453,12 @@ namespace camcore
                          { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
                          { "holePocketing", WriteHolePocketing(step.holePocketing) } };
 
+            if (step.type == StepType::WaterlineRoughing)
+                return { { "type", "waterlineRoughing" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
+                         { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
+                         { "features", WriteFeatures(step.features) }, { "clearance", WriteClearance(step.clearance) },
+                         { "waterlineRoughing", WriteWaterlineRoughing(step.waterlineRoughing) } };
+
             if (step.type == StepType::PlungeRoughing)
                 return { { "type", "plungeRoughing" }, { "id", step.id }, { "name", step.name }, { "tool", step.toolId },
                          { "feeds", WriteFeeds(step.feeds) }, { "toolpath", WriteToolpath(step.toolpath) },
@@ -1550,6 +1572,14 @@ namespace camcore
                        ReadClearance(item, step.clearance);
             }
 
+            if (type == "waterlineRoughing")
+            {
+                step.type = StepType::WaterlineRoughing;
+                return ReadTool(item, step.toolId) && ReadFeeds(item, step.feeds) && ReadToolpath(item, step.toolpath) &&
+                       ReadFeatures(item, step.features) && ReadWaterlineRoughing(item, step.waterlineRoughing) &&
+                       ReadClearance(item, step.clearance);
+            }
+
             if (type == "plungeRoughing")
             {
                 step.type = StepType::PlungeRoughing;
@@ -1620,7 +1650,7 @@ namespace camcore
     {
         return type == StepType::Drill || type == StepType::Facing || type == StepType::Profiling ||
                type == StepType::Pocketing || type == StepType::HolePocketing || type == StepType::Chamfer ||
-               type == StepType::Engrave || type == StepType::PlungeRoughing;
+               type == StepType::Engrave || type == StepType::PlungeRoughing || type == StepType::WaterlineRoughing;
     }
 
     std::string NewStableId()
@@ -1677,8 +1707,8 @@ namespace camcore
         // simply don't have, so they read as they are. Version 4 added the stock
         // to the setup section; older files have none. Version 5 added the
         // machine and material, and stopped saving the tool library. Version 6
-        // added Chamfer operations, version 7 Engrave, version 8 Plunge Roughing, and version 9
-        // an operation's stock footprint.
+        // added Chamfer operations, version 7 Engrave, version 8 Plunge Roughing, version 9
+        // an operation's stock footprint, and version 10 Waterline Roughing.
 
         const auto assembly = root.find("assembly");
         if (assembly == root.end() || !assembly->is_object())

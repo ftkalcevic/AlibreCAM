@@ -214,6 +214,7 @@
 #define IDB_CAM_TREE_32                 13040
 #define IDD_SIMULATION                  13041
 #define IDD_OP_PLUNGE_ROUGHING          13042
+#define IDD_OP_WATERLINE_ROUGHING       13043
 #define IDD_SETTINGS                    13030
 #define IDD_STOCK_BOX                   13031
 #define IDD_STOCK_PART_BOX              13032
@@ -332,6 +333,8 @@
 #define IDC_PLUNGE_STEP_DISTANCE        13403
 #define IDC_PLUNGE_APPROACH             13404
 #define IDC_FEATURES_STOCK_FOOTPRINT    13405
+#define IDC_WATERLINE_STOCK             13406
+#define IDC_WATERLINE_STEP              13407
 #define IDC_HP_AT_TOP                   13266
 #define IDC_HP_AT_BOTTOM                13267
 #define IDC_HP_PICK_TOP                 13268
@@ -367,9 +370,9 @@
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13043
+#define _APS_NEXT_RESOURCE_VALUE        13044
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13406
+#define _APS_NEXT_CONTROL_VALUE         13408
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

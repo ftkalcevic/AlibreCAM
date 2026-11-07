@@ -90,6 +90,7 @@
   <a href="#tab-pocketing">Pocketing</a>
   <a href="#tab-hole-pocketing">Hole Pocketing</a>
   <a href="#tab-plunge-roughing">Plunge Roughing</a>
+  <a href="#tab-waterline-roughing">Waterline Roughing</a>
   <a href="#tab-drilling">Drilling</a>
 </nav>
 <main>
@@ -142,7 +143,7 @@
   <dt>Choosing several operations</dt>
   <dd>Ctrl+click operations to choose several, even in different folders; Ctrl+click a chosen one again to take it off. Shift+click chooses every operation between the last one clicked and this one. A plain click goes back to one. Right-click a chosen operation for <strong>Edit N Operations</strong>, which edits them together (see the <a href="#operation">Operation dialog</a>), <strong>Generate</strong>, which generates them all, <strong>Clear Toolpaths</strong>, or <strong>Simulate</strong>. Double-clicking a chosen one edits them together too.</dd>
   <dt>Suppressed items</dt>
-  <dd>Shown grey, with their toolpaths drawn thin and grey. A suppressed Set Origin is skipped, and suppressed operations are left out of Generate and Post.</dd>
+  <dd>Shown grey, with their toolpaths hidden (they're kept, and show again when unsuppressed). A suppressed Set Origin is skipped, and suppressed operations are left out of Generate and Post.</dd>
 </dl>
 
 <h3 id="cam-menus">Right-click menus</h3>
@@ -165,6 +166,8 @@
   <dd>Adds a Chamfer operation: cuts a chamfer along edges with a V-mill or chamfer mill.</dd>
   <dt>Add 2 1/2 Axis ▸ Engrave</dt>
   <dd>Adds an Engrave operation: the tool's centre follows lines, such as text or a scribed outline.</dd>
+  <dt>Add 3 Axis ▸ Waterline Roughing</dt>
+  <dd>Adds a Waterline Roughing operation: roughs out a 3D shape level by level, pocketing round the parts at each level.</dd>
   <dt>Add 3 Axis ▸ Plunge Roughing</dt>
   <dd>Adds a Plunge Roughing operation: roughs out a 3D shape inside closed areas by feeding straight down, on a packed grid of plunges, each stopping above the parts.</dd>
   <dt>Edit</dt>
@@ -505,7 +508,7 @@
 
 <section id="tab-features">
 <h2>Features tab</h2>
-<p>The geometry the operation machines, in the order it's machined. Each operation takes its own kinds of geometry: Drill and Hole Pocketing take circles, arcs, hole faces and design points; Facing, Profiling and Pocketing take flat faces and edges, including spline curves; Plunge Roughing takes any faces, curved ones too, and edges. For the 2 1/2 axis operations only the geometry's position in the origin's XY plane matters: the heights come from the Cut Levels tab. Plunge Roughing projects its geometry onto the origin's XY plane to make the area it plunges in; its depths come from the parts. Each face is an area of its own, and edges whose ends meet are grouped into one.</p>
+<p>The geometry the operation machines, in the order it's machined. Each operation takes its own kinds of geometry: Drill and Hole Pocketing take circles, arcs, hole faces and design points; Facing, Profiling and Pocketing take flat faces and edges, including spline curves; Plunge Roughing and Waterline Roughing take any faces, curved ones too, and edges. For the 2 1/2 axis operations only the geometry's position in the origin's XY plane matters: the heights come from the Cut Levels tab. Plunge Roughing and Waterline Roughing project their geometry onto the origin's XY plane to make the area they rough; their depths come from the parts. Each face is an area of its own, and edges whose ends meet are grouped into one.</p>
 <dl>
   <dt>Feature list</dt>
   <dd>Each feature's type, part, diameter, and X, Y and Z in the operation's origin. Drag rows to reorder them. Choosing rows selects them in the view. Press Delete to remove the chosen rows.</dd>
@@ -773,6 +776,18 @@
   <dd>How far apart neighbouring plunges are, as a % of the tool diameter or a distance; rows are this times 0.87 apart. It has no maximum. To leave no plugs between plunges it should be at most about 87% of the diameter; more than that leaves plugs standing between them. 75% is the default.</dd>
   <dt>Cut Engage/Retract: Approach</dt>
   <dd>How far above the stock's top (or the parts' top, with no stock) the tool comes down to at rapid before feeding down at the plunge feed. It comes back up there at the retract feed, and moves between plunges at that height. It starts and ends at the clearance plane, which must be at or above this height.</dd>
+</dl>
+</section>
+
+<section id="tab-waterline-roughing">
+<h2>Waterline Roughing tab</h2>
+<p>Waterline Roughing roughs out a 3D shape in horizontal slices, from the stock's top down to its bottom (or the parts' lowest point without a stock). Its tabs are Features, Tool, Feeds &amp; Speeds, Clearance and this one; more will come.</p>
+<p>The area comes from the Features tab as for Plunge Roughing: picked faces and closed loops of edges (and the stock box's footprint if ticked) seen from above and merged. At each level the tool's centre may go anywhere in the area that's at least the tool's radius plus the Stock to Leave from any part that comes within the Stock to Leave of the level, so the parts stand as islands with the Stock to Leave on their tops and sides. Where no part is beyond the area's edge, the tool's centre goes right up to the edge. Each level is cleared with loops a stepover apart, the outermost hugging the edges and islands, cut climb from the outside in; the stepover is half the tool's diameter for now. A level is entered at the plunge feed from 1 mm above the level before (the first from 1 mm above the stock's top). The tool stays down from one loop to the next when the move is short and stays in the cleared area, and otherwise lifts to the clearance plane, which must be at least 1 mm above the stock. The tool is treated as a plain cylinder at each level. The area is worked out on a fine grid, so loops are accurate to a fraction of a millimetre.</p>
+<dl>
+  <dt>Stock to Leave</dt>
+  <dd>Material left covering the parts, on their tops and their sides: the tool's bottom stays this far above them, and its side this far from them. It also raises each flat face's level by this much. 0 or more.</dd>
+  <dt>Cut Depth Step</dt>
+  <dd>The deepest any level may be below the one above it. The levels come from the geometry first: each flat face of the parts facing up gets a level at its height plus the Stock to Leave, so flat floors are reached exactly, even when they're closer together than the step. Each gap between those levels (and the stock's top and bottom) is then split evenly so no step is deeper than this.</dd>
 </dl>
 </section>
 

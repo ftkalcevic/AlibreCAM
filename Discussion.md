@@ -5928,6 +5928,212 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Clean. Now the docs:
 
+> The Features tab now has an **Add the stock box's footprint** check box, as you chose. It adds the stock box seen from above to the operation's area, on top of anything in the features list. The list can be empty when it's ticked.
+>
+> On sketches: the 27.0.1 API does look able to do them. It can read the assembly's sketches, include 2D sketches in what can be picked, find a sketch again later, and place its figures in 3D. I haven't built that, as you decided; it would need testing in Alibre when we come back to it.
+>
+> **How the footprint works:**
+> - **Where:** it appears on the Features tab of Facing, Profiling, Pocketing, Chamfer, Engrave and Plunge Roughing. It's hidden for Drill and Hole Pocketing.
+> - **Its shape:** the stock's box projected onto the origin's XY plane, at the stock's top. That's a rectangle normally, and wider under a tilted origin. For an imported stock part it's the box round the part.
+> - **Facing, Profiling, Pocketing, Chamfer, Engrave:** it's one more area after the listed ones. Areas are flattened to their highest point, so with it ticked, Cut Levels' At Top and At Bottom are measured from at least the stock's top.
+> - **Plunge Roughing:** it merges with the rest of the area. Nothing is beyond the stock's edges, so plunges reach them, and the 3D model still stops them above the part.
+> - **No stock:** Generate stops and says to make one or untick the box.
+>
+> The `.cam` format is now version 9, so older add-ons will refuse a job saved by this one rather than quietly ignoring the setting.
+>
+> New tests cover the footprint's shape (flat and tilted), the setting saving and loading, an empty list being accepted with the box ticked, and Plunge Roughing reaching the stock's edges around a part. They all pass in Debug and Release. The Release build needed a full rebuild after the compiler's internal error came back, but it's clean now.
+>
+> The add-on and the updated help are installed. The help, the spec (Claude doc and `docs\SPEC.md`, rev 187) and `CLAUDE.md` are updated. Nothing is committed.
+>
+> To test, restart Alibre, then:
+> 1. **Facing:** tick the box with nothing in the list and Generate. It should face the whole stock top.
+> 2. **Plunge Roughing:** tick it with a part inside the stock. Plunges should cover the stock out to its edges and stop above the part.
+> 3. **Profiling and Pocketing:** tick it and check the stock's outline is cut as an area of its own.
+> 4. **No stock:** delete the stock and Generate with the box ticked. It should say to make a stock.
+> 5. **Drill:** the check box shouldn't show on a Drill's Features tab.
+> 6. **Saving:** save, close and reopen the job. The tick should still be there.
+> 7. **Help:** the Features tab section has a new entry.
+
+### 🧑 Frank · 15:33
+
+> Next operation - 3 Axis, Horizontal Roughing.  The dialog will have Features, Tool, Feeds and speeds, and clearance. We'll add others, but for now just add a Horizontal Roughing tab.  That will have 1 label/edit, "Stock to Leave" and Cut Depth Step edit.  stock to leave specifies the amount of stock to leave covering the part.  So this reduces the depth of cut, and specfies how close to get to the model.
+> Path generation should work by creating horizontal slices and using pocketing paths to remove the stock.  Finding the horizontal levels should be based on the geometry; this overrides the Cut Depth Step if the depth step is smaller than the plane difference.
+
+### 🤖 Claude
+
+> This is a big one: a Z-level (waterline) roughing operation. Here's how I'd build it without a polygon library. At each level, the parts are sliced into a grid of cells, as Plunge Roughing's area already is. A distance map gives where the tool's centre may go: at least the tool radius plus Stock to Leave from any part that reaches within Stock to Leave of that level. The pocketing paths are the contour lines of that distance map, a stepover apart, worked out to a fraction of a cell, with the part's cross-section as islands.
+>
+> A few decisions first:
+
+> Questions:
+> - I read the levels rule as: every flat (horizontal) face of the parts gets a level of its own, at its height plus Stock to Leave, and each gap between levels is split evenly so no step is deeper than Cut Depth Step. A flat face closer than the step still gets its level. Is that right?
+>   - Yes, that's it: Levels at each flat face plus Stock to Leave, with gaps split evenly to at most Cut Depth Step, from the stock's top down.
+>   - Steps only, snapped: Levels every Cut Depth Step from the top; a level within a step of a flat face moves onto it instead of adding one.
+> - The tab has no stepover yet, and pocketing needs one. What should it use?
+>   - Add Stepover to the tab: Stepover as % Tool Dia or Distance (default 50%), like Pocketing. Offset rings cut climb, from the outside in at each level.
+>   - Fixed 50% for now: No new field: half the tool's diameter, climb, outside in. A stepover field can come later.
+> - What area does each level clear?
+>   - As Plunge Roughing (Recommended): The picked faces and edges (and the stock box's footprint if ticked) projected from above and merged. At open edges, with no part beyond, the tool's centre goes to the edge; elsewhere the tool stays inside. The parts inside are islands left with Stock to Leave.
+>   - Stock footprint only: Always the whole stock box seen from above, with the parts as islands. No features needed.
+> - How deep does it go?
+>   - To the stock's bottom: Levels continue down to the stock's bottom (or the lowest part point without a stock); a level with nothing left to cut is skipped.
+>   - To the lowest flat face: Stop at the lowest flat face of the parts under the area, plus Stock to Leave.
+
+### 🧑 Frank · 15:35
+
+> Answers:
+> - I read the levels rule as: every flat (horizontal) face of the parts gets a level of its own, at its height plus Stock to Leave, and each gap between levels is split evenly so no step is deeper than Cut Depth Step. A flat face closer than the step still gets its level. Is that right?
+>   **Yes #1.   Also, call it Waterline Roughing, not Horizontal Roughing.**
+> - The tab has no stepover yet, and pocketing needs one. What should it use?
+>   **Fixed 50% for now**
+> - What area does each level clear?
+>   **As Plunge Roughing (Recommended)**
+> - How deep does it go?
+>   **To the stock's bottom**
+
+### 🤖 Claude
+
+> First, some small additions to the Plunge Roughing code so Waterline can share its distance transform, its parts heightfield and its area grid:
+
+> Now the settings and the toolpath:
+
+> Now the step type and its saving (`.cam` format version 10):
+
+> The core builds. Now the tests:
+
+> All pass. Now the add-on: the tree image first, then the menu, tab and Generate.
+
+> The image reads well: a stepped part with its waterlines. Now the Generate code. Plunge Roughing's area reading will be shared with Waterline, so I'm reading that part first:
+
+> I'll make that block serve both operations: it collects the projected faces, the loops and the parts, then hands them to whichever generator applies.
+
+> Both builds are clean and every test passes. Before going on, I want to know how long it takes on a realistic stock, so I'm adding a timing test, skipped normally like the simulation one:
+
+> It failed only because that test's clearance plane (20 mm) is below its 30 mm stock. Raising it:
+
+> 1.4 seconds for a 150 × 150 × 30 mm stock with two levels of part, giving about 8,000 moves. That's acceptable. Next, the docs:
+
+> Waterline Roughing is built and installed: **Add 3 Axis ▸ Waterline Roughing...**, with Features, Tool, Feeds & Speeds, Clearance and a Waterline Roughing tab holding Stock to Leave and Cut Depth Step. It has its own tree image, a stepped part with waterlines. Debug and Release both build cleanly and every test passes. It hasn't been run in Alibre yet.
+>
+> **Levels:**
+> - Every flat face of the parts that faces up gets a level at its height plus Stock to Leave, so flat floors are reached exactly. A face gets its level even when it's closer than the step.
+> - Each gap between those levels, from the stock's top down to its bottom, is split evenly so no step is deeper than Cut Depth Step.
+> - For example, a stock 10 mm tall with flat faces at 6 and 3, a 0.5 mm Stock to Leave and a 2 mm step gives levels at 8.25, 6.5, 5, 3.5, 1.75 and 0.
+>
+> **At each level:**
+> - **The area:** the same as Plunge Roughing: picked faces and closed edge loops, and the stock box's footprint if ticked, seen from above and merged.
+> - **Where the tool goes:** its centre stays at least the tool radius plus Stock to Leave from any part that comes within Stock to Leave of the level. So the parts stand as islands with Stock to Leave on their tops and sides. At open edges the centre goes right to the edge, as in Plunge Roughing.
+> - **The cuts:** the area is cleared with loops half the tool's diameter apart, as you chose. The outermost loop hugs the edges and the islands, and they're cut climb from the outside in.
+>
+> **My own choices** (not covered by your answers):
+> - **Entering:** each level comes down at rapid to 1 mm above the level before, then feeds down at the plunge feed.
+> - **Linking:** it stays down between loops when the move is under three stepovers and stays in the cleared area; otherwise it lifts to the clearance plane.
+> - **Clearance:** the clearance plane must be at least 1 mm above the stock.
+> - **Tool shape:** treated as a plain cylinder, so ball and V tips aren't modelled at each level yet.
+>
+> **How it's built:** like Plunge Roughing's area, without a polygon library. Each level is worked out on a fine grid, about a fortieth of the tool's diameter, using distance maps. The loops are traced from the distance map to a fraction of a cell. A 150 × 150 × 30 mm stock around a two-level part takes about 1.4 s and gives about 8,000 moves.
+>
+> The `.cam` format is now version 10. The help (menu, Features note and a new tab section), the spec (Claude doc and `docs\SPEC.md`, rev 188) and `CLAUDE.md` are updated. Nothing is committed.
+>
+> To test, restart Alibre, then:
+> 1. Right-click a folder: **Add 3 Axis ▸ Waterline Roughing...** opens the dialog with the five tabs. The new tree image shows.
+> 2. Tick the stock box's footprint with a part inside the stock, choose a flat end mill and Generate. You should see loops at each level, stepping around the part, with a level exactly at each flat face plus Stock to Leave.
+> 3. Change Cut Depth Step and Stock to Leave and Generate again. The levels and the gap left round the part should change to match.
+> 4. Simulate it. With Not enough removed ticked, the amber should be about the Stock to Leave thick. With Too much removed ticked, there should be no red.
+> 5. Try a part with a pocket or a boss and look at how the loops link. Tell me if the lifts or plunges look wrong.
+> 6. Save, close and reopen the job. The settings should come back.
+> 7. The help has the new menu entry and tab section.
+
+### 🧑 Frank · 15:56
+
+> A quick tweak - if an operation is suppressed, do not show the tool path.
+
+### 🤖 Claude
+
+> Done. A suppressed operation's toolpath is no longer drawn in the view. The same goes for every operation inside a suppressed folder. The toolpath is still kept in the job, so it shows again as soon as you unsuppress the operation, with no need to regenerate. Before, these were drawn as thin grey lines.
+>
+> Debug and Release both build cleanly. The add-on and the updated help are installed. The help's Suppress entry, the spec (Claude doc and `docs\SPEC.md`, rev 189) and `CLAUDE.md` are updated. Nothing is committed.
+>
+> To test, restart Alibre, then:
+> 1. Suppress a generated operation. Its toolpath should disappear from the view.
+> 2. Unsuppress it. The toolpath should come back without regenerating.
+> 3. Suppress a folder. All of its operations' toolpaths should disappear.
+> 4. The help's Suppress entry has changed.
+
+### 🧑 Frank · 16:03
+
+> An issue with my first example - a square 55x55, 5mm high, with an embedded half sphere.  The waterline did not find that 5mm high shelf.  Stock to leave was 0.5, and step 3.  There should have been a waterline cut at 5.5
+
+### 🤖 Claude
+
+> I'll start with the log, to see what Generate read for the parts and the stock:
+
+> I've fixed the most likely cause. It isn't confirmed yet: the log didn't record the levels, and the fix isn't installed because the admin prompt was cancelled.
+>
+> **The likely cause:** Waterline decides which flat faces face up from the order of each triangle's corners (the winding). It assumed the triangles go anticlockwise seen from outside, which my test models do. Nothing guarantees that Alibre's facets do, though. If Alibre winds them the other way, your 5 mm top looks like it faces down and gets no level. The gap from the stock's top to its bottom would then just be split into even steps, with nothing at 5.5, which matches what you saw.
+>
+> **The fix:** it now checks the winding of the whole mesh first. For a closed solid, the signed volume shows which way the triangles go, and if they go the other way the normals are turned round. A new test builds a 55 × 55 × 5 block, reverses every triangle, and checks it still finds the top at 5. Your sunk half sphere doesn't change that top's height. With 0.5 Stock to Leave, a 3 mm step and a 6 mm stock, the first level is at 5.5. Debug and Release both build, and every test passes.
+>
+> **Logging:** Generate now records the flat face heights it found and the stock's top and bottom, so the log will show it if this wasn't the cause. Nothing the user sees changed, so the help and spec stay as they are; `CLAUDE.md` notes the winding check. Nothing is committed.
+>
+> To test, after installing and restarting Alibre:
+> 1. Regenerate your 55 × 55 example with Stock to Leave 0.5 and step 3. There should be a waterline at 5.5.
+> 2. If it's still missing, send me the `[generate] waterline: flat faces at ...` line from the log. It shows the heights found and the stock's range.
+
+### 🧑 Frank · 16:09
+
+> Alibre's closed, install
+
+### 🤖 Claude
+
+> The fix is installed, and the installed add-on matches the build. Start Alibre and regenerate your 55 × 55 example with Stock to Leave 0.5 and a step of 3. There should now be a waterline at 5.5. If there isn't, send me the `[generate] waterline: flat faces at ...` line from the log, which shows the flat heights found and the stock's range.
+
+### 🧑 Frank · 16:35
+
+> Where is the log?
+
+### 🤖 Claude
+
+> The log is at:
+>
+> `C:\Users\Frank Tkalcevic\AppData\Local\AlibreCAM\AlibreCAM.log`
+>
+> (that's `%LOCALAPPDATA%\AlibreCAM\AlibreCAM.log`). It's plain text, so any editor opens it. You don't have to send me lines from it, though: I can read it myself, and I just did.
+>
+> You've already regenerated three times since the install, and each time it logged:
+>
+> `[generate] waterline: flat faces at 3.000000 (frame Z), stock 32.500 to 0.000`
+>
+> So the flat face is found now; before the fix it wasn't. But in the operation's origin it's at **Z 3**, not 5. With Stock to Leave 0.5, its level is at **3.5**, which is where the shelf cut will be. The stock also runs from 0 to **32.5**, much taller than the 5 mm block.
+>
+> Both point to where the active Set Origin is, or the stock's size, rather than to Waterline itself. For example, the origin might be 2 mm above the bottom of the block, or the block might sit higher in a taller stock. Is the shelf meant to be 5 mm above that operation's Set Origin? And is a 32.5 mm tall stock right? If both are as you intended, tell me and I'll dig further.
+
+### 🧑 Frank · 16:38
+
+> You are correct, that first layer is at 3.  The whole part is 22.5.  Stock is 32.5.  The bottom most layer should have been 3.5 as the boundary doesn't allow paths outside the part.
+
+### 🤖 Claude
+
+> I'll look at what was actually generated. The job's `.cam` file holds the toolpath, so I can see which levels have moves:
+
+> Both builds pass every test, including the new one. Installing:
+
+> Fixed and installed. Your bottom layer at 3.5 should now be cut.
+>
+> **What was wrong:** the 3.5 level was always worked out; you can see it in the saved levels, which step down from 32.5 by 2.9 to land on 3.5. It just got no cuts. At each level, a spot counts as "part in the way" if the part's height there is above the level less the Stock to Leave, which is 3.0 here. The heights are stored as single-precision numbers, so your shelf at 3.0 is held as about 3.0000001. The comparison allowed only 0.000000001 mm for rounding, so the whole shelf counted as in the way and the level was empty. It now allows 0.001 mm.
+>
+> That means my previous fix, for the order of the triangles' corners, wasn't the cause: the shelf was being found before it. I've kept it anyway, since it makes finding flat faces safer and does no harm.
+>
+> A new test uses your case: a 55 × 55 shelf whose height rounds up the same way, under a 32.5 mm stock, with Stock to Leave 0.5 and a step of 3. It checks that the lowest cut is at the shelf plus 0.5. It and all the other tests pass in Debug and Release. The help and spec don't change, since the behaviour is now what they already describe. `CLAUDE.md` notes the tolerance. Nothing is committed.
+>
+> To test, restart Alibre, then:
+> 1. Regenerate Waterline Roughing 1 (copy) in `Rough 2`. The lowest layer should be at 3.5, with nothing below it inside your boundary.
+> 2. Simulate it with Not enough removed ticked. Only about 0.5 mm should be left on the shelf.
+
+### 🧑 Frank · 16:44
+
+> Fixed.
+
 ---
 
 # Side conversation

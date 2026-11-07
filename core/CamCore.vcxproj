@@ -87,6 +87,8 @@
     <ClCompile Include="EngraveToolpath.cpp" />
     <ClCompile Include="PlungeRoughing.cpp" />
     <ClCompile Include="PlungeRoughToolpath.cpp" />
+    <ClCompile Include="WaterlineRoughing.cpp" />
+    <ClCompile Include="WaterlineRoughToolpath.cpp" />
     <ClCompile Include="Machine.cpp" />
     <ClCompile Include="Materials.cpp" />
     <ClCompile Include="ScriptedPost.cpp" />
@@ -117,6 +119,8 @@
     <ClInclude Include="EngraveToolpath.h" />
     <ClInclude Include="PlungeRoughing.h" />
     <ClInclude Include="PlungeRoughToolpath.h" />
+    <ClInclude Include="WaterlineRoughing.h" />
+    <ClInclude Include="WaterlineRoughToolpath.h" />
     <ClInclude Include="Machine.h" />
     <ClInclude Include="Materials.h" />
     <ClInclude Include="ToolJson.h" />

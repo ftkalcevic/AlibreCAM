@@ -11,6 +11,7 @@
 #include "PocketToolpath.h"
 #include "EngraveToolpath.h"
 #include "PlungeRoughToolpath.h"
+#include "WaterlineRoughToolpath.h"
 #include "ProfileToolpath.h"
 #include "FileIO.h"
 #include "PostDialog.h"
@@ -69,6 +70,7 @@ namespace
         ID_CAM_ADD_CHAMFER,
         ID_CAM_ADD_ENGRAVE,
         ID_CAM_ADD_PLUNGE_ROUGHING,
+        ID_CAM_ADD_WATERLINE_ROUGHING,
         ID_CAM_EDIT_STEP,
         ID_CAM_STOCK_BOX,
         ID_CAM_STOCK_PART_BOX,
@@ -1074,6 +1076,7 @@ void CCamTabCommand::AddOperation(size_t folder, camcore::StepType type)
                                              : type == camcore::StepType::Engrave ? "Engrave"
                                              : type == camcore::StepType::HolePocketing ? "Hole Pocketing"
                                              : type == camcore::StepType::PlungeRoughing ? "Plunge Roughing"
+                                             : type == camcore::StepType::WaterlineRoughing ? "Waterline Roughing"
                                                                                     : "Drill");
 
     // A new operation starts with the tool selected in the tree.
@@ -1918,7 +1921,8 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
     if (operation.type != camcore::StepType::Drill && operation.type != camcore::StepType::Facing &&
         operation.type != camcore::StepType::Profiling && operation.type != camcore::StepType::Pocketing &&
         operation.type != camcore::StepType::Chamfer && operation.type != camcore::StepType::Engrave &&
-        operation.type != camcore::StepType::HolePocketing && operation.type != camcore::StepType::PlungeRoughing)
+        operation.type != camcore::StepType::HolePocketing && operation.type != camcore::StepType::PlungeRoughing &&
+        operation.type != camcore::StepType::WaterlineRoughing)
     {
         problem = "Toolpaths for this operation aren't built yet.";
         return false;
@@ -2131,9 +2135,10 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         return true;
     }
 
-    // Plunge Roughing projects the picked faces and edges onto the origin's XY
-    // plane, merges what touches, and plunges inside, down to the parts.
-    if (operation.type == camcore::StepType::PlungeRoughing)
+    // Plunge Roughing and Waterline Roughing project the picked faces and edges
+    // onto the origin's XY plane, merge what touches, and rough inside, down to
+    // the parts.
+    if (operation.type == camcore::StepType::PlungeRoughing || operation.type == camcore::StepType::WaterlineRoughing)
     {
         if (operation.features.empty() && !operation.stockFootprint)
         {
@@ -2142,15 +2147,8 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
             return false;
         }
 
-        camcore::PlungeRoughToolpathInput plungeInput;
-        plungeInput.operation = &operation;
-        plungeInput.tool = (pTool != nullptr) ? &tool : nullptr;
-        plungeInput.havePartMaxZ = havePartMaxZ;
-        plungeInput.partMaxZ = partMaxZ;
-        plungeInput.haveStockMaxZ = haveStockMaxZ;
-        plungeInput.stockMaxZ = stockMaxZ;
-        plungeInput.haveStockMinZ = haveStockMinZ;
-        plungeInput.stockMinZ = stockMinZ;
+        std::vector<std::vector<camcore::Vec3>> areaFaces;
+        std::vector<camcore::ProfileChain> areaLoops;
 
         // A face as its facets; failing that, its outline. Edges are gathered
         // where their ends meet, and each group must close.
@@ -2181,7 +2179,7 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
                 {
                     for (camcore::Vec3& point : facets)
                         point = camcore::WorldToFrame(frame.frame, point);
-                    plungeInput.faces.push_back(std::move(facets));
+                    areaFaces.push_back(std::move(facets));
                     continue;
                 }
                 Log(L"[generate] a face's facets couldn't be read, so its outline is used: %s", readProblem.c_str());
@@ -2197,7 +2195,7 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
             {
                 camcore::ProfileChain chain = camcore::ChainProfile({ outline }, 0.0);
                 if (chain.ok && chain.closed)
-                    plungeInput.outlines.push_back(std::move(chain));
+                    areaLoops.push_back(std::move(chain));
                 continue;
             }
             edgeOutlines.push_back(std::move(outline));
@@ -2226,7 +2224,7 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
                     problem = name + "the edges must join into a closed loop.";
                     return false;
                 }
-                plungeInput.outlines.push_back(std::move(chain));
+                areaLoops.push_back(std::move(chain));
             }
         }
         if (operation.stockFootprint)
@@ -2235,10 +2233,9 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
             footprint.ok = true;
             footprint.closed = true;
             footprint.path = stockFootprint();
-            plungeInput.outlines.push_back(std::move(footprint));
+            areaLoops.push_back(std::move(footprint));
         }
-        Log(L"[generate] plunge area from %zu faces and %zu loops", plungeInput.faces.size(),
-            plungeInput.outlines.size());
+        Log(L"[generate] area from %zu faces and %zu loops", areaFaces.size(), areaLoops.size());
 
         // Every visible part, less an imported stock's own, in the origin's frame.
         const std::wstring leaveOut = (m_job.stock.kind == camcore::StockKind::Imported && HasStock())
@@ -2247,21 +2244,63 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         std::vector<camcore::Vec3> partTriangles;
         std::wstring partProblem;
         if (!ReadAssemblyPartFacets(GetSession(), leaveOut, partTriangles, partProblem))
-            Log(L"[generate] plunge roughing without parts: %s", partProblem.c_str());
-        plungeInput.partTriangles.reserve(partTriangles.size());
-        for (const camcore::Vec3& point : partTriangles)
-            plungeInput.partTriangles.push_back(camcore::WorldToFrame(frame.frame, point));
+            Log(L"[generate] roughing without parts: %s", partProblem.c_str());
+        for (camcore::Vec3& point : partTriangles)
+            point = camcore::WorldToFrame(frame.frame, point);
 
         const ULONGLONG start = GetTickCount64();
-        const camcore::ToolpathResult plungeResult = camcore::GeneratePlungeRoughToolpath(plungeInput);
-        Log(L"[generate] plunge roughing: %zu part triangles, %zu moves, in %llu ms",
-            plungeInput.partTriangles.size() / 3, plungeResult.toolpath.moves.size(), GetTickCount64() - start);
-        if (!plungeResult.ok)
+        camcore::ToolpathResult roughResult;
+        if (operation.type == camcore::StepType::PlungeRoughing)
         {
-            problem = plungeResult.problem;
+            camcore::PlungeRoughToolpathInput plungeInput;
+            plungeInput.operation = &operation;
+            plungeInput.tool = (pTool != nullptr) ? &tool : nullptr;
+            plungeInput.havePartMaxZ = havePartMaxZ;
+            plungeInput.partMaxZ = partMaxZ;
+            plungeInput.haveStockMaxZ = haveStockMaxZ;
+            plungeInput.stockMaxZ = stockMaxZ;
+            plungeInput.haveStockMinZ = haveStockMinZ;
+            plungeInput.stockMinZ = stockMinZ;
+            plungeInput.faces = std::move(areaFaces);
+            plungeInput.outlines = std::move(areaLoops);
+            plungeInput.partTriangles = std::move(partTriangles);
+            roughResult = camcore::GeneratePlungeRoughToolpath(plungeInput);
+        }
+        else
+        {
+            camcore::WaterlineRoughToolpathInput waterlineInput;
+            waterlineInput.operation = &operation;
+            waterlineInput.tool = (pTool != nullptr) ? &tool : nullptr;
+            waterlineInput.havePartMaxZ = havePartMaxZ;
+            waterlineInput.partMaxZ = partMaxZ;
+            waterlineInput.haveStockMaxZ = haveStockMaxZ;
+            waterlineInput.stockMaxZ = stockMaxZ;
+            waterlineInput.haveStockMinZ = haveStockMinZ;
+            waterlineInput.stockMinZ = stockMinZ;
+            for (const camcore::Vec3& point : partTriangles)
+            {
+                waterlineInput.partMinZ = waterlineInput.havePartMinZ ? (std::min)(waterlineInput.partMinZ, point.z)
+                                                                      : point.z;
+                waterlineInput.havePartMinZ = true;
+            }
+            waterlineInput.faces = std::move(areaFaces);
+            waterlineInput.outlines = std::move(areaLoops);
+            waterlineInput.partTriangles = std::move(partTriangles);
+            const std::vector<double> flats = camcore::FlatHeights(waterlineInput.partTriangles);
+            std::wstring flatText;
+            for (double h : flats)
+                flatText += (flatText.empty() ? L"" : L", ") + std::to_wstring(h);
+            Log(L"[generate] waterline: flat faces at %s (frame Z), stock %.3f to %.3f",
+                flatText.empty() ? L"none" : flatText.c_str(), stockMaxZ, stockMinZ);
+            roughResult = camcore::GenerateWaterlineRoughToolpath(waterlineInput);
+        }
+        Log(L"[generate] roughing: %zu moves, in %llu ms", roughResult.toolpath.moves.size(), GetTickCount64() - start);
+        if (!roughResult.ok)
+        {
+            problem = roughResult.problem;
             return false;
         }
-        operation.toolpath = plungeResult.toolpath;
+        operation.toolpath = roughResult.toolpath;
         return true;
     }
 
@@ -2957,8 +2996,9 @@ void CCamTabCommand::RebuildScene()
                 m_scene.boundaries.push_back(std::move(outline));
             }
 
+            // A suppressed operation's toolpath isn't drawn, nor one in a suppressed folder.
             const std::vector<camcore::ToolpathMove>& moves = m_job.sequence[i].children[c].toolpath.moves;
-            if (moves.empty())
+            if (moves.empty() || camcore::IsOperationSuppressed(m_job, i, c))
                 continue;
 
             CamScene::Toolpath drawn;
@@ -3377,6 +3417,7 @@ namespace
         kImageChamfer,
         kImageEngrave,
         kImagePlungeRoughing,
+        kImageWaterlineRoughing,
         kImageWarning       // drawn over another image, as overlay 1
     };
 
@@ -3411,6 +3452,7 @@ namespace
         case camcore::StepType::Chamfer:       return kImageChamfer;
         case camcore::StepType::Engrave:       return kImageEngrave;
         case camcore::StepType::PlungeRoughing: return kImagePlungeRoughing;
+        case camcore::StepType::WaterlineRoughing: return kImageWaterlineRoughing;
         default:                               return kImageOperations;
         }
     }
@@ -4094,6 +4136,7 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
 
         threeAxis.CreatePopupMenu();
         threeAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_PLUNGE_ROUGHING, L"Plunge Roughing...");
+        threeAxis.AppendMenu(MF_STRING | editable, ID_CAM_ADD_WATERLINE_ROUGHING, L"Waterline Roughing...");
         menu.AppendMenu(MF_POPUP | editable, reinterpret_cast<UINT_PTR>(threeAxis.GetSafeHmenu()), L"Add 3 Axis");
         menu.AppendMenu(MF_SEPARATOR);
         menu.AppendMenu(MF_STRING | generatable, ID_CAM_GENERATE, L"Generate");
@@ -4157,6 +4200,9 @@ void CCamTabWnd::OnTreeRightClick(NMHDR* /*pNotify*/, LRESULT* pResult)
     case ID_CAM_ADD_CHAMFER: m_pTab->AddOperation(ref.step, camcore::StepType::Chamfer); break;
     case ID_CAM_ADD_ENGRAVE: m_pTab->AddOperation(ref.step, camcore::StepType::Engrave); break;
     case ID_CAM_ADD_PLUNGE_ROUGHING: m_pTab->AddOperation(ref.step, camcore::StepType::PlungeRoughing); break;
+    case ID_CAM_ADD_WATERLINE_ROUGHING:
+        m_pTab->AddOperation(ref.step, camcore::StepType::WaterlineRoughing);
+        break;
     case ID_CAM_EDIT_STEP:   m_pTab->EditStep(ref); break;
     case ID_CAM_RENAME_STEP: m_tree.EditLabel(hItem); break;
     case ID_CAM_DELETE_STEP: m_pTab->DeleteStep(ref); break;
