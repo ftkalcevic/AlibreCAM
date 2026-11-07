@@ -1478,6 +1478,10 @@ struct PartSurfaces::Impl
     };
     std::vector<Face> faces;
     std::vector<PartToAssembly> parts;
+
+    // How ClosestPoint failed: no surface, no point found, an error (the first's code).
+    mutable size_t noSurface = 0, notFound = 0, errors = 0;
+    mutable HRESULT firstError = S_OK;
 };
 
 PartSurfaces::PartSurfaces() : m_impl(std::make_unique<Impl>())
@@ -1522,7 +1526,7 @@ bool PartSurfaces::Read(IADSession* pAssembly, const std::wstring& leaveOutPath,
 
             // Each face's facets, about 0.05 mm from its surface, in the part's units.
             const double partMm = MillimetresPerModelUnit(design);
-            size_t partTriangles = 0, partFaces = 0;
+            size_t partTriangles = 0, partFaces = 0, planes = 0;
             try
             {
                 IADBodiesPtr bodies = QI<IADPartSessionPtr>(design)->GetBodies();
@@ -1543,16 +1547,28 @@ bool PartSurfaces::Read(IADSession* pAssembly, const std::wstring& leaveOutPath,
                             continue;
                         Impl::Face entry;
                         entry.face = face;
+                        bool plane = false;
                         try
                         {
                             entry.surface = face->GetGeometry();
+                            plane = entry.surface != nullptr &&
+                                    entry.surface->GetSurfaceType() == ADGeometryType_AD_PLANE;
                         }
                         catch (const _com_error&)
                         {
                         }
-                        entry.part = partIndex;
-                        const int index = static_cast<int>(m_impl->faces.size());
-                        m_impl->faces.push_back(entry);
+                        // A plane's triangles are exact, so it needs no closest points.
+                        int index = -1;
+                        if (plane)
+                        {
+                            ++planes;
+                        }
+                        else
+                        {
+                            entry.part = partIndex;
+                            index = static_cast<int>(m_impl->faces.size());
+                            m_impl->faces.push_back(entry);
+                        }
                         for (const Vec3& p : points)
                             triangles.push_back(toAssembly.Point(p));
                         faces.insert(faces.end(), points.size() / 3, index);
@@ -1590,7 +1606,8 @@ bool PartSurfaces::Read(IADSession* pAssembly, const std::wstring& leaveOutPath,
             }
             else
             {
-                Log(L"[surfaces] %s: %zu faces, %zu triangles", name.c_str(), partFaces, partTriangles);
+                Log(L"[surfaces] %s: %zu faces (%zu planes), %zu triangles", name.c_str(), partFaces, planes,
+                    partTriangles);
             }
             if (partTriangles > 0)
                 ++read;
@@ -1617,7 +1634,11 @@ bool PartSurfaces::ClosestPoint(int face, const Vec3& p, Vec3& closest, bool& on
         return false;
     const Impl::Face& entry = m_impl->faces[static_cast<size_t>(face)];
     if (entry.surface == nullptr)
+    {
+        if (m_impl->noSurface++ == 0)
+            Log(L"[surfaces] face %d has no surface to find closest points on", face);
         return false;
+    }
     const PartToAssembly& part = m_impl->parts[entry.part];
     try
     {
@@ -1627,13 +1648,30 @@ bool PartSurfaces::ClosestPoint(int face, const Vec3& p, Vec3& closest, bool& on
         const VARIANT_BOOL found = entry.surface->GetClosestPoint(local.x, local.y, local.z, &pPoint, &distance);
         IADPointPtr point(pPoint, false);
         if (!found || point == nullptr)
+        {
+            if (m_impl->notFound++ == 0)
+                Log(L"[surfaces] face %d: GetClosestPoint found no point (returned %d)", face, found ? 1 : 0);
             return false;
+        }
         closest = part.Point({ point->GetX(), point->GetY(), point->GetZ() });
         onFace = entry.face->PointOnFace(point) != ADEntityPointRelation_POINT_OUTSIDE_BOUNDARY;
         return true;
     }
-    catch (const _com_error&)
+    catch (const _com_error& error)
     {
+        if (m_impl->errors++ == 0)
+        {
+            m_impl->firstError = error.Error();
+            Log(L"[surfaces] face %d: closest point failed, hr=0x%08X", face, static_cast<unsigned>(error.Error()));
+        }
         return false;
     }
+}
+
+void PartSurfaces::LogFailures() const
+{
+    if (m_impl->noSurface + m_impl->notFound + m_impl->errors == 0)
+        return;
+    Log(L"[surfaces] closest points failed: %zu with no surface, %zu not found, %zu errors (the first hr=0x%08X)",
+        m_impl->noSurface, m_impl->notFound, m_impl->errors, static_cast<unsigned>(m_impl->firstError));
 }

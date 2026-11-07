@@ -55,5 +55,12 @@ namespace camcore
         size_t refinedPoints = 0;
         size_t refineTries = 0;
         size_t refineCalls = 0;
+        // Why the others kept the triangles' answer.
+        size_t refineNoAnswer = 0;      // the closest point couldn't be had
+        size_t refineOnSurface = 0;     // the ball's centre was on the surface
+        size_t refineSideContact = 0;   // the contact was on the ball's side
+        size_t refineUnsettled = 0;     // Newton's method didn't settle in 8 steps
+        size_t refineOffFace = 0;       // it settled past the face's edges
+        size_t refineTooFar = 0;        // it settled more than 0.5 mm from the triangles' answer
     };
 }

@@ -6726,6 +6726,91 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Install it
 
+### 🤖 Claude
+
+> The new build is installed, and the add-on and help files there match the Release build. Start Alibre and run the tests from my last message. Afterwards, check the log for the `[surfaces]` and `[generate] true surface: n of m points` lines. If n is 0, the true-surface step isn't working in Alibre, so please send me those lines.
+
+### 🧑 Frank · 20:09
+
+> Check the logs
+
+### 🤖 Claude
+
+> The log shows three Parallel Finishing runs with the ball mill since the install:
+>
+> | Time | Area | Points moved onto the true surface | Closest-point calls | Generate took |
+> |---|---|---|---|---|
+> | 20:04 | 1 loop | **0 of 299,745** | 299,745 | 52 s |
+> | 20:06 | 1 face | 299,898 of 299,898 | 529,538 | 48 s |
+> | 20:07 | 1 face | 271,133 of 271,133 | 500,773 | 57 s |
+>
+> What this shows:
+> - **The refinement works in Alibre.** In the second and third runs every point was moved onto the true surface. That proves `GetClosestPoint`, `PointOnFace` and my inverse of the part transform. The face reading works too: `Rough 2<1>` gave 7 faces and 2,118 triangles in 15–200 ms.
+> - **The first run refined nothing, and I can't tell why from the log.** It made exactly one call per point, so every point gave up after its first answer. The possible reasons are: Alibre said no, the closest point came back unusable, the contact was on the ball's side, or the point wasn't on the face. The only difference the log shows is the area (an edge loop then, a face later), and that shouldn't affect this step. The first run also read the faces slower (203 ms against 15 ms), which suggests Alibre was still loading the part. I need the log to record why a point gives up before I can say more.
+> - **It's slow:** about 0.17 ms per call to Alibre, so roughly 50 s for 300,000 points. A typical point takes 1.8 calls. On flat faces one call is enough, because the triangles are already exact there.
+>
+> Two changes I'd make next:
+> 1. **Log why points give up:** a count for each reason, plus Alibre's error code the first time a call fails. That would explain the first run if it happens again.
+> 2. **Skip faces that are planes:** the drop cutter is already exact on a flat face, so those need no calls. I'd check each face's type once with `GetSurfaceType`. That should save a good share of the time on parts with flat areas. Spacing the points further apart would save more, but each row would then follow the true surface at fewer points.
+>
+> Did the rows from the second and third runs look smooth in Alibre?
+
+### 🧑 Frank · 20:10
+
+> YEs
+
+### 🤖 Claude
+
+> Good: the rows are smooth, and the true-surface refinement works in Alibre. That proves `GetClosestPoint`, `PointOnFace` and the inverse part transform.
+>
+> Two things are still open:
+> - **The first run refined nothing.** Every point gave up after its first call, and the log doesn't say why. Logging why each point gives up would tell us if it happens again.
+> - **Generate takes about 50 s.** Skipping faces that are planes, where the drop cutter is already exact, should cut a good share of that on parts with flat areas.
+
+### 🧑 Frank · 20:11
+
+> Yes, do both
+
+### 🤖 Claude
+
+> Both builds pass every test. That includes a new one where Alibre never answers: every point keeps the triangles' height and is counted as "no closest point". Now the docs and the install:
+
+> Both changes are built, and all tests pass in Debug and Release. **Not installed:** the administrator prompt was cancelled, so Alibre still has the previous build.
+>
+> - **Why points give up:** after the `true surface: n of m points` line, the log now has a second line counting the points that kept the triangles' height, for each reason:
+>   - no closest point from Alibre
+>   - the ball's centre was on the surface
+>   - the contact was on the ball's side
+>   - the steps didn't settle
+>   - it settled off the face
+>   - it settled too far (more than 0.5 mm) from the triangles' answer
+>
+>   If Alibre itself fails, the first failure of each kind is logged as it happens, with its error code, and a total follows at the end. If the run that refined nothing happens again, these lines will show why. A new test checks that when Alibre never answers, every point keeps its triangle height and is counted under "no closest point".
+> - **Flat faces skipped:** faces whose surface type is a plane are left out of the refinement, because their triangles are already exact. The `[surfaces]` line now shows how many planes each part has.
+> - **Docs:** the help and `CLAUDE.md` are updated.
+>
+> After installing, test:
+> 1. Generate Parallel Finishing on `Rough 2` with the ball mill. In the log, the `[surfaces]` line should list some planes, and there should be fewer closest-point calls than the earlier 530,000, with a shorter time than 48 s.
+> 2. The rows should still be smooth, including where they cross the flat shelf.
+> 3. Read the new "kept the triangles' answer for …" line. If many points were kept, please send me that line.
+
+### 🧑 Frank · 20:25
+
+> Install it
+
+### 🤖 Claude
+
+> It's installed, and the add-on and help match the Release build. Start Alibre and generate Parallel Finishing on `Rough 2` with the ball mill. The log should now:
+> - count the plane faces in the `[surfaces]` line,
+> - show fewer closest-point calls and a shorter time than before (530,000 calls, 48 s),
+> - and give a "kept the triangles' answer for …" line saying why any points weren't refined.
+>
+> Say "check the logs" when you've run it and I'll read them.
+
+### 🧑 Frank · 20:27
+
+> check the logs
+
 ---
 
 # Side conversation

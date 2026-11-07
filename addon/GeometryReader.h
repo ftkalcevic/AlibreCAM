@@ -107,8 +107,8 @@ public:
 
     // Reads every visible, unsuppressed part (less leaveOutPath's) face by face:
     // triangles in the assembly's coordinates in mm, and the face each is on (-1
-    // where a part could only be read whole). Returns false and sets problem if
-    // no part could be read.
+    // for a plane, whose triangles are already exact, or where a part could only
+    // be read whole). Returns false and sets problem if no part could be read.
     bool Read(IADSession* pAssembly, const std::wstring& leaveOutPath, std::vector<camcore::Vec3>& triangles,
               std::vector<int>& faces, std::wstring& problem);
 
@@ -116,6 +116,9 @@ public:
     // coordinates in mm, and whether it's on the face itself. False if Alibre
     // can't say.
     bool ClosestPoint(int face, const camcore::Vec3& p, camcore::Vec3& closest, bool& onFace) const;
+
+    // Logs the first time each way ClosestPoint failed, and how often.
+    void LogFailures() const;
 
 private:
     struct Impl;

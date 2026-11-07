@@ -213,6 +213,17 @@ TEST_CASE("a ball's contacts are moved onto the true surface")
     CHECK(exact.refinedPoints > 1000);
     CHECK(exact.refineCalls == calls);
     CHECK(worst(exact) < 0.002);
+    CHECK(exact.refinedPoints + exact.refineNoAnswer + exact.refineOnSurface + exact.refineSideContact +
+              exact.refineUnsettled + exact.refineOffFace + exact.refineTooFar ==
+          exact.refineTries);
+
+    // When Alibre can't answer, every point keeps the triangles' answer and says why.
+    input.closestPoint = [](int, const Vec3&, Vec3&, bool&) { return false; };
+    const ToolpathResult unanswered = GenerateParallelFinishToolpath(input);
+    REQUIRE(unanswered.ok);
+    CHECK(unanswered.refinedPoints == 0);
+    CHECK(unanswered.refineNoAnswer == unanswered.refineTries);
+    CHECK(unanswered.refineTries > 1000);
 }
 
 TEST_CASE("a refined contact never goes below another face")

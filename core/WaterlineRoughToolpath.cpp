@@ -1357,6 +1357,7 @@ namespace camcore
                             !input.partTriangleFaces.empty();
         const double ballRadius = input.tool->diameter / 2.0;
         size_t refined = 0, refineTries = 0, refineCalls = 0;
+        size_t noAnswer = 0, onSurface = 0, sideContact = 0, unsettled = 0, offFace = 0, tooFar = 0;
         const auto refineAt = [&](double x, double y, const DropCutter::Contact& contact) {
             if (contact.face < 0)
                 return contact.tip;
@@ -1371,11 +1372,17 @@ namespace camcore
                 const Vec3 centre{ x, y, centreZ };
                 ++refineCalls;
                 if (!input.closestPoint(contact.face, centre, closest, onFace))
+                {
+                    ++noAnswer;
                     return contact.tip;
+                }
                 const Vec3 d = centre - closest;
                 const double distance = Length(d);
                 if (distance < 1e-9)
+                {
+                    ++onSurface;
                     return contact.tip;
+                }
                 const double nz = d.z / distance;
                 const double error = distance - gap;
                 if (std::fabs(error) < 1e-5)
@@ -1384,14 +1391,23 @@ namespace camcore
                     break;
                 }
                 if (nz < 0.05)
+                {
+                    ++sideContact;
                     return contact.tip;     // a contact on the ball's side: leave it to the triangles
+                }
                 centreZ -= error / nz;
             }
             if (!settled || !onFace)
+            {
+                ++(settled ? offFace : unsettled);
                 return contact.tip;
+            }
             const double tip = centreZ - ballRadius;
             if (std::fabs(tip - contact.tip) > 0.5)
+            {
+                ++tooFar;
                 return contact.tip;
+            }
             ++refined;
             return (std::max)(tip, contact.others);
         };
@@ -1618,6 +1634,12 @@ namespace camcore
         result.refinedPoints = refined;
         result.refineTries = refineTries;
         result.refineCalls = refineCalls;
+        result.refineNoAnswer = noAnswer;
+        result.refineOnSurface = onSurface;
+        result.refineSideContact = sideContact;
+        result.refineUnsettled = unsettled;
+        result.refineOffFace = offFace;
+        result.refineTooFar = tooFar;
         return result;
     }
 }
