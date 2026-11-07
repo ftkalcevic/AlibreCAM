@@ -118,6 +118,7 @@
     <ClCompile Include="Help.cpp" />
     <ClCompile Include="StockDialog.cpp" />
     <ClCompile Include="MachineDialog.cpp" />
+    <ClCompile Include="ProgressDialog.cpp" />
     <ClCompile Include="SimulationDialog.cpp" />
     <ClCompile Include="ToolDialogs.cpp" />
     <ClCompile Include="AlibreCAM.cpp" />
@@ -142,6 +143,7 @@
     <ClInclude Include="Help.h" />
     <ClInclude Include="StockDialog.h" />
     <ClInclude Include="MachineDialog.h" />
+    <ClInclude Include="ProgressDialog.h" />
     <ClInclude Include="SimulationDialog.h" />
     <ClInclude Include="ToolDialogs.h" />
     <ClInclude Include="AlibreCAM.h" />

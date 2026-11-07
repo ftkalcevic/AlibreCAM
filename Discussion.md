@@ -6861,6 +6861,275 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > check the logs
 
+### 🤖 Claude
+
+> The speed-ups work in Alibre: Parallel Finishing on `Rough 2` dropped from 39 s to 11.8 s.
+>
+> | | 20:27 (before) | 20:45 (now) |
+> |---|---|---|
+> | Points refined by Alibre | 154,940 | 77,622 |
+> | Points taking the middle of their neighbours | — | 77,318 |
+> | Closest-point calls | 384,580 | 102,152 (1.3 per refined point) |
+> | Generate time | 39.3 s | 11.8 s |
+> | Kept the triangles' answer | 0 | 0 |
+>
+> The toolpath came out at 10,251 moves against 10,231 before. The small difference comes from simplifying the rows to 0.01 mm, since the shared points' heights differ very slightly. Almost all of the remaining time is Alibre answering the 102,000 calls, at about 0.1 ms each.
+>
+> One wording slip: the log says "sharing their correction", but those points now take the middle of their neighbours' heights. I'll fix the wording the next time I change the add-on.
+
+### 🧑 Frank · 20:47
+
+> Can this be sped up more by processing the parallel paths in parallel on different threads?  Also, can we provide a wait dialog box that tells us what it is doing?
+
+### 🤖 Claude
+
+> Before planning, I'll check what the 27.0.1 headers say about the surface types, because that decides what threading can actually achieve.
+
+> Questions:
+> - Should the Generate wait dialog have a Cancel button?
+>   - Yes, with Cancel (Recommended): Cancel stops Generate at the next check (several times a second). The operation keeps no toolpath, and the log says it was cancelled.
+>   - No, just progress: The dialog only shows what it's doing and how far along it is.
+> - When should the wait dialog appear?
+>   - Any slow Generate (Recommended): Every Generate (one operation, a folder or all), shown only if it takes over half a second. It names the operation (2 of 5) and its stage, such as reading parts, dropping the tool, or refining on the true surface, with a progress bar.
+>   - Parallel Finishing only: Only for Parallel Finishing.
+
+### 🧑 Frank · 20:49
+
+> Answers:
+> - Should the Generate wait dialog have a Cancel button?
+>   **No, just progress**
+> - When should the wait dialog appear?
+>   **Any slow Generate (Recommended)**
+
+### 🤖 Claude
+
+> Next I'll look at how Generate is entered (one operation, a folder, several) to see where the dialog belongs.
+
+> I have what I need. Writing the plan:
+
+> Plan:
+>
+> # Faster true-surface refinement, and a Generate progress window
+>
+> ## Context
+>
+> Parallel Finishing with a ball mill now takes about 12 s on `Rough 2`. Almost all of that is 102,000 `GetClosestPoint` calls, at about 0.1 ms each, made one at a time. Frank asked two things:
+> - Can the rows be done in parallel on several threads?
+> - Can there be a wait dialog that says what Generate is doing?
+>
+> **Threads, as asked, won't help the Alibre calls.** Alibre's objects live on its own thread (a single-threaded apartment), so calls from other threads are passed back to that thread and still run one at a time, with extra overhead.
+>
+> **What will help** is not asking Alibre at all for the common surface types. The 27.0.1 headers give their exact definitions:
+> - `IADSphere`: `GetCenter`, `GetRadius`
+> - `IADCylinder`: `GetAxis`, `GetCenter`, `GetRadius`, `GetMinorMajorRatio`
+> - `IADCone`: `GetAxis`, `GetBasePoint`, `GetRadius`, `GetHalfAngle`
+> - `IADTorus`: `GetAxis`, `GetCenter`, `GetMajorRadius`, `GetMinorRadius`
+>
+> CamCore can compute their closest points exactly, on every core. B-spline and other freeform faces keep the Alibre calls, on one thread.
+>
+> **Frank's choices for the dialog:** progress only, with no Cancel button. It appears for any Generate that takes longer than half a second.
+>
+> ## Part 1: closest points for analytic surfaces (core)
+>
+> ### `core\SurfaceGeometry.h/.cpp` (new; add to `CamCore.vcxproj`)
+> - `struct AnalyticSurface`, with `kind` (None, Sphere, Cylinder, Cone, Torus), `centre`, `axis` (a unit vector), `radius`, `minorRadius` and `halfAngle`, all in the frame, in mm.
+> - `bool ClosestPointOn(const AnalyticSurface&, const Vec3& p, Vec3& closest)`:
+>   - **Sphere:** the centre plus radius × the direction to p.
+>   - **Cylinder:** split p into its height along the axis and its offset across it, then put the offset at the radius.
+>   - **Cone:** in the plane through the axis and p, the nearest point on the cone's side line.
+>   - **Torus:** the nearest point on the centre circle, then out towards p by the minor radius.
+>   - False where the direction is undefined, such as p on the axis.
+>
+> ### `WaterlineRoughToolpathInput` (`core\WaterlineRoughToolpath.h`)
+> - Add `std::vector<AnalyticSurface> faceSurfaces`, indexed by face. A kind of None uses `closestPoint`, the Alibre call.
+> - Add `std::function<void(double fraction, const std::string& stage)> progress`, called only from the calling thread.
+>
+> ### On-face check for analytic faces
+> - Alibre's `PointOnFace` isn't used for these faces.
+> - Instead, the closest point must be within 0.1 mm (twice the facet tolerance) of one of that face's own triangles.
+> - Add `DropCutter::NearFace(face, point, distance)` for this, using the existing buckets.
+>
+> ### `GenerateParallelFinishToolpath` refinement order
+> 1. **Every second point (and each run's last):** in parallel by run, refine the points on analytic faces with `ClosestPointOn`. Points on other faces are left pending.
+> 2. **Pending points:** on one thread, through `closestPoint` (Alibre).
+> 3. **Points in between:** in parallel by run, take the middle of the two neighbours' heights (as now), or refine analytic points directly. Points on other faces are left pending.
+> 4. **Pending points again:** on one thread, through Alibre.
+>
+> Other details:
+> - Each run keeps its own neighbour guess and counters, summed at the end. `refineOnce` gets the closest-point source for each face as a parameter.
+> - The Newton steps, the early stop and the 0.5 mm and other-face checks are unchanged.
+>
+> ## Part 2: progress window (add-on)
+>
+> ### `addon\ProgressDialog.h/.cpp` (new; add to the vcxproj and filters)
+> - `CGenerateProgressDlg`, modeless, using a new template `IDD_GENERATE_PROGRESS` (13047). It has:
+>   - an operation line, such as "Generating Parallel Finishing 1 (2 of 5)";
+>   - a stage line;
+>   - a progress bar, which is a marquee when there's no fraction.
+> - A small `GenerateProgress` helper does the following:
+>   - It creates the window only once half a second has passed, owned by Alibre's window (`theApp.m_hAlibreWnd`).
+>   - It updates the window at most every 100 ms.
+>   - It keeps it painted while Alibre's thread is busy, using `UpdateWindow` and `PeekMessage(PM_NOREMOVE)`. That avoids Windows marking Alibre "Not responding", without handing clicks and keys to Alibre in the middle of Generate.
+>   - It closes the window when Generate ends.
+>
+> ### Wiring (`addon\CamTabCommand.cpp`)
+> - **Where:** `GenerateTargets` (tree, folder and bulk) and `OnOperationDialogGenerate` create the helper and set the operation line for each operation.
+> - **Stages in `GenerateOperation`:**
+>   - "Reading the parts", "Reading the area", then the generator's own stages.
+>   - Parallel Finishing: "Working out the area", "Dropping the tool on the parts n%", "Moving points onto the true surface n%" and "Writing the moves".
+>   - Waterline Roughing and Waterline Finishing: "Level k of n".
+>   - Plunge Roughing: its stages.
+> - **Other operations** show only their name, with a marquee bar.
+> - **Parallel work:** the parallel loops report progress between slices of their work, on the calling thread.
+> - **The 3D operations' input structs** get the same `progress` member.
+> - **Analytic faces (`PartSurfaces` in `addon\GeometryReader`):** for each non-plane face, query the sphere, cylinder (only when `GetMinorMajorRatio` is 1), cone and torus interfaces. Convert each to an `AnalyticSurface` in assembly mm with `PartToAssembly`, then into the origin's frame in Generate. The log adds a count of analytic and B-spline faces.
+> - **Log wording:** fix "sharing their correction" to "taking the middle of their neighbours".
+>
+> ## Tests
+> - **`ClosestPointOn`:** for each kind against known answers, including the cone's two sides, a torus point inside the tube, and a point on the axis (false).
+> - **Parallel Finishing on the dome:** with `faceSurfaces` set to a sphere and no `closestPoint`, the result matches the callback version within 0.001 mm, makes no calls, and is still within 0.002 mm of the sphere.
+> - **Mixed faces:** with some faces analytic and some through the callback, both kinds are refined.
+> - **Progress:** the callback is called with fractions that never go down, ending at 1.
+> - Rerun the whole suite and the timing tests.
+>
+> ## Docs
+> - **Help:**
+>   - A short "Generating" section for the progress window.
+>   - The Parallel Finishing text says spheres, cylinders, cones and tori are done exactly and quickly, and freeform faces through Alibre.
+>   - The window has no ? button: Alibre's thread is busy while it's open, so a click wouldn't be handled until Generate ends. That's an exception to the CLAUDE.md rule, noted there.
+> - **`CLAUDE.md`** and the spec (doc and `docs\SPEC.md`).
+> - **`Discussion.md`**, through `tools\BuildDiscussion.py`.
+>
+> ## Verification
+> 1. Build Debug and Release, and run `CamCoreTests.exe`.
+> 2. Close Alibre, install Release, and check the hashes.
+> 3. Frank's tests:
+>    1. **`Rough 2`, Parallel Finishing with the ball mill:** the log should show the dome as an analytic face (a sphere) with about 0 closest-point calls, and Generate well under the 11.8 s from last time. The rows should be as smooth as before.
+>    2. **The progress window:** it appears after half a second with the operation's name, its stages and a moving bar, and closes at the end.
+>    3. **Generate a folder with several operations:** the window counts "k of n".
+>    4. **A quick operation (a Drill):** no window appears.
+>    5. **A part with a B-spline face, if one is to hand:** the log shows Alibre calls for it, and the window shows the refinement's progress.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Now `DropCutter::NearFace`, the on-face check for analytic surfaces. It finds the nearest of that face's own triangles in 3D.
+
+> Now the input fields (`faceSurfaces` and `progress`), the per-level progress for the waterline operations, and the project file:
+
+> The core builds cleanly. Now the tests: the formulas against known answers, the dome done entirely in CamCore, a mix of CamCore and callback faces, and the progress reports.
+
+> All tests pass. Now the add-on reads analytic surfaces. First, the exact signatures of the sphere, cylinder, cone and torus interfaces:
+
+> Now the dialog files and the wiring:
+
+> Now the resource template, the project files and the wiring in `CamTabCommand`:
+
+> Debug and Release build cleanly and all tests pass. Now the docs:
+
+> Both parts are built, and all tests pass in Debug and Release. **Not installed:** the administrator prompt was cancelled.
+>
+> **On threads:** spreading the Alibre calls across threads wouldn't help. Alibre's objects live on its own thread, so calls from other threads are passed back to it and still run one at a time. What does help is not asking Alibre at all for the common surface types:
+> - **New `core\SurfaceGeometry`:** it works out the exact closest point on a sphere, cylinder, cone or torus.
+> - **Reading surfaces:** `PartSurfaces` reads each face's definition from Alibre with `IADSphere`, `IADCylinder`, `IADCone` and `IADTorus`. A face is used only if its own facets lie on it within 0.1 mm; otherwise the log says so and Alibre is asked as before. For cones, I don't know whether Alibre gives the angle in radians or degrees, or which way it widens, so every combination is tried against the facets.
+> - **All cores:** points on those faces are now refined on all cores, row by row. Points on spline and other freeform faces are still asked of Alibre one at a time, afterwards.
+> - **In the tests:** the dome done this way matches the version that asks for every point within 0.001 mm, with no calls at all. A part mixing both kinds of face refines both.
+> - **Unproven in Alibre:** the four surface interfaces. The `[surfaces]` log line now counts each part's planes, the faces worked out in AlibreCAM, and those asked of Alibre.
+>
+> **The Generating window:**
+> - **When:** any Generate that takes more than half a second, whether from the tree, a folder, several chosen operations, or an operation dialog's Generate button.
+> - **What it shows:** the operation (and "2 of 5" for several), the stage, and a bar where the fraction is known. Stages include reading the area and the parts, each level of a waterline operation, and Parallel Finishing's steps.
+> - **How it behaves:** as you chose, there's no Cancel. Alibre doesn't respond to clicks or keys until Generate finishes, but Windows won't mark it "Not responding". Operations with no fraction to report show their stage with the bar hidden, because a moving bar needs Alibre to be handling messages.
+> - **No ? button:** a click on it wouldn't be handled until Generate ends. I've noted that as the one exception to the help-button rule in `CLAUDE.md`.
+>
+> The help has a new Generating section, and the Parallel Finishing text explains which faces are fast. The spec (rev 198) and `CLAUDE.md` are updated too.
+>
+> After installing, test:
+> 1. Generate Parallel Finishing on `Rough 2` with the ball mill. The `[surfaces]` line should count the dome as worked out in AlibreCAM, the `true surface` line should show about 0 asked of Alibre, and Generate should take well under the last 11.8 s. The rows should be as smooth as before.
+> 2. The Generating window should appear with the operation's name and its stages, then close at the end.
+> 3. Generate a folder with several operations: the window should count "k of n".
+> 4. Generate a Drill on its own: no window should appear.
+> 5. If a part has a spline face, its points should be asked of Alibre, with the window's bar moving for that stage.
+
+### 🧑 Frank · 21:12
+
+> Install it
+
+### 🤖 Claude
+
+> It's installed, and the add-on and help match the Release build. Start Alibre and generate Parallel Finishing on `Rough 2` with the ball mill. Watch for the Generating window, then say "check the logs" and I'll compare the `[surfaces]` and `true surface` lines with the last run (11.8 s, 102,152 Alibre calls).
+
+### 🧑 Frank · 21:13
+
+> check the logs
+
+### 🤖 Claude
+
+> It worked: Parallel Finishing on `Rough 2` now takes **1.0 s**, down from 11.8 s.
+>
+> | | 20:45 (before) | 21:13 (now) |
+> |---|---|---|
+> | Dome face | asked of Alibre | read as a sphere, worked out in AlibreCAM |
+> | Points refined | 77,622 | 77,622 |
+> | Taking the middle of their neighbours | 77,318 | 77,318 |
+> | Calls to Alibre | 102,152 | 0 |
+> | Kept the triangles' answer | 0 | 0 |
+> | Moves | 10,251 | 10,251 |
+> | Generate time | 11.8 s | 1.0 s |
+>
+> So `IADSphere` works in Alibre 27.0.1: the dome's centre and radius matched its own facets within 0.1 mm. The point counts and the 10,251 moves are the same as the run that asked Alibre for every point, so the result hasn't changed, only the speed. The other three surface types (cylinder, cone, torus) are still unproven in Alibre.
+>
+> At 1 s, Generate is over the half-second mark, so the Generating window should have appeared briefly. Did it show up and look right?
+
+### 🧑 Frank · 21:22
+
+> check logs again for a spline surface.
+
+### 🤖 Claude
+
+> The spline run worked but was slow: Parallel Finishing on `Rough 3` took **45.9 s**, all of it spent on Alibre calls for the spline face.
+>
+> | | `Rough 3` (spline), 21:21 |
+> |---|---|
+> | Faces | 6: 5 planes and 1 asked of Alibre (none worked out in AlibreCAM) |
+> | Points refined | 56,931 of 56,931 |
+> | Taking the middle of their neighbours | 55,589 |
+> | Calls to Alibre | 57,402 (just over 1 per point) |
+> | Kept the triangles' answer | 0 |
+> | Generate time | 45.9 s, for 1,170 moves |
+>
+> So the method itself works on a spline, and every point landed on the true surface. But Alibre's `GetClosestPoint` costs about **0.8 ms** per call on a spline, against about 0.1 ms on the sphere. The answers converge in about one call per point, so cutting calls per point won't help.
+>
+> There are two ways to speed it up:
+> 1. **Read the NURBS:** the 27.0.1 headers have `IADFace::GetBSplineCurvesData`, which returns the spline's definition (orders, control points, weights and knots). AlibreCAM could evaluate it itself and find closest points on all cores, as it now does for spheres. That should bring this run to about a second. It's the bigger job: a NURBS evaluator in CamCore with tests, and the call is unproven in Alibre. I'd check its output against the face's facets, as with the other surfaces, and fall back to asking Alibre if they disagree.
+> 2. **Refine fewer points:** refine every fourth point instead of every second, and fill the rest from their neighbours. That's about twice as fast (roughly 23 s here). The fill-in error grows with the square of the spacing, so it's still about a micron on a gently curved face, but more on tight curves.
+
+### 🧑 Frank · 21:24
+
+> Add this performance improvement to the list of things to do later.
+
+### 🤖 Claude
+
+> I've added a new **Performance** item to [TODO.md](TODO.md), with no priority mark. It says:
+> - **The problem:** spline faces in Parallel Finishing are slow because each point is asked of Alibre, at about 0.8 ms a point (46 s on `Rough 3`).
+> - **The fix:** read each spline face's NURBS with `IADFace::GetBSplineCurvesData` and find closest points in AlibreCAM on all cores, as spheres, cylinders, cones and tori already are. Check the result against the face's facets and fall back to Alibre if they disagree.
+> - **The simpler option:** refine every fourth point instead of every second. That's about twice as fast, a little less exact on tight curves.
+
+### 🧑 Frank · 21:25
+
+> The "generating" window popped up, but was in the top left corner.  Can it be moved to the middle?
+
+### 🤖 Claude
+
+> I'll centre the window on the top-level window that holds the CAM tab (the design window you're working in), with the screen's work area as a fallback.
+
+> `m_pWnd` can be null in some paths, so I'll check it rather than call through it:
+
+> The build failed: `near` is a Win32 macro (an old memory-model keyword, defined as nothing). Renaming it to `nearWindow`:
+
+> Both builds are clean. Installing:
+
 ---
 
 # Side conversation

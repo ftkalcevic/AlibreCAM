@@ -47,6 +47,8 @@ enum class DropSide
     Into
 };
 
+class GenerateProgress;
+
 class CCamTabCommand : public CCommandBase
 {
 public:
@@ -287,6 +289,9 @@ private:
 
     // Only one dialog is open at a time, so this is set only when the others aren't.
     CPartBoxStockDlg* m_pPartBoxDlg;
+
+    // The progress window's helper while Generate runs, or null.
+    GenerateProgress* m_pProgress = nullptr;
 
     // The simulation, while its dialog is open, and its stock's mesh, chunk by chunk and joined.
     CSimulationDlg* m_pSimulationDlg;

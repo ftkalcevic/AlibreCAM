@@ -19,6 +19,7 @@
 #include "SettingsDialog.h"
 #include "StockDialog.h"
 #include "SimulationDialog.h"
+#include "ProgressDialog.h"
 #include "PseudoPost.h"
 #include "GeometryReader.h"
 #include "Help.h"
@@ -1718,21 +1719,29 @@ void CCamTabCommand::GenerateTargets(const std::vector<StepRef>& targets)
 
     size_t generated = 0;
     std::wstring problems;
-    for (const StepRef& target : targets)
     {
-        camcore::SequenceStep& operation = m_job.sequence[target.step].children[target.child];
-        std::string problem;
-        if (GenerateOperation(target, problem))
+        // The progress window, if it takes a while; it's gone before any message.
+        GenerateProgress progress(targets.size(), (m_pWnd != nullptr) ? m_pWnd->GetSafeHwnd() : nullptr);
+        m_pProgress = &progress;
+        for (size_t index = 0; index < targets.size(); ++index)
         {
-            ++generated;
+            const StepRef& target = targets[index];
+            camcore::SequenceStep& operation = m_job.sequence[target.step].children[target.child];
+            progress.StartOperation(index, FromUtf8(operation.name));
+            std::string problem;
+            if (GenerateOperation(target, problem))
+            {
+                ++generated;
+            }
+            else
+            {
+                operation.toolpath = camcore::Toolpath();
+                problems += L"\n" + FromUtf8(operation.name) + L": " + FromUtf8(problem);
+            }
+            Log(L"[generate] %s: %s", FromUtf8(operation.name).c_str(),
+                problem.empty() ? L"ok" : FromUtf8(problem).c_str());
         }
-        else
-        {
-            operation.toolpath = camcore::Toolpath();
-            problems += L"\n" + FromUtf8(operation.name) + L": " + FromUtf8(problem);
-        }
-        Log(L"[generate] %s: %s", FromUtf8(operation.name).c_str(),
-            problem.empty() ? L"ok" : FromUtf8(problem).c_str());
+        m_pProgress = nullptr;
     }
 
     MarkJobChanged();
@@ -2148,6 +2157,8 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         operation.type == camcore::StepType::WaterlineFinishing ||
         operation.type == camcore::StepType::ParallelFinishing)
     {
+        if (m_pProgress != nullptr)
+            m_pProgress->Update(-1.0, L"Reading the area");
         if (operation.features.empty() && !operation.stockFootprint)
         {
             problem = "There are no features. Pick faces, or edges making closed loops, or add the stock box's "
@@ -2249,6 +2260,8 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         const std::wstring leaveOut = (m_job.stock.kind == camcore::StockKind::Imported && HasStock())
                                           ? FromUtf8(m_job.stock.partPath)
                                           : std::wstring();
+        if (m_pProgress != nullptr)
+            m_pProgress->Update(-1.0, L"Reading the parts");
         std::vector<camcore::Vec3> partTriangles;
         std::wstring partProblem;
         // Parallel Finishing with a ball mill reads each face with its true surface,
@@ -2285,6 +2298,13 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
             plungeInput.faces = std::move(areaFaces);
             plungeInput.outlines = std::move(areaLoops);
             plungeInput.partTriangles = std::move(partTriangles);
+            if (m_pProgress != nullptr)
+            {
+                GenerateProgress* pProgress = m_pProgress;
+                plungeInput.progress = [pProgress](double fraction, const std::string& stage) {
+                    pProgress->Update(fraction, FromUtf8(stage));
+                };
+            }
             roughResult = camcore::GeneratePlungeRoughToolpath(plungeInput);
         }
         else
@@ -2307,9 +2327,26 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
             waterlineInput.faces = std::move(areaFaces);
             waterlineInput.outlines = std::move(areaLoops);
             waterlineInput.partTriangles = std::move(partTriangles);
+            if (m_pProgress != nullptr)
+            {
+                GenerateProgress* pProgress = m_pProgress;
+                waterlineInput.progress = [pProgress](double fraction, const std::string& stage) {
+                    pProgress->Update(fraction, FromUtf8(stage));
+                };
+            }
             if (exactSurfaces)
             {
                 waterlineInput.partTriangleFaces = std::move(partTriangleFaces);
+                for (camcore::AnalyticSurface surface : surfaces.Analytic())
+                {
+                    if (surface.kind != camcore::SurfaceKind::None)
+                    {
+                        const camcore::Vec3 tip = camcore::WorldToFrame(frame.frame, surface.centre + surface.axis);
+                        surface.centre = camcore::WorldToFrame(frame.frame, surface.centre);
+                        surface.axis = tip - surface.centre;
+                    }
+                    waterlineInput.faceSurfaces.push_back(surface);
+                }
                 const camcore::Frame originFrame = frame.frame;
                 waterlineInput.closestPoint = [&surfaces, originFrame](int face, const camcore::Vec3& p,
                                                                        camcore::Vec3& closest, bool& onFace) {
@@ -2335,8 +2372,8 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         Log(L"[generate] roughing: %zu moves, in %llu ms", roughResult.toolpath.moves.size(), GetTickCount64() - start);
         if (exactSurfaces)
         {
-            Log(L"[generate] true surface: %zu of %zu points moved onto it, %zu closest point calls, %zu more between "
-                L"them sharing their correction",
+            Log(L"[generate] true surface: %zu of %zu points moved onto it, %zu asked of Alibre, %zu more taking "
+                L"the middle of their neighbours",
                 roughResult.refinedPoints, roughResult.refineTries, roughResult.refineCalls, roughResult.refineShared);
             Log(L"[generate] true surface: kept the triangles' answer for %zu with no closest point, %zu with the "
                 L"centre on the surface, %zu side contacts, %zu unsettled, %zu off the face, %zu too far",
@@ -2767,7 +2804,15 @@ void CCamTabCommand::OnOperationDialogGenerate(COperationDlg* pDialog)
     ReadModelSize();
 
     std::string problem;
-    const bool ok = GenerateOperation(m_operationTarget, problem);
+    bool ok = false;
+    {
+        GenerateProgress progress(1, (m_pWnd != nullptr) ? m_pWnd->GetSafeHwnd() : nullptr);
+        m_pProgress = &progress;
+        progress.StartOperation(
+            0, FromUtf8(m_job.sequence[m_operationTarget.step].children[m_operationTarget.child].name));
+        ok = GenerateOperation(m_operationTarget, problem);
+        m_pProgress = nullptr;
+    }
     camcore::SequenceStep& operation = m_job.sequence[m_operationTarget.step].children[m_operationTarget.child];
     if (!ok)
         operation.toolpath = camcore::Toolpath();

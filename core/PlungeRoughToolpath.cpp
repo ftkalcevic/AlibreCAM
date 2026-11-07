@@ -761,6 +761,8 @@ namespace camcore
         }
         // The parts' heights over the area and a tool's reach round it.
         const double margin = reach + 1.0;
+        if (input.progress)
+            input.progress(0.0, "Working out the area and the parts' heights");
         PartHeightField heights;
         heights.Build(input.partTriangles, boxLowX - margin, boxLowY - margin, boxHighX + margin, boxHighY + margin,
                       (std::min)(0.5, (std::max)(0.02, tool.diameter / 20.0)));
@@ -790,7 +792,11 @@ namespace camcore
             return Failure("The picked geometry covers no area seen from above.");
 
         // The plunges, then the parts' heights under them.
+        if (input.progress)
+            input.progress(0.5, "Placing the plunges");
         const std::vector<std::vector<Vec3>> rows = PlungeRows(area, reach, pitch, tool.diameter, settings);
+        if (input.progress)
+            input.progress(1.0, "Writing the moves");
         size_t count = 0;
         for (const auto& row : rows)
             count += row.size();

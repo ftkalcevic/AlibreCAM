@@ -37,6 +37,11 @@ namespace camcore
         };
         bool ContactAt(double x, double y, Contact& contact) const;
 
+        // Whether p is within distance of one of this face's own triangles: a
+        // point on a face's unbounded surface that's on the face itself. Safe on
+        // any thread.
+        bool NearFace(int face, const Vec3& p, double distance) const;
+
         // The tool's height above its tip at distance d from its axis (grown by
         // the stock to leave), for d from 0 to Reach().
         double Rise(double d) const;

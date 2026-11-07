@@ -38,6 +38,10 @@ namespace camcore
         double stockMaxZ = 0.0;
         bool haveStockMinZ = false;
         double stockMinZ = 0.0;
+
+        // Told what the calculation is doing (a fraction within each stage), from
+        // the calling thread only.
+        std::function<void(double fraction, const std::string& stage)> progress;
     };
 
     // The parts' highest point over each cell of a grid in the frame's XY: from

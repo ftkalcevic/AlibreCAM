@@ -10,6 +10,7 @@
 #include "Boundary.h"
 #include "CamJob.h"
 #include "PlungeRoughToolpath.h"    // ProfileChain, the area and the parts' heights
+#include "SurfaceGeometry.h"
 #include "Toolpath.h"
 #include "ToolLibrary.h"
 
@@ -33,6 +34,14 @@ namespace camcore
         // itself (not the surface past its edges). It's called from one thread.
         std::vector<int> partTriangleFaces;
         std::function<bool(int face, const Vec3& p, Vec3& closest, bool& onFace)> closestPoint;
+        // Each face's surface where it's a sphere, cylinder, cone or torus (in the
+        // frame), so its closest points are worked out here, on all cores, without
+        // asking closestPoint. Indexed by face; a kind of None, or past the end, asks.
+        std::vector<AnalyticSurface> faceSurfaces;
+
+        // Told how far along the calculation is (0 to 1 within each stage) and what
+        // it's doing, from the calling thread only, often.
+        std::function<void(double fraction, const std::string& stage)> progress;
 
         bool havePartMaxZ = false;
         double partMaxZ = 0.0;

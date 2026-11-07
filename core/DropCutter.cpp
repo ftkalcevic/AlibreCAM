@@ -201,6 +201,79 @@ namespace camcore
         return best;
     }
 
+    namespace
+    {
+        // The squared distance from p to the triangle a b c, in 3D (Ericson's
+        // closest point on a triangle).
+        double TriangleDistanceSquared(const Vec3& p, const Vec3& a, const Vec3& b, const Vec3& c)
+        {
+            const Vec3 ab = b - a, ac = c - a, ap = p - a;
+            const double d1 = Dot(ab, ap), d2 = Dot(ac, ap);
+            Vec3 q;
+            if (d1 <= 0.0 && d2 <= 0.0)
+            {
+                q = a;
+            }
+            else
+            {
+                const Vec3 bp = p - b;
+                const double d3 = Dot(ab, bp), d4 = Dot(ac, bp);
+                const Vec3 cp = p - c;
+                const double d5 = Dot(ab, cp), d6 = Dot(ac, cp);
+                const double vc = d1 * d4 - d3 * d2, vb = d5 * d2 - d1 * d6, va = d3 * d6 - d5 * d4;
+                if (d3 >= 0.0 && d4 <= d3)
+                    q = b;
+                else if (vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0)
+                    q = a + ab * (d1 / (d1 - d3));
+                else if (d6 >= 0.0 && d5 <= d6)
+                    q = c;
+                else if (vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0)
+                    q = a + ac * (d2 / (d2 - d6));
+                else if (va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0)
+                    q = b + (c - b) * ((d4 - d3) / ((d4 - d3) + (d5 - d6)));
+                else
+                {
+                    const double sum = va + vb + vc;
+                    if (std::fabs(sum) < 1e-300)
+                        q = a;
+                    else
+                        q = a + ab * (vb / sum) + ac * (vc / sum);
+                }
+            }
+            const Vec3 d = p - q;
+            return Dot(d, d);
+        }
+    }
+
+    bool DropCutter::NearFace(int face, const Vec3& p, double distance) const
+    {
+        if (m_buckets.empty())
+            return false;
+        const int i0 = (std::max)(0, static_cast<int>(std::floor((p.x - distance - m_xLow) / m_bucket)));
+        const int i1 = (std::min)(m_nx - 1, static_cast<int>(std::floor((p.x + distance - m_xLow) / m_bucket)));
+        const int j0 = (std::max)(0, static_cast<int>(std::floor((p.y - distance - m_yLow) / m_bucket)));
+        const int j1 = (std::min)(m_ny - 1, static_cast<int>(std::floor((p.y + distance - m_yLow) / m_bucket)));
+        const double limit = distance * distance;
+        for (int j = j0; j <= j1; ++j)
+        {
+            for (int i = i0; i <= i1; ++i)
+            {
+                for (int index : m_buckets[static_cast<size_t>(j) * m_nx + i])
+                {
+                    const Triangle& t = m_triangles[static_cast<size_t>(index)];
+                    if (t.face != face)
+                        continue;
+                    if (p.x < t.lowX - distance || p.x > t.highX + distance || p.y < t.lowY - distance ||
+                        p.y > t.highY + distance)
+                        continue;
+                    if (TriangleDistanceSquared(p, t.p[0], t.p[1], t.p[2]) <= limit)
+                        return true;
+                }
+            }
+        }
+        return false;
+    }
+
     bool DropCutter::TipAt(double x, double y, double& tip) const
     {
         Contact contact;

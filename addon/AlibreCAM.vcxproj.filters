@@ -33,6 +33,7 @@
     <ClCompile Include="Help.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="StockDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="MachineDialog.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ProgressDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SimulationDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ToolDialogs.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="AlibreCAM.cpp"><Filter>Source Files</Filter></ClCompile>
@@ -55,6 +56,7 @@
     <ClInclude Include="Help.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="StockDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="MachineDialog.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ProgressDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SimulationDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ToolDialogs.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="AlibreCAM.h"><Filter>Header Files</Filter></ClInclude>

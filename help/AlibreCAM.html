@@ -75,6 +75,7 @@
   <a href="#post">Post</a>
   <a href="#operation">Operation dialog</a>
   <a href="#simulation">Simulation</a>
+  <a href="#generating">Generating</a>
   <h2>Operation tabs</h2>
   <a href="#tab-features">Features</a>
   <a href="#tab-tool">Tool</a>
@@ -188,7 +189,7 @@
   <dt>Delete</dt>
   <dd>Removes the step (a folder with its operations).</dd>
   <dt>Generate</dt>
-  <dd>Calculates the toolpaths of the chosen operation, folder, or every operation. Problems are reported in the status area.</dd>
+  <dd>Calculates the toolpaths of the chosen operation, folder, or every operation. Problems are reported in the status area. If it takes more than half a second, the <a href="#generating">Generating</a> window shows how it's going.</dd>
   <dt>Clear Toolpath / Clear Toolpaths</dt>
   <dd>Throws away the generated toolpaths of the chosen operation, folder, or every operation (suppressed ones too), and Facing's boundaries, so nothing is drawn until Generate runs again. Greyed when there's nothing to clear. The job then has unsaved changes.</dd>
   <dt>Simulate</dt>
@@ -206,6 +207,11 @@
   <dt>Save</dt>
   <dd>Saves the job to its <code>.cam</code> file beside the assembly.</dd>
 </dl>
+</section>
+
+<section id="generating">
+<h2>Generating window</h2>
+<p>Appears when Generate (from the tree, a folder, several chosen operations, or an operation dialog's Generate button) takes more than half a second, in the middle of Alibre's window, and closes when it's done. It shows the operation being generated (and which of how many), what it's doing (reading the area, reading the parts, each level of a waterline operation, dropping the tool on the parts, moving points onto the true surface), and a bar for how far along that is, where that's known. Alibre is busy while it's open, so clicks and keys wait until Generate ends; there's no Cancel. It has no ? button for the same reason.</p>
 </section>
 
 <section id="simulation">
@@ -834,7 +840,7 @@
 <section id="tab-parallel-finishing">
 <h2>Parallel Finishing tab</h2>
 <p>Parallel Finishing finishes a 3D shape with straight rows a stepover apart, the tool rising and falling to follow the parts' surface with its own shape (a ball mill's ball, a corner radius, a flat end), so it never cuts into them. It suits gently curved and sloping surfaces; on steep walls the rows are far apart along the wall, so use Waterline Finishing there. Its tabs are Features, Tool, Feeds &amp; Speeds, Clearance, <a href="#tab-waterline-levels">Cut Levels</a> (the waterline operations' tab, showing only Top and Bottom) and this one.</p>
-<p>The area comes from the Features tab as for the waterline operations. The tool's centre runs right up to the area's edge, and past it by the Overtravel. Where there's no part under the tool, it goes down to the bottom of the cut. It's always a single finishing pass over the whole depth: its Cut Levels tab has only Top and Bottom. Rows are cut only where the surface is below the Top, and go no lower than the Bottom. Rows are entered at the plunge feed from 1 mm above the top. The tool's height along each row is worked out exactly for its shape against the parts' triangles (the facets Alibre gives for each part), checked every half grid cell along the row (the tool's diameter / 80) and kept to within 0.01 mm when the moves are simplified. The facets are flat, so on a curved surface they're a little off the true surface. With a ball mill each point is then moved onto the true surface of the face it touches, so the ball sits exactly its radius plus the Stock to Leave from it. Flat faces are already exact, so points on them are left as they are. To save time, every second point along a row is moved onto the surface, and each point between two on the same face takes the middle of their heights, which is within a micron or so on a smooth surface. Points where it can't be done (the contact is on the ball's side, or Alibre can't say) keep the facets' answer; the log says how many and why. Alibre has to answer for every point one at a time, so with a ball mill Generate can take tens of seconds, and Alibre is busy until it's done.</p>
+<p>The area comes from the Features tab as for the waterline operations. The tool's centre runs right up to the area's edge, and past it by the Overtravel. Where there's no part under the tool, it goes down to the bottom of the cut. It's always a single finishing pass over the whole depth: its Cut Levels tab has only Top and Bottom. Rows are cut only where the surface is below the Top, and go no lower than the Bottom. Rows are entered at the plunge feed from 1 mm above the top. The tool's height along each row is worked out exactly for its shape against the parts' triangles (the facets Alibre gives for each part), checked every half grid cell along the row (the tool's diameter / 80) and kept to within 0.01 mm when the moves are simplified. The facets are flat, so on a curved surface they're a little off the true surface. With a ball mill each point is then moved onto the true surface of the face it touches, so the ball sits exactly its radius plus the Stock to Leave from it. Spheres, cylinders, cones and tori are worked out by AlibreCAM itself, on all the computer's cores, which is quick; other curved faces (such as splines) have to be asked of Alibre a point at a time, which is slower. Flat faces are already exact, so points on them are left as they are. To save time, every second point along a row is moved onto the surface, and each point between two on the same face takes the middle of their heights, which is within a micron or so on a smooth surface. Points where it can't be done (the contact is on the ball's side, or Alibre can't say) keep the facets' answer; the log says how many and why. Alibre has to answer for every point one at a time, so with a ball mill Generate can take tens of seconds, and Alibre is busy until it's done.</p>
 <dl>
   <dt>Stock to Leave</dt>
   <dd>Material left covering the parts: the tool stays this far from them. 0 (the default) cuts to the parts' surface. 0 or more.</dd>

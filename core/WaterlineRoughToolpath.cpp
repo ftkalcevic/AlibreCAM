@@ -664,6 +664,8 @@ namespace camcore
 
     ToolpathResult GenerateWaterlineRoughToolpath(const WaterlineRoughToolpathInput& input)
     {
+        if (input.progress)
+            input.progress(0.0, "Working out the area and the tool's reach");
         WaterlineSetup w;
         std::string problem;
         if (!PrepareWaterline(input, StepType::WaterlineRoughing, w, problem))
@@ -700,6 +702,9 @@ namespace camcore
 
         for (size_t li = 0; li < levels.size(); ++li)
         {
+            if (input.progress)
+                input.progress(static_cast<double>(li) / levels.size(),
+                               "Level " + std::to_string(li + 1) + " of " + std::to_string(levels.size()));
             const double z = levels[li];
 
             // Where the tool can't come down to this level, how far each cell is from
@@ -1005,6 +1010,8 @@ namespace camcore
 
     ToolpathResult GenerateWaterlineFinishToolpath(const WaterlineRoughToolpathInput& input)
     {
+        if (input.progress)
+            input.progress(0.0, "Working out the area and the tool's reach");
         WaterlineSetup w;
         std::string problem;
         if (!PrepareWaterline(input, StepType::WaterlineFinishing, w, problem))
@@ -1183,6 +1190,9 @@ namespace camcore
         bool flip = false;
         for (size_t li = 0; li < levels.size(); ++li)
         {
+            if (input.progress)
+                input.progress(static_cast<double>(li) / levels.size(),
+                               "Level " + std::to_string(li + 1) + " of " + std::to_string(levels.size()));
             for (Piece& piece : laps(levels[li]))
             {
                 bool reverse = settings.direction == CutDirection::Conventional;
@@ -1329,6 +1339,26 @@ namespace camcore
 
     ToolpathResult GenerateParallelFinishToolpath(const WaterlineRoughToolpathInput& input)
     {
+        // Progress, from this thread only; parallel work reports between slices.
+        const auto Report = [&](double fraction, const char* stage) {
+            if (input.progress)
+                input.progress(fraction, stage);
+        };
+        const auto ParallelSlices = [&](size_t count, const char* stage, const auto& work) {
+            const size_t slices = 40;
+            std::vector<size_t> indexes;
+            for (size_t slice = 0; slice < slices; ++slice)
+            {
+                const size_t begin = count * slice / slices, end = count * (slice + 1) / slices;
+                indexes.clear();
+                for (size_t k = begin; k < end; ++k)
+                    indexes.push_back(k);
+                std::for_each(std::execution::par, indexes.begin(), indexes.end(), [&](size_t k) { work(k); });
+                Report(static_cast<double>(slice + 1) / slices, stage);
+            }
+        };
+
+        Report(0.0, "Working out the area");
         WaterlineSetup w;
         std::string problem;
         if (!PrepareWaterline(input, StepType::ParallelFinishing, w, problem))
@@ -1352,22 +1382,48 @@ namespace camcore
         // A ball's contact moved onto the face's true surface: its centre straight
         // up or down until it's the ball's radius plus the stock to leave from the
         // surface, by Newton's method. Kept only if it settles on the face near the
-        // triangles' answer, and never below another face's.
-        const bool refine = input.tool->type == ToolType::BallMill && input.closestPoint &&
-                            !input.partTriangleFaces.empty();
+        // triangles' answer, and never below another face's. Spheres, cylinders,
+        // cones and tori are worked out here, on any thread; other faces are asked
+        // of Alibre (closestPoint), on this thread only.
+        const bool refine = input.tool->type == ToolType::BallMill && !input.partTriangleFaces.empty() &&
+                            (static_cast<bool>(input.closestPoint) || !input.faceSurfaces.empty());
         const double ballRadius = input.tool->diameter / 2.0;
-        size_t refined = 0, refineTries = 0, refineCalls = 0;
-        size_t noAnswer = 0, onSurface = 0, sideContact = 0, unsettled = 0, offFace = 0, tooFar = 0, shared = 0;
+        const auto analytic = [&](int face) {
+            return face >= 0 && static_cast<size_t>(face) < input.faceSurfaces.size() &&
+                   input.faceSurfaces[static_cast<size_t>(face)].kind != SurfaceKind::None;
+        };
+        struct RefineCounts
+        {
+            size_t refined = 0, tries = 0, calls = 0, noAnswer = 0, onSurface = 0, sideContact = 0, unsettled = 0,
+                   offFace = 0, tooFar = 0, shared = 0;
+            void Add(const RefineCounts& o)
+            {
+                refined += o.refined;
+                tries += o.tries;
+                calls += o.calls;
+                noAnswer += o.noAnswer;
+                onSurface += o.onSurface;
+                sideContact += o.sideContact;
+                unsettled += o.unsettled;
+                offFace += o.offFace;
+                tooFar += o.tooFar;
+                shared += o.shared;
+            }
+        };
+        RefineCounts totals;
         // Refines one contact, starting with the centre moved by guess from the
         // triangles' answer (a neighbour's correction, as it changes slowly). Each
         // step squares the error, so once the next would be under 0.01 microns
         // it stops without asking again. False, keeping the triangles' answer, if
         // it can't be done.
         const auto refineOnce = [&](double x, double y, const DropCutter::Contact& contact, double guess,
-                                    double& tip) {
+                                    double& tip, RefineCounts& n) {
             if (contact.face < 0)
                 return false;
-            ++refineTries;
+            const bool here = analytic(contact.face);
+            if (!here && !input.closestPoint)
+                return false;
+            ++n.tries;
             const double gap = ballRadius + w.s;
             double centreZ = contact.tip + ballRadius + guess;
             bool settled = false;
@@ -1376,17 +1432,26 @@ namespace camcore
             for (int k = 0; k < 8 && !settled; ++k)
             {
                 const Vec3 centre{ x, y, centreZ };
-                ++refineCalls;
-                if (!input.closestPoint(contact.face, centre, closest, onFace))
+                bool answered = false;
+                if (here)
                 {
-                    ++noAnswer;
+                    answered = ClosestPointOn(input.faceSurfaces[static_cast<size_t>(contact.face)], centre, closest);
+                }
+                else
+                {
+                    ++n.calls;
+                    answered = input.closestPoint(contact.face, centre, closest, onFace);
+                }
+                if (!answered)
+                {
+                    ++n.noAnswer;
                     return false;
                 }
                 const Vec3 d = centre - closest;
                 const double distance = Length(d);
                 if (distance < 1e-9)
                 {
-                    ++onSurface;
+                    ++n.onSurface;
                     return false;
                 }
                 const double nz = d.z / distance;
@@ -1398,7 +1463,7 @@ namespace camcore
                 }
                 if (nz < 0.05)
                 {
-                    ++sideContact;
+                    ++n.sideContact;
                     return false;   // a contact on the ball's side: leave it to the triangles
                 }
                 const double step = error / nz;
@@ -1407,32 +1472,32 @@ namespace camcore
                 const double next = (1.0 - nz * nz) / (2.0 * gap * nz * nz * nz) * step * step;
                 settled = next < 1e-5;
             }
+            // A worked out point is on the face if it's near the face's own facets.
+            if (settled && here)
+                onFace = cutter.NearFace(contact.face, closest, 0.1);
             if (!settled || !onFace)
             {
-                ++(settled ? offFace : unsettled);
+                ++(settled ? n.offFace : n.unsettled);
                 return false;
             }
             tip = centreZ - ballRadius;
             if (std::fabs(tip - contact.tip) > 0.5)
             {
-                ++tooFar;
+                ++n.tooFar;
                 return false;
             }
-            ++refined;
+            ++n.refined;
             return true;
         };
-        // The height for a contact, refined when it can be: one thread only.
-        const auto refinedHeight = [&](double x, double y, const DropCutter::Contact& contact, double guess) {
-            double tip = 0.0;
-            if (refineOnce(x, y, contact, guess, tip))
-                return (std::max)({ tip, contact.others, floorZ });
-            return (std::max)(contact.tip, floorZ);
-        };
+        // The height at (x, y), refined when it can be: this thread only.
         const auto exactAt = [&](double x, double y) {
             DropCutter::Contact contact;
             if (!cutter.ContactAt(x, y, contact))
                 return floorZ;
-            return refine ? refinedHeight(x, y, contact, 0.0) : (std::max)(contact.tip, floorZ);
+            double tip = 0.0;
+            if (refine && refineOnce(x, y, contact, 0.0, tip, totals))
+                return (std::max)({ tip, contact.others, floorZ });
+            return (std::max)(contact.tip, floorZ);
         };
         const double tolerance = (std::min)(w.cell / 4.0, 0.01);
         const auto inArea = [&](double x, double y) {
@@ -1533,22 +1598,22 @@ namespace camcore
         }
         if (refine)
         {
-            // The triangles' contacts on all cores, then each refined on one thread.
+            // The triangles' contacts on all cores.
             std::vector<DropCutter::Contact> contacts(samples.size());
             std::vector<char> found(samples.size(), 0);
-            std::vector<size_t> order(samples.size());
-            for (size_t k = 0; k < order.size(); ++k)
-                order[k] = k;
-            std::for_each(std::execution::par, order.begin(), order.end(), [&](size_t k) {
+            ParallelSlices(samples.size(), "Dropping the tool on the parts", [&](size_t k) {
                 found[k] = cutter.ContactAt(samples[k]->x, samples[k]->y, contacts[k]) ? 1 : 0;
             });
+
             // Along each run, every second point (and the last) is refined, starting
             // from the one before's correction. The point between two refined on
-            // the same face shares their correction (the true surface less the
-            // triangles', which changes smoothly); others are refined themselves.
-            std::vector<char> done(samples.size(), 0);
+            // the same face takes the middle of their heights. Points on faces
+            // worked out here go on all cores, run by run; those Alibre is asked
+            // about follow on this thread.
+            std::vector<char> done(samples.size(), 0), pending(samples.size(), 0);
             std::vector<double> correction(samples.size(), 0.0);
-            const auto refinePoint = [&](size_t k, double guess) {
+            std::vector<RefineCounts> runCounts(runSpans.size());
+            const auto refinePoint = [&](size_t k, double guess, RefineCounts& n) {
                 Vec3& p = *samples[k];
                 if (!found[k])
                 {
@@ -1556,7 +1621,7 @@ namespace camcore
                     return;
                 }
                 double tip = 0.0;
-                if (refineOnce(p.x, p.y, contacts[k], guess, tip))
+                if (refineOnce(p.x, p.y, contacts[k], guess, tip, n))
                 {
                     done[k] = 1;
                     correction[k] = tip - contacts[k].tip;
@@ -1567,27 +1632,70 @@ namespace camcore
                     p.z = (std::max)(contacts[k].tip, floorZ);
                 }
             };
-            for (const auto& [first, last] : runSpans)
-            {
-                double guess = 0.0;
-                int guessFace = -1;
+            const auto askAlibre = [&](size_t k) {
+                return found[k] && contacts[k].face >= 0 && !analytic(contacts[k].face);
+            };
+            const auto isMain = [](size_t first, size_t last, size_t k) {
+                return (k - first) % 2 == 0 || k + 1 == last;
+            };
+            // The guess for point k: the correction of the refined point before it on the same face.
+            const auto guessFor = [&](size_t first, size_t k, size_t back) {
+                if (k < first + back)
+                    return 0.0;
+                const size_t before = k - back;
+                return (found[k] && done[before] && contacts[before].face == contacts[k].face) ? correction[before]
+                                                                                                : 0.0;
+            };
+
+            // 1. The main points worked out here.
+            ParallelSlices(runSpans.size(), "Moving points onto the true surface", [&](size_t r) {
+                const auto [first, last] = runSpans[r];
                 for (size_t k = first; k < last; ++k)
                 {
-                    if ((k - first) % 2 == 1 && k + 1 != last)
+                    if (!isMain(first, last, k))
                         continue;
-                    const int face = found[k] ? contacts[k].face : -1;
-                    refinePoint(k, face == guessFace ? guess : 0.0);
-                    guess = correction[k];
-                    guessFace = done[k] ? face : -1;
+                    if (askAlibre(k))
+                    {
+                        pending[k] = 1;
+                        continue;
+                    }
+                    refinePoint(k, guessFor(first, k, (k + 1 == last && (k - first) % 2 == 1) ? 1 : 2),
+                                runCounts[r]);
                 }
+            });
+            // 2. The main points Alibre is asked about, on this thread.
+            const auto askPending = [&](const char* stage) {
+                size_t count = 0, total = 0;
+                for (char flag : pending)
+                    total += flag ? 1 : 0;
+                for (size_t r = 0; r < runSpans.size(); ++r)
+                {
+                    const auto [first, last] = runSpans[r];
+                    for (size_t k = first; k < last; ++k)
+                    {
+                        if (!pending[k])
+                            continue;
+                        pending[k] = 0;
+                        const size_t back = isMain(first, last, k) ? ((k + 1 == last && (k - first) % 2 == 1) ? 1 : 2)
+                                                                   : 1;
+                        refinePoint(k, guessFor(first, k, back), totals);
+                        if (++count % 500 == 0)
+                            Report(static_cast<double>(count) / total, stage);
+                    }
+                }
+            };
+            askPending("Asking Alibre for points on the true surface");
+            // 3. The points between, worked out here where they can be.
+            ParallelSlices(runSpans.size(), "Filling in between the refined points", [&](size_t r) {
+                const auto [first, last] = runSpans[r];
+                RefineCounts& n = runCounts[r];
                 for (size_t k = first + 1; k + 1 < last; k += 2)
                 {
-                    // Within one face the true heights are smooth, so the middle of two
-                    // refined ones is off by only the curvature times the spacing
-                    // squared over 8; the triangles' answer has kinks, so it isn't used,
-                    // except as a check that nothing odd lies between.
+                    // Within one face the true heights are smooth, so the middle of
+                    // two refined ones is off by only the curvature times the spacing
+                    // squared over 8; the triangles' answer has kinks, so it isn't
+                    // used, except as a check that nothing odd lies between.
                     const int face = found[k] ? contacts[k].face : -1;
-                    bool sharedHere = false;
                     if (face >= 0 && done[k - 1] && done[k + 1] && contacts[k - 1].face == face &&
                         contacts[k + 1].face == face)
                     {
@@ -1598,21 +1706,25 @@ namespace camcore
                         if (std::fabs(tip - check) < 0.05)
                         {
                             samples[k]->z = (std::max)({ tip, contacts[k].others, floorZ });
-                            ++shared;
-                            sharedHere = true;
+                            ++n.shared;
+                            continue;
                         }
                     }
-                    if (!sharedHere)
-                    {
-                        refinePoint(k, done[k - 1] && contacts[k - 1].face == face ? correction[k - 1] : 0.0);
-                    }
+                    if (askAlibre(k))
+                        pending[k] = 1;
+                    else
+                        refinePoint(k, guessFor(first, k, 1), n);
                 }
-            }
+            });
+            // 4. The points between that Alibre is asked about.
+            askPending("Asking Alibre for points between");
+            for (const RefineCounts& n : runCounts)
+                totals.Add(n);
         }
         else
         {
-            std::for_each(std::execution::par, samples.begin(), samples.end(),
-                          [&](Vec3* p) { p->z = surfaceAt(p->x, p->y); });
+            ParallelSlices(samples.size(), "Dropping the tool on the parts",
+                           [&](size_t k) { samples[k]->z = surfaceAt(samples[k]->x, samples[k]->y); });
         }
 
         // Each level's passes: the surface, but no lower than the level, trimmed
@@ -1711,16 +1823,17 @@ namespace camcore
         if (result.toolpath.moves.empty())
             return Failure("There's nothing to cut in the area between the top and the bottom.");
         result.ok = true;
-        result.refinedPoints = refined;
-        result.refineTries = refineTries;
-        result.refineCalls = refineCalls;
-        result.refineNoAnswer = noAnswer;
-        result.refineOnSurface = onSurface;
-        result.refineSideContact = sideContact;
-        result.refineUnsettled = unsettled;
-        result.refineOffFace = offFace;
-        result.refineTooFar = tooFar;
-        result.refineShared = shared;
+        result.refinedPoints = totals.refined;
+        result.refineTries = totals.tries;
+        result.refineCalls = totals.calls;
+        result.refineNoAnswer = totals.noAnswer;
+        result.refineOnSurface = totals.onSurface;
+        result.refineSideContact = totals.sideContact;
+        result.refineUnsettled = totals.unsettled;
+        result.refineOffFace = totals.offFace;
+        result.refineTooFar = totals.tooFar;
+        result.refineShared = totals.shared;
+        Report(1.0, "Writing the moves");
         return result;
     }
 }

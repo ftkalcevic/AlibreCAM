@@ -1468,6 +1468,111 @@ bool ReadPartFacets(const std::wstring& path, std::vector<Vec3>& triangles, std:
 /////////////////////////////////////////////////////////////////////////////
 // PartSurfaces
 
+namespace
+{
+    Vec3 PointOf(IADPoint* pPoint)
+    {
+        return { pPoint->GetX(), pPoint->GetY(), pPoint->GetZ() };
+    }
+
+    // A direction in the part, as a unit vector in the assembly.
+    bool DirectionOf(IADVector* pVector, const Vec3& from, const PartToAssembly& toAssembly, Vec3& direction)
+    {
+        const Vec3 v{ pVector->GetX(), pVector->GetY(), pVector->GetZ() };
+        return camcore::Normalise(toAssembly.Point(from + v) - toAssembly.Point(from), direction);
+    }
+
+    // A face's surface as a sphere, cylinder, cone or torus, in the assembly in
+    // mm, kept only if its facets lie on it (within 0.1 mm, twice their
+    // tolerance). A cone's angle may be in radians or degrees and widen either
+    // way along its axis; the way that fits is used.
+    bool ReadAnalyticSurface(IADSurface* pSurface, const PartToAssembly& toAssembly, const std::vector<Vec3>& points,
+                             camcore::AnalyticSurface& surface, const std::wstring& name)
+    {
+        using camcore::SurfaceKind;
+        surface = camcore::AnalyticSurface();
+        if (pSurface == nullptr)
+            return false;
+        const double kFit = 0.1;
+        try
+        {
+            camcore::AnalyticSurface s;
+            const wchar_t* kind = nullptr;
+            if (IADSpherePtr sphere = QI<IADSpherePtr>(pSurface))
+            {
+                kind = L"sphere";
+                s.kind = SurfaceKind::Sphere;
+                const Vec3 centre = PointOf(sphere->GetCenter());
+                s.centre = toAssembly.Point(centre);
+                s.radius = toAssembly.Length(sphere->GetRadius());
+            }
+            else if (IADCylinderPtr cylinder = QI<IADCylinderPtr>(pSurface))
+            {
+                kind = L"cylinder";
+                s.kind = SurfaceKind::Cylinder;
+                const Vec3 base = PointOf(cylinder->GetBasePoint());
+                s.centre = toAssembly.Point(base);
+                if (!DirectionOf(cylinder->GetAxis(), base, toAssembly, s.axis))
+                    return false;
+                s.radius = toAssembly.Length(cylinder->GetRadius());
+            }
+            else if (IADTorusPtr torus = QI<IADTorusPtr>(pSurface))
+            {
+                kind = L"torus";
+                s.kind = SurfaceKind::Torus;
+                const Vec3 centre = PointOf(torus->GetCenter());
+                s.centre = toAssembly.Point(centre);
+                if (!DirectionOf(torus->GetAxis(), centre, toAssembly, s.axis))
+                    return false;
+                s.radius = toAssembly.Length(torus->GetMajorRadius());
+                s.minorRadius = toAssembly.Length(torus->GetMinorRadius());
+            }
+            else if (IADConePtr cone = QI<IADConePtr>(pSurface))
+            {
+                kind = L"cone";
+                s.kind = SurfaceKind::Cone;
+                const Vec3 base = PointOf(cone->GetBasePoint());
+                s.centre = toAssembly.Point(base);
+                if (!DirectionOf(cone->GetAxis(), base, toAssembly, s.axis))
+                    return false;
+                s.radius = toAssembly.Length(cone->GetRadius());
+                const double angle = cone->GetHalfAngle();
+                const bool expanding = cone->GetIsExpanding() != VARIANT_FALSE;
+                for (double radians : { angle, angle * 3.14159265358979323846 / 180.0 })
+                {
+                    for (double sign : { expanding ? 1.0 : -1.0, expanding ? -1.0 : 1.0 })
+                    {
+                        s.slope = sign * std::tan(radians);
+                        if (camcore::SurfaceFitsPoints(s, points, kFit))
+                        {
+                            surface = s;
+                            return true;
+                        }
+                    }
+                }
+                Log(L"[surfaces] %s: a cone (half angle %g, %s) doesn't fit its facets, so Alibre is asked",
+                    name.c_str(), angle, expanding ? L"expanding" : L"narrowing");
+                return false;
+            }
+            if (kind == nullptr)
+                return false;
+            if (!camcore::SurfaceFitsPoints(s, points, kFit))
+            {
+                Log(L"[surfaces] %s: a %s doesn't fit its facets, so Alibre is asked", name.c_str(), kind);
+                return false;
+            }
+            surface = s;
+            return true;
+        }
+        catch (const _com_error& error)
+        {
+            Log(L"[surfaces] %s: a surface couldn't be read, hr=0x%08X", name.c_str(),
+                static_cast<unsigned>(error.Error()));
+            return false;
+        }
+    }
+}
+
 struct PartSurfaces::Impl
 {
     struct Face
@@ -1478,6 +1583,7 @@ struct PartSurfaces::Impl
     };
     std::vector<Face> faces;
     std::vector<PartToAssembly> parts;
+    std::vector<camcore::AnalyticSurface> analytic;     // one a face
 
     // How ClosestPoint failed: no surface, no point found, an error (the first's code).
     mutable size_t noSurface = 0, notFound = 0, errors = 0;
@@ -1498,6 +1604,7 @@ bool PartSurfaces::Read(IADSession* pAssembly, const std::wstring& leaveOutPath,
     problem.clear();
     m_impl->faces.clear();
     m_impl->parts.clear();
+    m_impl->analytic.clear();
     const ULONGLONG start = GetTickCount64();
     try
     {
@@ -1526,7 +1633,7 @@ bool PartSurfaces::Read(IADSession* pAssembly, const std::wstring& leaveOutPath,
 
             // Each face's facets, about 0.05 mm from its surface, in the part's units.
             const double partMm = MillimetresPerModelUnit(design);
-            size_t partTriangles = 0, partFaces = 0, planes = 0;
+            size_t partTriangles = 0, partFaces = 0, planes = 0, analyticFaces = 0;
             try
             {
                 IADBodiesPtr bodies = QI<IADPartSessionPtr>(design)->GetBodies();
@@ -1568,6 +1675,14 @@ bool PartSurfaces::Read(IADSession* pAssembly, const std::wstring& leaveOutPath,
                             entry.part = partIndex;
                             index = static_cast<int>(m_impl->faces.size());
                             m_impl->faces.push_back(entry);
+                            std::vector<Vec3> assemblyPoints;
+                            assemblyPoints.reserve(points.size());
+                            for (const Vec3& p : points)
+                                assemblyPoints.push_back(toAssembly.Point(p));
+                            camcore::AnalyticSurface surface;
+                            if (ReadAnalyticSurface(entry.surface, toAssembly, assemblyPoints, surface, name))
+                                ++analyticFaces;
+                            m_impl->analytic.push_back(surface);
                         }
                         for (const Vec3& p : points)
                             triangles.push_back(toAssembly.Point(p));
@@ -1606,8 +1721,9 @@ bool PartSurfaces::Read(IADSession* pAssembly, const std::wstring& leaveOutPath,
             }
             else
             {
-                Log(L"[surfaces] %s: %zu faces (%zu planes), %zu triangles", name.c_str(), partFaces, planes,
-                    partTriangles);
+                Log(L"[surfaces] %s: %zu faces (%zu planes, %zu spheres, cylinders, cones or tori worked out "
+                    L"here, %zu others asked of Alibre), %zu triangles",
+                    name.c_str(), partFaces, planes, analyticFaces, partFaces - planes - analyticFaces, partTriangles);
             }
             if (partTriangles > 0)
                 ++read;
@@ -1666,6 +1782,11 @@ bool PartSurfaces::ClosestPoint(int face, const Vec3& p, Vec3& closest, bool& on
         }
         return false;
     }
+}
+
+const std::vector<camcore::AnalyticSurface>& PartSurfaces::Analytic() const
+{
+    return m_impl->analytic;
 }
 
 void PartSurfaces::LogFailures() const

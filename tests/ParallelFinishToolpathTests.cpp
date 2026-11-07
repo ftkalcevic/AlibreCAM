@@ -8,6 +8,7 @@
 
 #include "CamJob.h"
 #include "DropCutter.h"
+#include "SurfaceGeometry.h"
 #include "Stock.h"
 #include "WaterlineRoughToolpath.h"
 
@@ -229,6 +230,145 @@ TEST_CASE("a ball's contacts are moved onto the true surface")
     CHECK(unanswered.refinedPoints == 0);
     CHECK(unanswered.refineNoAnswer == unanswered.refineTries);
     CHECK(unanswered.refineTries > 1000);
+}
+
+TEST_CASE("closest points on spheres, cylinders, cones and tori")
+{
+    Vec3 c;
+    AnalyticSurface sphere;
+    sphere.kind = SurfaceKind::Sphere;
+    sphere.centre = { 1, 2, 3 };
+    sphere.radius = 5;
+    REQUIRE(ClosestPointOn(sphere, { 1, 2, 13 }, c));
+    CHECK(Length(c - Vec3{ 1, 2, 8 }) < 1e-12);
+    CHECK_FALSE(ClosestPointOn(sphere, { 1, 2, 3 }, c));
+
+    AnalyticSurface cylinder;
+    cylinder.kind = SurfaceKind::Cylinder;
+    cylinder.axis = { 0, 0, 1 };
+    cylinder.radius = 2;
+    REQUIRE(ClosestPointOn(cylinder, { 5, 0, 7 }, c));
+    CHECK(Length(c - Vec3{ 2, 0, 7 }) < 1e-12);
+    CHECK_FALSE(ClosestPointOn(cylinder, { 0, 0, 4 }, c));
+
+    // A 45 degree cone widening up Z from radius 1 at z = 0: its apex at z = -1.
+    AnalyticSurface cone;
+    cone.kind = SurfaceKind::Cone;
+    cone.axis = { 0, 0, 1 };
+    cone.radius = 1;
+    cone.slope = 1;
+    REQUIRE(ClosestPointOn(cone, { 3, 0, 0 }, c));         // outside: along the normal (1, 0, -1) / root 2
+    CHECK(Length(c - Vec3{ 2, 0, 1 }) < 1e-12);
+    REQUIRE(ClosestPointOn(cone, { 0.5, 0, 2 }, c));       // inside
+    CHECK(Length(c - Vec3{ 1.75, 0, 0.75 }) < 1e-12);
+    REQUIRE(ClosestPointOn(cone, { 0.1, 0, -5 }, c));      // past the apex: the apex
+    CHECK(Length(c - Vec3{ 0, 0, -1 }) < 1e-12);
+
+    AnalyticSurface torus;
+    torus.kind = SurfaceKind::Torus;
+    torus.axis = { 0, 0, 1 };
+    torus.radius = 10;
+    torus.minorRadius = 2;
+    REQUIRE(ClosestPointOn(torus, { 10, 0, 5 }, c));       // above the tube
+    CHECK(Length(c - Vec3{ 10, 0, 2 }) < 1e-12);
+    REQUIRE(ClosestPointOn(torus, { 0, 11, 0 }, c));       // inside the tube
+    CHECK(Length(c - Vec3{ 0, 12, 0 }) < 1e-12);
+    CHECK_FALSE(ClosestPointOn(torus, { 0, 0, 3 }, c));    // on the axis
+
+    // A sphere fits its own mesh's points, and a bigger one doesn't.
+    const std::vector<Vec3> mesh = Dome(0, 0, 15);
+    AnalyticSurface dome;
+    dome.kind = SurfaceKind::Sphere;
+    dome.radius = 15;
+    CHECK(SurfaceFitsPoints(dome, mesh, 0.01));
+    dome.radius = 15.5;
+    CHECK_FALSE(SurfaceFitsPoints(dome, mesh, 0.1));
+}
+
+TEST_CASE("a sphere worked out here gives the same rows as asking, without asking")
+{
+    SequenceStep step = ParallelStep();
+    step.parallelFinishing.direction = CutDirection::Climb;
+    const Tool tool = Ball(6);
+    WaterlineRoughToolpathInput input = Input(step, tool);
+    input.partTriangles = Dome(30, 30, 15, 48, 24);   // facets within 0.03, as Alibre's 0.05 are
+    input.partTriangleFaces.assign(input.partTriangles.size() / 3, 0);
+    input.closestPoint = [&](int, const Vec3& p, Vec3& closest, bool& onFace) {
+        const Vec3 d = p - Vec3{ 30, 30, 0 };
+        closest = Vec3{ 30, 30, 0 } + d * (15.0 / Length(d));
+        onFace = closest.z >= -1e-9;
+        return true;
+    };
+    const ToolpathResult asked = GenerateParallelFinishToolpath(input);
+    REQUIRE(asked.ok);
+
+    AnalyticSurface sphere;
+    sphere.kind = SurfaceKind::Sphere;
+    sphere.centre = { 30, 30, 0 };
+    sphere.radius = 15;
+    input.faceSurfaces = { sphere };
+    size_t calls = 0;
+    input.closestPoint = [&](int, const Vec3&, Vec3&, bool&) {
+        ++calls;
+        return false;
+    };
+    std::vector<std::pair<double, std::string>> reports;
+    input.progress = [&](double fraction, const std::string& stage) { reports.push_back({ fraction, stage }); };
+    const ToolpathResult here = GenerateParallelFinishToolpath(input);
+    REQUIRE(here.ok);
+    CHECK(calls == 0);
+    CHECK(here.refineCalls == 0);
+    CHECK(here.refinedPoints > 1000);
+    REQUIRE(here.toolpath.moves.size() == asked.toolpath.moves.size());
+    double worst = 0.0;
+    for (size_t i = 0; i < here.toolpath.moves.size(); ++i)
+        worst = (std::max)(worst, Length(here.toolpath.moves[i].to - asked.toolpath.moves[i].to));
+    CHECK(worst < 0.001);
+
+    // Progress goes forward within each stage and ends at 1.
+    REQUIRE(!reports.empty());
+    for (size_t i = 1; i < reports.size(); ++i)
+    {
+        if (reports[i].second == reports[i - 1].second)
+            CHECK(reports[i].first >= reports[i - 1].first);
+    }
+    CHECK(reports.back().first == 1.0);
+}
+
+TEST_CASE("faces worked out here and faces asked about are both refined")
+{
+    // The dome worked out here (face 0), a plate over its top asked about (face 1).
+    SequenceStep step = ParallelStep();
+    const Tool tool = Ball(6);
+    WaterlineRoughToolpathInput input = Input(step, tool);
+    input.partTriangles = Dome(30, 30, 15, 24, 12);
+    input.partTriangleFaces.assign(input.partTriangles.size() / 3, 0);
+    const std::vector<Vec3> ramp = { { 0, 0, 1 }, { 10, 0, 6 }, { 10, 60, 6 }, { 0, 0, 1 }, { 10, 60, 6 }, { 0, 60, 1 } };
+    input.partTriangles.insert(input.partTriangles.end(), ramp.begin(), ramp.end());
+    input.partTriangleFaces.push_back(1);
+    input.partTriangleFaces.push_back(1);
+    AnalyticSurface sphere;
+    sphere.kind = SurfaceKind::Sphere;
+    sphere.centre = { 30, 30, 0 };
+    sphere.radius = 15;
+    input.faceSurfaces = { sphere };    // face 1 is past the end: asked
+    size_t calls = 0;
+    input.closestPoint = [&](int face, const Vec3& p, Vec3& closest, bool& onFace) {
+        ++calls;
+        if (face != 1)
+            return false;
+        // The ramp's plane: z = 1 + x / 2, its normal (-1, 0, 2) / root 5.
+        const Vec3 n{ -1.0 / std::sqrt(5.0), 0.0, 2.0 / std::sqrt(5.0) };
+        const double distance = Dot(p - Vec3{ 0, 0, 1 }, n);
+        closest = p - n * distance;
+        onFace = closest.x >= 0 && closest.x <= 10;
+        return true;
+    };
+    const ToolpathResult result = GenerateParallelFinishToolpath(input);
+    REQUIRE(result.ok);
+    CHECK(calls > 0);
+    CHECK(result.refineCalls == calls);
+    CHECK(result.refinedPoints > calls / 3);        // the dome's points needed no calls
 }
 
 TEST_CASE("a refined contact never goes below another face")

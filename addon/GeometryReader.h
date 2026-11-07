@@ -11,6 +11,7 @@
 #include "Features.h"
 #include "Origin.h"
 #include "Stock.h"
+#include "SurfaceGeometry.h"
 
 // What a Set Origin pick may be.
 enum class PickFilter
@@ -119,6 +120,11 @@ public:
 
     // Logs the first time each way ClosestPoint failed, and how often.
     void LogFailures() const;
+
+    // Each face's surface where it's a sphere, cylinder, cone or torus that
+    // matches its facets, in the assembly's coordinates in mm; a kind of None
+    // otherwise. Indexed by face, as Read gives them.
+    const std::vector<camcore::AnalyticSurface>& Analytic() const;
 
 private:
     struct Impl;
