@@ -28,7 +28,7 @@ namespace camcore
 {
     // The newest .cam format this build can read and the one it writes.
     // Version 2 added Set Origin steps and groups to the sequence.
-    constexpr int kCamFormatVersion = 8;
+    constexpr int kCamFormatVersion = 9;
 
     // Which assembly a job belongs to. The GUID comes from the assembly file,
     // and is empty if it couldn't be read.
@@ -72,6 +72,9 @@ namespace camcore
         // where the clearance plane is.
         std::vector<PickedGeometry> features;
         ClearanceSettings clearance;
+
+        // Area operations only: the stock box's footprint is part of the area too.
+        bool stockFootprint = false;
 
         // Operations only: the ID of the tool in the job's library, or empty, and
         // the speeds and feeds to use it at.

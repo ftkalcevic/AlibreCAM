@@ -5,6 +5,7 @@
 #include <cmath>
 #include <filesystem>
 
+#include "Boundary.h"
 #include "CamJob.h"
 #include "Stock.h"
 
@@ -202,4 +203,35 @@ TEST_CASE("the stock is saved with the job")
 
     std::error_code ignored;
     std::filesystem::remove(path, ignored);
+}
+
+TEST_CASE("the stock's footprint is its box seen from above, at its top")
+{
+    const StockBox box{ { 0, 0, 0 }, { 40, 30, 10 } };
+    Frame frame;        // the assembly's own axes
+    const Path flat = StockFootprint(frame, box);
+    REQUIRE(flat.size() == 4);
+    double area = 0.0;
+    for (size_t i = 0; i < flat.size(); ++i)
+    {
+        const Vec3& a = flat[i].point;
+        const Vec3& b = flat[(i + 1) % flat.size()].point;
+        area += a.x * b.y - b.x * a.y;
+        CHECK(a.z == doctest::Approx(10));
+        CHECK((a.x == doctest::Approx(0) || a.x == doctest::Approx(40)));
+        CHECK((a.y == doctest::Approx(0) || a.y == doctest::Approx(30)));
+    }
+    CHECK(area / 2.0 == doctest::Approx(1200));     // anticlockwise
+
+    // Tilted 45 degrees about X, the box's side shows too: a wider outline.
+    const double c = std::sqrt(0.5);
+    frame.yAxis = { 0, c, c };
+    frame.zAxis = { 0, -c, c };
+    const Path tilted = StockFootprint(frame, box);
+    CHECK(tilted.size() >= 4);
+    double low = 0.0, high = 0.0;
+    PathExtent(tilted, { 0, 1, 0 }, low, high);
+    CHECK(high - low == doctest::Approx(30 * c + 10 * c));
+    for (const PathVertex& vertex : tilted)
+        CHECK(vertex.point.z == doctest::Approx(10 * c));     // the highest corner: y 0, z 10
 }

@@ -509,6 +509,8 @@
 <dl>
   <dt>Feature list</dt>
   <dd>Each feature's type, part, diameter, and X, Y and Z in the operation's origin. Drag rows to reorder them. Choosing rows selects them in the view. Press Delete to remove the chosen rows.</dd>
+  <dt>Add the stock box's footprint</dt>
+  <dd>For area operations (Facing, Profiling, Pocketing, Chamfer, Engrave and Plunge Roughing; not Drill or Hole Pocketing). Adds the stock's box, seen from above along the origin's Z, to the area, as well as anything in the list, which can then be empty. It's a rectangle, or wider where the origin is tilted. For an imported stock part, it's the box round the part. Facing, Profiling, Pocketing, Chamfer and Engrave take it as an area of its own, after the listed ones, at the stock's top, so the cut geometry's level (where Cut Levels' At Top and At Bottom are measured from) is at least the stock's top. Plunge Roughing merges it with the rest of its area, and as nothing is beyond the stock's edges, its plunges reach them. Generate stops if there's no stock.</dd>
   <dt>Select Features</dt>
   <dd>Turns the view's selection into the list. The listed features start out selected; click or Ctrl+click in the view to add or remove features, and press Done when finished. New features are added at the end.</dd>
   <dt>Delete</dt>

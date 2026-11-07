@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "Boundary.h"
 #include "Origin.h"
 
 namespace camcore
@@ -92,4 +93,9 @@ namespace camcore
 
     // The highest of some points along a frame's Z. False if there are none.
     bool HighestAlongZ(const Frame& frame, const std::vector<Vec3>& points, double& top);
+
+    // The box seen from above along the frame's Z: the outline of its corners
+    // projected onto the frame's XY plane, anticlockwise, as a closed path in the
+    // frame at the box's highest point along Z. A rectangle unless the frame is tilted.
+    Path StockFootprint(const Frame& frame, const StockBox& box);
 }

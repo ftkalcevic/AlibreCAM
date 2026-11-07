@@ -62,6 +62,8 @@ namespace camcore
         std::string problem;
     };
 
-    // operation names the operation in the problem.
-    AreaFeatureCheck CheckAreaFeatures(const std::vector<PickedGeometry>& features, const std::string& operation);
+    // operation names the operation in the problem. With stockFootprint, the
+    // stock's footprint is part of the area, so the list may be empty.
+    AreaFeatureCheck CheckAreaFeatures(const std::vector<PickedGeometry>& features, const std::string& operation,
+                                       bool stockFootprint = false);
 }

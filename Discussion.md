@@ -5773,6 +5773,161 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > All pass. Building everything, then the docs:
 
+> Done. At an edge with nothing beyond it, the plunges now carry on until the tool's centre reaches the edge.
+>
+> **How it decides:**
+> - **Open edge:** if no visible part is beyond the area's edge, as at the part's own outside edge, the tool's centre may go right up to it. That roughs the stock around the part too.
+> - **Closed edge:** where a part carries on past the edge, such as a pocket's walls or a higher surface next to it, the whole tool plus Stock to Leave stays clear of it, as before.
+> - **The part's own side:** part material within about a cell and a half of the edge (roughly 0.1–0.2 mm) is taken as the part's own side wall, so it doesn't close the edge.
+> - **Mixed edges:** this is worked out place by place along the edge. One side of an area can be open while another is walled.
+> - **No parts read:** every edge is treated as closed, as before.
+>
+> Depth works as before: each plunge stops when the tool, anywhere across its width, would come within Stock to Leave of the model. So a plunge centred on the part's edge stops above the part where the tool overhangs it.
+>
+> New tests cover a part whose footprint is the whole area (plunges reach all four edges), a pocket walled on all sides (the tool stays inside), a single wall (only that side stays in), and no parts (everything stays in). They and all the other tests pass in Debug and Release.
+>
+> The add-on and the updated help are installed. The help, the spec (Claude doc and `docs\SPEC.md`, rev 186) and `CLAUDE.md` are updated. Nothing is committed.
+>
+> To test, restart Alibre, then:
+> 1. Pick the bottom outline or base face of a part with nothing around it, and Generate. Plunges should reach the area's edge, with the tool centred on it.
+> 2. Pick a pocket's floor. Plunges should stay a tool radius plus Stock to Leave inside the walls, as before.
+> 3. Pick an area that's open on some sides and walled on others. Only the open sides should reach the edge.
+> 4. Simulate and tick Too much removed. There should be no red at the part's edges.
+> 5. The help's Plunge Roughing section has changed.
+
+### 🧑 Frank · 14:41
+
+> We need to be able to define areas that aren't part geometry.  In an alibre assembly, can we draw random sketches?  Or maybe we need an option in Features to use the stock and the feature.  Thoughts
+
+### 🤖 Claude
+
+> The assembly's design session has `Sketches`, so assembly sketches can be read through the API. Checking what a sketch and its figures give:
+
+> Questions:
+> - Which way(s) of defining areas that aren't part geometry should I build?
+>   - Both, stock first: A stock outline option now (simple, certain), then picking sketch figures (assembly or part sketches) as edges, which needs testing in Alibre.
+>   - Stock outline only: Just the option to use the stock's footprint.
+>   - Sketches only: Just picking sketch figures as edges.
+> - How should the stock outline combine with the picked features?
+>   - Added to the picks: The area is the stock's footprint merged with any picked faces, edges or sketches (the picks can be empty).
+>   - Stock only, picks ignored: When ticked, the area is just the stock's footprint.
+>   - Stock within the picks: Only where the stock's footprint and the picked area overlap.
+> - Which operations should get these (stock outline option, and sketch figures as edges)?
+>   - All area operations: Facing, Profiling, Pocketing, Chamfer, Engrave and Plunge Roughing take sketch figures as edges; the stock option goes on the Features tab of Facing, Pocketing and Plunge Roughing (where an area makes sense).
+>   - Plunge Roughing only: Start with Plunge Roughing, and add others later.
+
+### 🧑 Frank · 14:55
+
+> Answers:
+> - Which way(s) of defining areas that aren't part geometry should I build?
+>   **Add a check box to Features that allows the stock box footprint can be selected.  This is in addition to the features list.**
+> - How should the stock outline combine with the picked features?
+>   **Added to the picks**
+> - Which operations should get these (stock outline option, and sketch figures as edges)?
+>   **All area operations**
+
+### 🤖 Claude
+
+> Writing the plan:
+
+> Plan:
+>
+> # Compare the simulated stock with the Alibre parts
+>
+> ## Context
+>
+> Frank wants to see where the simulated stock differs from the real Alibre models: where too much was removed (part material cut away), and where not enough was (stock left outside the part).
+>
+> **Decided (Frank):**
+> - **Parts:** all parts. Every visible, unsuppressed part occurrence in the assembly, leaving out an imported stock's own part file if it's in the assembly.
+> - **Display:** check boxes in the Simulation dialog, one for each thing that can be shown:
+>   - **Stock**, the cut stock (today's drawing);
+>   - **Part**, the parts' own cells;
+>   - **Not enough removed**;
+>   - **Too much removed**.
+> - **Tolerance:** fixed at one cell. A difference within one cell of the part's surface isn't counted, so the surface doesn't speckle.
+>
+> The parts go into the same cell grid as the simulation (same box, cell size and division), so they can be compared word by word.
+> - **Not enough removed** = stock AND NOT (the part grown by one cell).
+> - **Too much removed** = (the part shrunk by one cell) AND NOT stock.
+>
+> Growing and shrinking use the 3 × 3 × 3 cube of neighbours.
+>
+> ## Core (`core\Simulation.h/.cpp`, tested)
+>
+> - **`VoxelStock::ResetLike(const VoxelStock& other)`:** an empty grid with the same box, cell size and division.
+> - **`StockDifference`** holds the two difference grids (`notEnough`, `tooMuch`) and their volumes in mm³ (`Count() × cell³`).
+> - **`StockDifference CompareStock(const VoxelStock& stock, const VoxelStock& part)`:**
+>   - **On all cores, chunk by chunk:** like `MeshChunk`, it reads a chunk's words with a ring of neighbours, plus the words above and below (`ReadWords`). For each column it works out:
+>     - **grown:** OR of the 3 × 3 columns of `w | w<<1 | w>>1`, with the carry bits from the words above and below;
+>     - **shrunk:** AND of the 3 × 3 columns of `w & (w<<1 | carry) & (w>>1 | carry)`, where outside the grid counts as empty;
+>     - then the two differences.
+>   - **Into the grids:** the non-zero results are written one at a time (`SetMask`, made public as `SetCells` or a friend). Splitting bricks isn't safe from several threads at once.
+> - **Meshing:** each grid is meshed with `MeshStock`, as now.
+>
+> ## Add-on
+>
+> - **Reading the parts** (`addon\GeometryReader`): `ReadAssemblyPartFacets(IADSession* assembly, const std::wstring& leaveOutPath, std::vector<Vec3>& triangles, std::wstring& problem)`.
+>   - It walks the root occurrence's `Occurrences` recursively. For each leaf occurrence it skips the hidden and suppressed ones, and the one whose design session's file is `leaveOutPath`.
+>   - It takes `IADPartSession::GetFacetData` from the occurrence's `DesignSession`, with no file opened, and maps each point through `PartToAssembly` (which already exists there).
+>   - **Unproven:** that a child occurrence's `DesignSession` gives its facets in place. It logs the count of parts and triangles. If it fails, it falls back to `ReadPartFacets` on the part's file.
+> - **`CCamTabCommand`:**
+>   - `m_simulationParts`, a `VoxelStock` filled with `FillMesh` from those triangles. It's built the first time Part or a difference box is ticked, and again after a restart at a new resolution.
+>   - `m_simulationDifference`, meshes for the part, not-enough and too-much grids, worked out again in `UpdateSimulationScene` whenever the stock changed and a difference box is on.
+>   - `CamScene` gains `simPartMesh`, `simNotEnoughMesh` and `simTooMuchMesh`, drawn with `DrawMesh` like `simMesh`. Each draws only when its box is on, as does the stock mesh.
+>   - New colours in `addon\DisplaySettings.h`:
+>     - Part: light blue `kSimPartColour`;
+>     - Not enough: amber `kSimNotEnoughColour`;
+>     - Too much: red `kSimTooMuchColour`.
+>   - The Too much mesh is drawn over the model, so a gouge inside the part's shape shows.
+> - **`IDD_SIMULATION`:**
+>   - A "Show" group with four check boxes: Stock (on), Part (off), Not enough removed (off), Too much removed (off). IDs from 13389.
+>   - A line under them: "Not enough removed: X mm³. Too much removed: Y mm³.", shown while either difference is on.
+>   - The dialog grows to fit. The choices are remembered until Alibre closes.
+> - **Logging:** the time taken, to judge whether Play needs to work out the differences less often.
+>
+> ## Tests (`tests\SimulationTests.cpp`)
+>
+> - **A part box inside a stock box:**
+>   - with the stock cut exactly to the part, both differences are empty (the one-cell tolerance);
+>   - with the stock left 2 mm proud on one side, Not enough is about that slab's volume, and Too much is empty;
+>   - with a pocket cut 2 mm into the part, Too much is about that pocket's volume.
+> - **The one-cell tolerance:** a difference just one cell thick isn't counted.
+> - **Divided and undivided** grids give the same results.
+>
+> ## Docs
+>
+> - **Help:** the Simulation section gets Show: Stock, Part, Not enough removed, Too much removed, and the volumes, including all visible parts and the one-cell tolerance.
+> - **Spec** (doc and `docs\SPEC.md`).
+> - **`CLAUDE.md`:** the simulation line, plus the unproven `DesignSession` facets.
+> - **`Discussion.md`:** rebuilt.
+>
+> ## Verification
+>
+> 1. Build Debug and Release, and run the tests.
+> 2. Close Alibre, then install Release.
+> 3. Frank's tests:
+>    1. Simulate a finished job to the end and tick Too much removed and Not enough removed. Correct toolpaths should show little or nothing, with small volumes.
+>    2. Set Stock to Leave to 1 mm on a profile and run again. Amber should show round the profile, with a volume to match.
+>    3. Make a toolpath gouge, for example a pocket deeper than the part. Red should show there.
+>    4. Tick Part. The parts should show in light blue, lined up with the Alibre model (this checks the units and transforms).
+>    5. Hide a part in Alibre and restart the simulation. It should be left out.
+>    6. Check the help.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> The core builds. Now the tests:
+
+> The Release internal compiler error is back, as happened earlier. A full rebuild cleared it then:
+
+> All tests pass. Now the Features tab check box and Generate:
+
+> The Release link warned that a debug-symbols file is corrupted, left over from the compiler crash. That doesn't affect the DLL, but I'll rebuild Release cleanly anyway:
+
+> Clean. Now the docs:
+
 ---
 
 # Side conversation

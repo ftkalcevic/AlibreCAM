@@ -213,4 +213,44 @@ namespace camcore
         }
         return true;
     }
+
+    Path StockFootprint(const Frame& frame, const StockBox& box)
+    {
+        // The corners in the frame.
+        std::vector<Vec3> points;
+        double top = 0.0;
+        for (const Vec3& corner : BoxCorners(box))
+        {
+            const Vec3 relative = corner - frame.origin;
+            const Vec3 local{ Dot(relative, frame.xAxis), Dot(relative, frame.yAxis), Dot(relative, frame.zAxis) };
+            top = points.empty() ? local.z : (std::max)(top, local.z);
+            points.push_back(local);
+        }
+
+        // Their convex hull, anticlockwise (Andrew's monotone chain).
+        std::sort(points.begin(), points.end(), [](const Vec3& a, const Vec3& b) {
+            return a.x < b.x - 1e-12 || (std::fabs(a.x - b.x) <= 1e-12 && a.y < b.y);
+        });
+        const auto turn = [](const Vec3& o, const Vec3& a, const Vec3& b) {
+            return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+        };
+        std::vector<Vec3> hull;
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            const size_t start = hull.size();
+            for (size_t n = 0; n < points.size(); ++n)
+            {
+                const Vec3& p = (pass == 0) ? points[n] : points[points.size() - 1 - n];
+                while (hull.size() >= start + 2 && turn(hull[hull.size() - 2], hull.back(), p) <= 1e-9)
+                    hull.pop_back();
+                hull.push_back(p);
+            }
+            hull.pop_back();
+        }
+
+        Polyline outline;
+        for (const Vec3& p : hull)
+            outline.push_back({ p.x, p.y, top });
+        return PathFromPoints(outline);
+    }
 }

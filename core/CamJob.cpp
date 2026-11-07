@@ -1592,6 +1592,8 @@ namespace camcore
             json item = WriteStepBody(step);
             if (step.suppressed)
                 item["suppressed"] = true;
+            if (step.stockFootprint)
+                item["stockFootprint"] = true;
             return item;
         }
 
@@ -1600,12 +1602,16 @@ namespace camcore
         {
             if (!ReadStepBody(item, step))
                 return false;
-            const auto suppressed = item.find("suppressed");
-            if (suppressed == item.end())
-                return true;
-            if (!suppressed->is_boolean())
-                return false;
-            step.suppressed = suppressed->get<bool>();
+            for (const auto& flag : { std::make_pair("suppressed", &step.suppressed),
+                                      std::make_pair("stockFootprint", &step.stockFootprint) })
+            {
+                const auto found = item.find(flag.first);
+                if (found == item.end())
+                    continue;
+                if (!found->is_boolean())
+                    return false;
+                *flag.second = found->get<bool>();
+            }
             return true;
         }
     }
@@ -1671,7 +1677,8 @@ namespace camcore
         // simply don't have, so they read as they are. Version 4 added the stock
         // to the setup section; older files have none. Version 5 added the
         // machine and material, and stopped saving the tool library. Version 6
-        // added Chamfer operations, version 7 Engrave, and version 8 Plunge Roughing.
+        // added Chamfer operations, version 7 Engrave, version 8 Plunge Roughing, and version 9
+        // an operation's stock footprint.
 
         const auto assembly = root.find("assembly");
         if (assembly == root.end() || !assembly->is_object())

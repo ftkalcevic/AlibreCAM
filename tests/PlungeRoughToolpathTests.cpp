@@ -7,7 +7,9 @@
 
 #include "Boundary.h"
 #include "CamJob.h"
+#include "Facing.h"
 #include "Features.h"
+#include "Stock.h"
 #include "PlungeRoughToolpath.h"
 
 using namespace camcore;
@@ -480,6 +482,42 @@ TEST_CASE("at an open edge the tool's centre goes up to it; where parts carry on
     CHECK(yHigh <= 30 - reach + 1e-6);
 }
 
+TEST_CASE("the stock's footprint as the area: plunges reach the stock's edges")
+{
+    const SequenceStep step = PlungeStep();
+    const Tool tool = Mill(6);
+    PlungeRoughToolpathInput input = Input(step, tool);
+    ProfileChain footprint;
+    footprint.ok = true;
+    footprint.closed = true;
+    footprint.path = StockFootprint(Frame(), { { 0, 0, 0 }, { 40, 30, 10 } });
+    input.outlines = { footprint };
+    input.partTriangles = Box({ 10, 8, 0 }, { 30, 22, 6 });     // a part inside the stock
+    const ToolpathResult result = GeneratePlungeRoughToolpath(input);
+    REQUIRE(result.ok);
+    double xLow = 1e9, xHigh = -1e9;
+    bool overPart = false;
+    for (const Vec3& p : Bottoms(result.toolpath))
+    {
+        xLow = (std::min)(xLow, p.x);
+        xHigh = (std::max)(xHigh, p.x);
+        if (p.x > 14 && p.x < 26 && p.y > 12 && p.y < 18)
+        {
+            overPart = true;
+            CHECK(p.z == doctest::Approx(6.5));
+        }
+    }
+    CHECK(xLow < 1.0);
+    CHECK(xHigh > 39.0);
+    CHECK(overPart);
+}
+
+TEST_CASE("an empty features list is fine with the stock's footprint")
+{
+    CHECK_FALSE(CheckAreaFeatures({}, "Facing").ok);
+    CHECK(CheckAreaFeatures({}, "Facing", true).ok);
+}
+
 TEST_CASE("a plunge roughing operation saves its settings")
 {
     CHECK(IsOperation(StepType::PlungeRoughing));
@@ -505,6 +543,7 @@ TEST_CASE("a plunge roughing operation saves its settings")
     plunge.plungeRoughing.cutAngle = 30;
     plunge.plungeRoughing.stepover = { false, 60.0, 3.25 };
     plunge.plungeRoughing.approach = 1.5;
+    plunge.stockFootprint = true;
     PickedGeometry surface;
     surface.kind = PickKind::SurfaceFace;
     surface.occurrenceName = "Mould<1>";
@@ -528,6 +567,10 @@ TEST_CASE("a plunge roughing operation saves its settings")
     CHECK(settings.stepover.percent == 60.0);
     CHECK(settings.approach == 1.5);
     CHECK(SameSettings(plunge, back));
+    CHECK(back.stockFootprint);
+    SequenceStep without = back;
+    without.stockFootprint = false;
+    CHECK_FALSE(SameSettings(without, back));
     REQUIRE(back.features.size() == 1);
     CHECK(back.features[0].kind == PickKind::SurfaceFace);
     CHECK(back.features[0].point.z == 3);

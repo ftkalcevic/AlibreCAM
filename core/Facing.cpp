@@ -32,10 +32,11 @@ namespace camcore
         return problems;
     }
 
-    AreaFeatureCheck CheckAreaFeatures(const std::vector<PickedGeometry>& features, const std::string& operation)
+    AreaFeatureCheck CheckAreaFeatures(const std::vector<PickedGeometry>& features, const std::string& operation,
+                                       bool stockFootprint)
     {
         AreaFeatureCheck check;
-        if (features.empty())
+        if (features.empty() && !stockFootprint)
         {
             check.problem = "There are no features. Pick faces or edges.";
             return check;

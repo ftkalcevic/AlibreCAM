@@ -349,6 +349,7 @@ namespace
 }
 
 BEGIN_MESSAGE_MAP(CFeaturesPage, COperationPage)
+    ON_BN_CLICKED(IDC_FEATURES_STOCK_FOOTPRINT, &CFeaturesPage::OnStockFootprint)
     ON_BN_CLICKED(IDC_FEATURES_SELECT, &CFeaturesPage::OnSelectFeatures)
     ON_BN_CLICKED(IDC_FEATURES_DELETE, &CFeaturesPage::OnDelete)
     ON_BN_CLICKED(IDC_FEATURES_SORT, &CFeaturesPage::OnSort)
@@ -409,12 +410,26 @@ void CFeaturesPage::Load(const SequenceStep& step)
 {
     m_features = step.features;
     FillList();
+
+    // Area operations can take the stock box's footprint too.
+    const bool area = m_pOwner->GetFeatureFilter() != FeatureFilter::Points;
+    GetDlgItem(IDC_FEATURES_STOCK_FOOTPRINT)->ShowWindow(area ? SW_SHOW : SW_HIDE);
+    CheckDlgButton(IDC_FEATURES_STOCK_FOOTPRINT, (area && step.stockFootprint) ? BST_CHECKED : BST_UNCHECKED);
 }
 
 bool CFeaturesPage::Save(SequenceStep& step, std::wstring& /*problems*/)
 {
     step.features = m_features;
+    step.stockFootprint = m_pOwner->GetFeatureFilter() != FeatureFilter::Points &&
+                          IsDlgButtonChecked(IDC_FEATURES_STOCK_FOOTPRINT) == BST_CHECKED;
     return true;
+}
+
+void CFeaturesPage::OnStockFootprint()
+{
+    ShowNote(IsDlgButtonChecked(IDC_FEATURES_STOCK_FOOTPRINT) == BST_CHECKED
+                 ? L"The stock box's footprint is part of the area too."
+                 : L"");
 }
 
 void CFeaturesPage::FillList()

@@ -1961,10 +1961,12 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
     double stockMaxZ = 0.0;
     bool haveStockMinZ = false;
     double stockMinZ = 0.0;
+    bool haveStockBox = false;
+    camcore::StockBox stockBox;
     if (HasStock())
     {
         std::vector<camcore::LineSegment> edges;
-        camcore::StockBox box;
+        camcore::StockBox& box = stockBox;
         std::wstring stockProblem;
         std::vector<camcore::Vec3> points;
         if (!ReadStockShape(m_job.stock, edges, box, stockProblem, &points))
@@ -1973,6 +1975,7 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
             return false;
         }
         haveStockMaxZ = camcore::HighestAlongZ(frame.frame, points, stockMaxZ);
+        haveStockBox = true;
         for (const camcore::Vec3& point : points)
         {
             const double z = camcore::WorldToFrame(frame.frame, point).z;
@@ -2017,9 +2020,19 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
     // Facing, Profiling and Pocketing sort their features into areas: each face
     // on its own, and edges grouped where they meet, all flat at the highest
     // point, which At Top and At Bottom are measured from.
+    // The stock box's footprint, when it's part of the area.
+    if (operation.stockFootprint && !haveStockBox)
+    {
+        problem = "There's no stock for its footprint: make a stock, or untick the stock box's footprint on the "
+                  "Features tab.";
+        return false;
+    }
+    const auto stockFootprint = [&]() { return camcore::StockFootprint(frame.frame, stockBox); };
+
     camcore::AreaGeometry areas;
     auto gatherAreas = [&](const char* name) {
-        const camcore::AreaFeatureCheck check = camcore::CheckAreaFeatures(operation.features, name);
+        const camcore::AreaFeatureCheck check =
+            camcore::CheckAreaFeatures(operation.features, name, operation.stockFootprint);
         if (!check.ok)
         {
             problem = check.problem;
@@ -2030,6 +2043,11 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
         std::vector<bool> isFace;
         for (const camcore::PickedGeometry& feature : operation.features)
             isFace.push_back(feature.kind == camcore::PickKind::PlanarFace);
+        if (operation.stockFootprint)
+        {
+            outlines.push_back({ stockFootprint() });
+            isFace.push_back(true);
+        }
         areas = camcore::GatherAreas(outlines, isFace);
         if (!areas.ok)
         {
@@ -2117,9 +2135,10 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
     // plane, merges what touches, and plunges inside, down to the parts.
     if (operation.type == camcore::StepType::PlungeRoughing)
     {
-        if (operation.features.empty())
+        if (operation.features.empty() && !operation.stockFootprint)
         {
-            problem = "There are no features. Pick faces, or edges making closed loops.";
+            problem = "There are no features. Pick faces, or edges making closed loops, or add the stock box's "
+                      "footprint.";
             return false;
         }
 
@@ -2209,6 +2228,14 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
                 }
                 plungeInput.outlines.push_back(std::move(chain));
             }
+        }
+        if (operation.stockFootprint)
+        {
+            camcore::ProfileChain footprint;
+            footprint.ok = true;
+            footprint.closed = true;
+            footprint.path = stockFootprint();
+            plungeInput.outlines.push_back(std::move(footprint));
         }
         Log(L"[generate] plunge area from %zu faces and %zu loops", plungeInput.faces.size(),
             plungeInput.outlines.size());

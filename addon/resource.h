@@ -331,6 +331,7 @@
 #define IDC_PLUNGE_STEP_DISTANCE_RADIO  13402
 #define IDC_PLUNGE_STEP_DISTANCE        13403
 #define IDC_PLUNGE_APPROACH             13404
+#define IDC_FEATURES_STOCK_FOOTPRINT    13405
 #define IDC_HP_AT_TOP                   13266
 #define IDC_HP_AT_BOTTOM                13267
 #define IDC_HP_PICK_TOP                 13268
@@ -368,7 +369,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        13043
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13405
+#define _APS_NEXT_CONTROL_VALUE         13406
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

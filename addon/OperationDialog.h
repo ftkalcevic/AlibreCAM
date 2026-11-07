@@ -119,6 +119,7 @@ public:
 protected:
     BOOL OnInitDialog() override;
     afx_msg void OnSelectFeatures();
+    afx_msg void OnStockFootprint();
     afx_msg void OnDelete();
     afx_msg void OnSort();
     afx_msg void OnOrderChanged();
