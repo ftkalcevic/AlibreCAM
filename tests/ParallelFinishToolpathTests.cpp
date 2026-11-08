@@ -697,3 +697,29 @@ TEST_CASE("arc fitting survey of parallel finishing" * doctest::skip())
         }
     }
 }
+
+TEST_CASE("a slope range keeps parallel's rows off the steep part of the dome")
+{
+    SequenceStep step = ParallelStep();
+    step.parallelFinishing.slopeTo = 45.0;
+    const Tool tool = Ball(6);
+    const ToolpathResult result = GenerateParallelFinishToolpath(Input(step, tool));
+    REQUIRE(result.ok);
+    double steepest = 0.0;
+    size_t onDome = 0;
+    for (const auto& [a, b] : CutSegments(result.toolpath))
+    {
+        for (const Vec3& p : { a, b })
+        {
+            const double d = std::hypot(p.x - 30, p.y - 30);
+            if (d < 17.0)
+            {
+                steepest = (std::max)(steepest, std::asin(d / 18.0) * 180.0 / 3.14159265358979323846);
+                ++onDome;
+            }
+        }
+    }
+    MESSAGE("steepest row point " << steepest << " degrees, " << onDome << " on the dome");
+    CHECK(onDome > 20);         // the gentle top is still cut
+    CHECK(steepest < 48.0);     // the grid's slope is within a few degrees
+}

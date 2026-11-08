@@ -9420,6 +9420,66 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Tested ok
 
+### 🤖 Claude
+
+> Good. I've marked the Simulation dialog's tool line as tested in `CLAUDE.md`. Nothing is committed: those changes are yours to commit with the rest.
+>
+> The next agreed item is Phase 3: the steep/shallow slope limits (From and To angles) for Waterline Finishing and Parallel Finishing.
+
+### 🧑 Frank · 17:31
+
+> Add slop limits
+
+### 🤖 Claude
+
+> This is Phase 3 of the earlier plan: a Slope group with From and To angles on both finishing tabs. Laps and rows are kept only where the surface's slope is in that range. First, where Waterline Finishing and Parallel Finishing assemble their laps and rows:
+
+> Release builds clean and all tests pass, including the save round-trip. Now the docs:
+
+> The Claude doc and `docs\SPEC.md` are both at rev 226, and all tests pass in Debug. Installing:
+
+> Slope limits are built: Waterline Finishing and Parallel Finishing each have a **Slope** group with **From** and **To** angles. All tests pass in Debug and Release. It isn't installed, because the administrator prompt was cancelled.
+>
+> - **Where it is:** a group under Stepover on both tabs, in degrees from horizontal (0 flat, 90 a vertical wall). The default is 0 to 90, which cuts everywhere, so existing jobs are unchanged.
+> - **What it does:** laps and rows are kept only where the slope is in range. Gaps and stretches under 0.5 mm are smoothed over, so a lap doesn't flicker on and off at the threshold. A lap cut short becomes open pieces.
+> - **Typical use:** Waterline Finishing at 40 to 90 for the steep walls, and Parallel Finishing at 0 to 45 for tops and gentle slopes. The small overlap blends the two.
+> - **How the slope is found:** from the tool tip's height on the operation's grid, so it's within a few degrees. For a ball, that's the surface's own slope where the ball touches it. Areas with no part count as flat at the cut's bottom, so the part's outline isn't treated as a cliff.
+> - **Finish Flats isn't limited:** if you tick it, it always runs.
+>
+> **Tested on the half-sphere:**
+> - **Waterline at 45 to 90:** the flattest lap left is at 48°, because laps are 1 mm apart.
+> - **Parallel at 0 to 45:** the steepest row point is at 47.4°, and the top of the dome is still cut.
+>
+> The help page, the spec (rev 226 in both copies), `CLAUDE.md` and `TODO.md` are updated. That finishes the three agreed items: adaptive clearing, ramp/helix entry and slope limits.
+>
+> **To test, after installing:**
+> 1. Open a Waterline Finishing operation and set Slope From to 40, then Generate. Laps should stay off the flatter tops.
+> 2. Open a Parallel Finishing operation and set Slope To to 45, then Generate. Rows should stay off the steep walls.
+> 3. Simulate both together. Between them they should finish the whole part.
+> 4. Try From 50 and To 40. It should be refused.
+> 5. Save, close and reopen the job, and check the values are kept.
+> 6. The help changed: check the Waterline Finishing and Parallel Finishing tab sections.
+
+### 🧑 Frank · 17:48
+
+> Install it
+
+### 🤖 Claude
+
+> It's installed. The installed DLL and help page match the new build, so start Alibre and it will load this version.
+>
+> To test:
+> 1. Open a Waterline Finishing operation and set Slope From to 40, then Generate. Laps should stay off the flatter tops.
+> 2. Open a Parallel Finishing operation and set Slope To to 45, then Generate. Rows should stay off the steep walls.
+> 3. Simulate both together. Between them they should finish the whole part.
+> 4. Try From 50 and To 40. It should be refused.
+> 5. Save, close and reopen the job, and check the values are kept.
+> 6. The help changed: check the Waterline Finishing and Parallel Finishing tab sections.
+
+### 🧑 Frank · 18:00
+
+> That worked
+
 ---
 
 # Side conversation

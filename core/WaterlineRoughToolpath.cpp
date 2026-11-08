@@ -378,6 +378,23 @@ namespace camcore
             bool Blocked(size_t q, double z) const { return tips[q] > z + kHeightTolerance; }
         };
 
+        // The slope limits: each cell's slope of the tool tip's height (degrees from
+        // horizontal), cells with no part reading as the cut's bottom so the part's
+        // outline isn't a cliff; and which stretches of a line keep to the range.
+        struct SlopeLimits
+        {
+            bool active = false;
+            double from = 0.0, to = 90.0;
+            std::vector<float> slope;
+
+            void Prepare(const WaterlineSetup& w, double slopeFrom, double slopeTo);
+            bool InRange(const WaterlineSetup& w, const Vec3& p) const;
+            // The stretches of the points in the range, gaps and stretches under
+            // minLength smoothed over. A closed line wholly in range stays closed.
+            std::vector<Polyline> Keep(const WaterlineSetup& w, const Polyline& points, bool closed,
+                                       double minLength, bool& stillClosed) const;
+        };
+
         bool PrepareWaterline(const WaterlineRoughToolpathInput& input, StepType type, WaterlineSetup& w,
                               std::string& problem)
         {
@@ -2131,6 +2148,140 @@ namespace camcore
         }
     }
 
+    namespace
+    {
+        void SlopeLimits::Prepare(const WaterlineSetup& w, double slopeFrom, double slopeTo)
+        {
+            from = slopeFrom;
+            to = slopeTo;
+            active = from > 1e-9 || to < 90.0 - 1e-9;
+            if (!active)
+                return;
+            const float floor = static_cast<float>(w.bottom);
+            const auto height = [&](int i, int j) {
+                i = (std::max)(0, (std::min)(w.nx - 1, i));
+                j = (std::max)(0, (std::min)(w.ny - 1, j));
+                return (std::max)(w.tips[static_cast<size_t>(j) * w.nx + i], floor);
+            };
+            slope.assign(w.cells, 0.0f);
+            for (int j = 0; j < w.ny; ++j)
+            {
+                for (int i = 0; i < w.nx; ++i)
+                {
+                    const double gx = (height(i + 1, j) - height(i - 1, j)) / (2.0 * w.cell);
+                    const double gy = (height(i, j + 1) - height(i, j - 1)) / (2.0 * w.cell);
+                    slope[static_cast<size_t>(j) * w.nx + i] =
+                        static_cast<float>(std::atan(std::hypot(gx, gy)) * 180.0 / 3.14159265358979323846);
+                }
+            }
+        }
+
+        bool SlopeLimits::InRange(const WaterlineSetup& w, const Vec3& p) const
+        {
+            size_t q = 0;
+            if (!w.CellAt(p, q))
+                return false;
+            return slope[q] >= from - 1e-6 && slope[q] <= to + 1e-6;
+        }
+
+        std::vector<Polyline> SlopeLimits::Keep(const WaterlineSetup& w, const Polyline& points, bool closed,
+                                                double minLength, bool& stillClosed) const
+        {
+            stillClosed = closed;
+            if (!active || points.size() < 2)
+                return { points };
+            const size_t n = points.size();
+            std::vector<char> in(n);
+            bool all = true, none = true;
+            for (size_t k = 0; k < n; ++k)
+            {
+                in[k] = InRange(w, points[k]) ? 1 : 0;
+                all = all && in[k];
+                none = none && !in[k];
+            }
+            if (all)
+                return { points };
+            stillClosed = false;
+            if (none)
+                return {};
+
+            // Runs of the same flag round (or along) the line, by their length.
+            const auto length = [&](size_t a, size_t b) {     // from point a to point b, forward
+                double total = 0.0;
+                for (size_t k = a; k != b; k = (k + 1) % n)
+                    total += std::hypot(points[(k + 1) % n].x - points[k].x, points[(k + 1) % n].y - points[k].y);
+                return total;
+            };
+            const auto smooth = [&](char flag) {
+                // Runs of `flag` shorter than minLength take the other flag.
+                bool mixed = false;
+                for (size_t k = 1; k < n && !mixed; ++k)
+                    mixed = in[k] != in[0];
+                if (!mixed)
+                    return;     // one run all round: nothing to smooth
+                size_t start = 0;
+                if (closed)
+                {
+                    while (in[start] == in[(start + n - 1) % n])
+                        start = (start + 1) % n;     // the start of a run
+                }
+                for (size_t visited = 0; visited < n;)
+                {
+                    const size_t first = (start + visited) % n;
+                    size_t count = 1;
+                    while (visited + count < n && in[(first + count) % n] == in[first])
+                        ++count;
+                    if (in[first] == flag)
+                    {
+                        const size_t last = (first + count - 1) % n;
+                        const bool atEnd = !closed && (first == 0 || first + count == n);
+                        const double span = (count > 1) ? length(first, last) : 0.0;
+                        if (span < minLength && !(flag == 0 && atEnd))
+                        {
+                            for (size_t k = 0; k < count; ++k)
+                                in[(first + k) % n] = flag ? 0 : 1;
+                        }
+                    }
+                    visited += count;
+                }
+            };
+            smooth(0);      // short gaps filled
+            smooth(1);      // then short pieces dropped
+
+            std::vector<Polyline> kept;
+            bool everything = true;
+            for (size_t k = 0; k < n; ++k)
+                everything = everything && in[k];
+            if (everything)
+            {
+                stillClosed = closed;
+                return { points };
+            }
+            size_t start = 0;
+            if (closed)
+            {
+                while (in[start])
+                    ++start;    // start outside, so no stretch wraps
+            }
+            Polyline run;
+            for (size_t visited = 0; visited <= n; ++visited)
+            {
+                const size_t k = (start + visited) % n;
+                if (visited < n && in[k] && (closed || visited < n))
+                {
+                    run.push_back(points[k]);
+                    continue;
+                }
+                if (run.size() >= 2)
+                    kept.push_back(run);
+                run.clear();
+                if (!closed && visited >= n - 1)
+                    break;
+            }
+            return kept;
+        }
+    }
+
     ToolpathResult GenerateWaterlineFinishToolpath(const WaterlineRoughToolpathInput& input)
     {
         if (input.progress)
@@ -2346,6 +2497,28 @@ namespace camcore
         RefineCounts totals;
         size_t smoothed = 0, fingers = 0, pointsBefore = 0, pointsAfter = 0;
         MoveLapsOntoLevels(input, w, levels, levelLaps, totals, smoothed, fingers, pointsBefore, pointsAfter);
+        // Only where the slope is in range.
+        SlopeLimits slopes;
+        slopes.Prepare(w, settings.slopeFrom, settings.slopeTo);
+        if (slopes.active)
+        {
+            for (std::vector<Piece>& pieces : levelLaps)
+            {
+                std::vector<Piece> kept;
+                for (Piece& piece : pieces)
+                {
+                    bool closed = piece.closed;
+                    for (Polyline& part : slopes.Keep(w, piece.points, piece.closed, 0.5, closed))
+                    {
+                        Piece trimmed = piece;
+                        trimmed.points = std::move(part);
+                        trimmed.closed = closed;
+                        kept.push_back(std::move(trimmed));
+                    }
+                }
+                pieces = std::move(kept);
+            }
+        }
         size_t turnBacks = 0, zigzags = 0, wobbles = 0;
         CountLapGlitches(levelLaps, turnBacks, zigzags, wobbles);
         if (input.lapStages != nullptr)
@@ -2799,6 +2972,10 @@ namespace camcore
                            [&](size_t k) { samples[k]->z = surfaceAt(samples[k]->x, samples[k]->y); });
         }
 
+        // Only where the slope is in range.
+        SlopeLimits slopes;
+        slopes.Prepare(w, settings.slopeFrom, settings.slopeTo);
+
         // Each level's passes: the surface, but no lower than the level, trimmed
         // to where the level above left something.
         struct Pass
@@ -2833,7 +3010,9 @@ namespace camcore
                         points.push_back({ run.points[k].x, run.points[k].y, (std::max)(run.points[k].z, z) });
                     if (points.size() < 2)
                         continue;
-                    passes.push_back({ li, run.component, SimplifyRun3(points, tolerance) });
+                    bool closed = false;
+                    for (const Polyline& part : slopes.Keep(w, points, false, 0.5, closed))
+                        passes.push_back({ li, run.component, SimplifyRun3(part, tolerance) });
                     if (passes.size() > kMostMoves)
                         return Failure("The toolpath would be too long. Make the stepdown or stepover larger.");
                 }

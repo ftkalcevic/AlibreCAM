@@ -2277,6 +2277,8 @@ void CWaterlineFinishingPage::Load(const SequenceStep& step)
     SetNumber(IDC_WATERLINE_STOCK, w.stockToLeave);
     SetNumber(IDC_WATERLINE_EXTENSION, w.extension);
     SetNumber(IDC_WL_APPROACH, w.approachDistance);
+    SetNumber(IDC_WL_SLOPE_FROM, w.slopeFrom);
+    SetNumber(IDC_WL_SLOPE_TO, w.slopeTo);
     CheckRadioButton(IDC_WL_CLIMB, IDC_WL_MIXED,
                      w.direction == CutDirection::Conventional ? IDC_WL_CONVENTIONAL
                      : w.direction == CutDirection::Mixed      ? IDC_WL_MIXED
@@ -2300,6 +2302,8 @@ bool CWaterlineFinishingPage::Save(SequenceStep& step, std::wstring& problems)
     ReadNumber(IDC_WATERLINE_STOCK, L"The stock to leave", w.stockToLeave, found);
     ReadNumber(IDC_WATERLINE_EXTENSION, L"The overtravel", w.extension, found);
     ReadNumber(IDC_WL_APPROACH, L"The approach distance", w.approachDistance, found);
+    ReadNumber(IDC_WL_SLOPE_FROM, L"The slope's From", w.slopeFrom, found);
+    ReadNumber(IDC_WL_SLOPE_TO, L"The slope's To", w.slopeTo, found);
     w.direction = IsDlgButtonChecked(IDC_WL_CONVENTIONAL) == BST_CHECKED ? CutDirection::Conventional
                   : IsDlgButtonChecked(IDC_WL_MIXED) == BST_CHECKED      ? CutDirection::Mixed
                                                                          : CutDirection::Climb;
@@ -2329,6 +2333,8 @@ bool CWaterlineFinishingPage::Save(SequenceStep& step, std::wstring& problems)
     saved.stockToLeave = w.stockToLeave;
     saved.extension = w.extension;
     saved.approachDistance = w.approachDistance;
+    saved.slopeFrom = w.slopeFrom;
+    saved.slopeTo = w.slopeTo;
     saved.direction = w.direction;
     saved.stepoverMode = w.stepoverMode;
     saved.stepoverPercent = w.stepoverPercent;
@@ -2378,6 +2384,8 @@ void CParallelFinishingPage::Load(const SequenceStep& step)
     SetNumber(IDC_WATERLINE_STOCK, w.stockToLeave);
     SetNumber(IDC_WATERLINE_EXTENSION, w.extension);
     SetNumber(IDC_WL_APPROACH, w.approachDistance);
+    SetNumber(IDC_WL_SLOPE_FROM, w.slopeFrom);
+    SetNumber(IDC_WL_SLOPE_TO, w.slopeTo);
     CheckRadioButton(IDC_WL_CLIMB, IDC_WL_MIXED,
                      w.direction == CutDirection::Conventional ? IDC_WL_CONVENTIONAL
                      : w.direction == CutDirection::Mixed      ? IDC_WL_MIXED
@@ -2402,6 +2410,8 @@ bool CParallelFinishingPage::Save(SequenceStep& step, std::wstring& problems)
     ReadNumber(IDC_WATERLINE_STOCK, L"The stock to leave", w.stockToLeave, found);
     ReadNumber(IDC_WATERLINE_EXTENSION, L"The overtravel", w.extension, found);
     ReadNumber(IDC_WL_APPROACH, L"The approach distance", w.approachDistance, found);
+    ReadNumber(IDC_WL_SLOPE_FROM, L"The slope's From", w.slopeFrom, found);
+    ReadNumber(IDC_WL_SLOPE_TO, L"The slope's To", w.slopeTo, found);
     w.direction = IsDlgButtonChecked(IDC_WL_CONVENTIONAL) == BST_CHECKED ? CutDirection::Conventional
                   : IsDlgButtonChecked(IDC_WL_MIXED) == BST_CHECKED      ? CutDirection::Mixed
                                                                          : CutDirection::Climb;
@@ -2432,6 +2442,8 @@ bool CParallelFinishingPage::Save(SequenceStep& step, std::wstring& problems)
     saved.stockToLeave = w.stockToLeave;
     saved.extension = w.extension;
     saved.approachDistance = w.approachDistance;
+    saved.slopeFrom = w.slopeFrom;
+    saved.slopeTo = w.slopeTo;
     saved.direction = w.direction;
     saved.linearStart = w.linearStart;
     saved.cutAngle = w.cutAngle;

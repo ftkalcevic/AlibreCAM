@@ -1088,7 +1088,9 @@ namespace camcore
                 { "clearFlats", w.clearFlats },
                 { "finishFlats", w.finishFlats },
                 { "optimiseStepover", w.optimiseStepover },
-                { "approachDistance", w.approachDistance }
+                { "approachDistance", w.approachDistance },
+                { "slopeFrom", w.slopeFrom },
+                { "slopeTo", w.slopeTo }
             };
             WriteAdaptive(item, w.adaptive, w.rampEntry);
             return item;
@@ -1136,6 +1138,7 @@ namespace camcore
                    ReadOptionalBool(item, "finishFlats", w.finishFlats) &&
                    ReadOptionalBool(item, "optimiseStepover", w.optimiseStepover) &&
                    ReadOptionalNumber(item, "approachDistance", w.approachDistance) &&
+                   ReadOptionalNumber(item, "slopeFrom", w.slopeFrom) && ReadOptionalNumber(item, "slopeTo", w.slopeTo) &&
                    ReadAdaptive(item, w.adaptive, w.rampEntry);
         }
 

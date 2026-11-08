@@ -84,6 +84,12 @@ namespace camcore
         // the plunge feed.
         double approachDistance = 2.0;
 
+        // Waterline and Parallel Finishing: cut only where the surface's slope (the
+        // tool tip's height's, in degrees from horizontal) is From to To, so the two
+        // can share a part: waterline the steep walls, parallel the gentle slopes.
+        double slopeFrom = 0.0;
+        double slopeTo = 90.0;
+
         // Adaptive clearing: constant engagement at the stepover in place of the
         // pattern, helixing into closed areas. Waterline
         // Roughing only.

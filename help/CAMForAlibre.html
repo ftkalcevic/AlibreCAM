@@ -892,6 +892,8 @@
   <dd>In the Stepover group; the group's other choices can only be changed with it ticked. Off (the default): the levels are the Cut Levels tab's stepdown only (and Clear Flats' levels, if it's ticked). Ticked: the levels are chosen to suit the slope: from each level, the next stepdown level is tried, and the step halved (to no less than 0.02 mm) until the laps there are no further across than the stepover from where the tool reached at the level above. Steep sides keep the whole stepdown; shallow ones get more levels. The levels are shared by the whole area, so a shallow patch anywhere adds levels everywhere at those heights.</dd>
   <dt>Stepover: % Tool Dia / Distance / Scallop</dt>
   <dd>Used to add levels when Optimise Stepover is ticked, and as the spacing of Finish Flats' passes (which use it as set, even while it's greyed). The widest the gap between two neighbouring laps may be, measured across, before an extra level is added between them. It matters where the parts' sides are shallow; on steep sides the stepdown sets the spacing. A percentage of the tool's diameter (10% by default), a distance (0.5 mm by default), or from the scallop height, the ridge left between two laps: 2 &times; &radic;(h(2r &minus; h)) for the tool's corner radius r (a ball mill's radius). A flat end mill leaves no scallop, so it uses 90% of its diameter.</dd>
+  <dt>Slope: From, To</dt>
+  <dd>Cut only where the surface's slope is From to To degrees from horizontal (0 is flat, 90 a vertical wall), so Waterline Finishing and Parallel Finishing can share a part: waterline the steep walls (say 40 to 90) and parallel the gentle slopes and tops (say 0 to 45; a little overlap blends them). The slope is the tool tip's (for a ball, the surface's where the ball touches it), worked out on the operation's grid, within a few degrees. Stretches and gaps under 0.5 mm are smoothed over. 0 to 90 by default, which cuts everywhere.</dd>
 </dl>
 </section>
 
@@ -914,6 +916,8 @@
   <dd>The rows' direction in degrees: 90 runs along the origin's X, 0 (the default) along its Y.</dd>
   <dt>Stepover: % Tool Dia / Distance / Scallop</dt>
   <dd>How far apart the rows are: a percentage of the tool's diameter (10% by default), a distance (0.5 mm by default), or from the scallop height h, the ridge left between two rows: 2 &times; &radic;(h(2r &minus; h)) for a ball mill of radius r. Scallop needs a ball mill; Generate refuses it with any other tool.</dd>
+  <dt>Slope: From, To</dt>
+  <dd>Cut only where the surface's slope is From to To degrees from horizontal (0 is flat, 90 a vertical wall), so Waterline Finishing and Parallel Finishing can share a part: waterline the steep walls (say 40 to 90) and parallel the gentle slopes and tops (say 0 to 45; a little overlap blends them). The slope is the tool tip's (for a ball, the surface's where the ball touches it), worked out on the operation's grid, within a few degrees. Stretches and gaps under 0.5 mm are smoothed over. 0 to 90 by default, which cuts everywhere.</dd>
 </dl>
 </section>
 

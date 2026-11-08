@@ -876,3 +876,39 @@ TEST_CASE("waterline finishing enters each lap at rapid to the approach distance
     }
     CHECK(entries > 0);
 }
+
+TEST_CASE("a slope range keeps waterline's laps to the steep part of the dome")
+{
+    // The ball's tip on the dome: its slope where its centre is d out is asin(d / 18).
+    SequenceStep step = FinishStep();
+    step.waterlineFinishing.slopeFrom = 45.0;
+    const Tool tool = Ball(6);
+    const ToolpathResult all = GenerateWaterlineFinishToolpath(Input(FinishStep(), tool));
+    const ToolpathResult steep = GenerateWaterlineFinishToolpath(Input(step, tool));
+    REQUIRE(all.ok);
+    REQUIRE(steep.ok);
+    const std::vector<Vec3> cuts = Cuts(steep.toolpath);
+    REQUIRE(cuts.size() > 20);
+    CHECK(cuts.size() < Cuts(all.toolpath).size());
+    double flattest = 90.0;
+    for (const Vec3& p : cuts)
+    {
+        const double d = std::hypot(p.x - 30, p.y - 30);
+        if (d < 18.0)
+            flattest = (std::min)(flattest, std::asin(d / 18.0) * 180.0 / 3.14159265358979323846);
+    }
+    MESSAGE("flattest lap point " << flattest << " degrees");
+    CHECK(flattest > 42.0);     // the grid's slope is within a few degrees
+}
+
+TEST_CASE("slope limits must run from 0 to 90 degrees, From under To")
+{
+    WaterlineRoughingSettings w;
+    CHECK(ValidateWaterlineRoughing(w).empty());
+    w.slopeFrom = 50.0;
+    w.slopeTo = 40.0;
+    CHECK_FALSE(ValidateWaterlineRoughing(w).empty());
+    w.slopeFrom = -1.0;
+    w.slopeTo = 40.0;
+    CHECK_FALSE(ValidateWaterlineRoughing(w).empty());
+}

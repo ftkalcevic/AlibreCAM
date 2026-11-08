@@ -15,6 +15,8 @@ namespace camcore
             problems.push_back("The stock to leave must be 0 or more.");
         if (!(settings.extension >= 0.0) || !std::isfinite(settings.extension))
             problems.push_back("The linear extension or overtravel must be 0 or more.");
+        if (!(settings.slopeFrom >= 0.0 && settings.slopeTo <= 90.0 && settings.slopeFrom < settings.slopeTo))
+            problems.push_back("The slope's From must be less than its To, both 0 to 90 degrees.");
         if (!(settings.approachDistance >= 0.0) || !std::isfinite(settings.approachDistance))
             problems.push_back("The approach distance must be 0 or more.");
         if (settings.pattern == WaterlinePattern::Linear && !std::isfinite(settings.cutAngle))
