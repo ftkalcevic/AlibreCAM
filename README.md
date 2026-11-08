@@ -6,6 +6,8 @@ This is an add-on for Alibre Design to provide basic CAM and GCode generation.  
 This has had very little real life testing - my CNC router is broken at the moment. 
 Once I got started I started pushing the Claude Code abilities to wsee what it could do.
 
+This was built against Alibre Design v27.
+
 CAM for Alibre Design assemblies. The add-on gets its own **AlibreCAM** tab on the
 ribbon. Its **CAM Tab** button opens a CAM tab in the Design Explorer, which holds
 the job tree and saves the job to a `.cam` file next to the assembly.
