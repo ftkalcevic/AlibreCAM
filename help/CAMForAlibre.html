@@ -216,7 +216,7 @@
 
 <section id="simulation">
 <h2>Simulation</h2>
-<p>Plays the generated toolpaths against the stock in Alibre's view, cutting it a move at a time. The stock is a grid of small cubes (cells) over its box, shown shaded in place of its outline; a cell is cut away when its centre falls inside the tool. Each tool cuts with its own shape: flat, ball, corner radius, V, chamfer, taper and drill ends (a thread mill as a plain cylinder). The tool is drawn in yellow where it is, its whole length, with the machine's tool holder above it in grey. Operations run in the sequence's order, each in its own Set Origin's direction, so tilted origins cut along their tool axis. The shank (the tool above its flutes, up to its overall length) and the tool holder (a cylinder of the machine's Tool Holder Diameter and Depth, from the tool's overall length up) are checked against the stock: either touching it stops the simulation with a warning. Nothing is checked against the parts yet. Open it with Simulate on the CAM tab's right-click menus; it needs a stock, and operations with no toolpath, origin or tool are left out (the dialog says which).</p>
+<p>Plays the generated toolpaths against the stock in Alibre's view, cutting it a move at a time. The stock is a grid of small cubes (cells) over its box, shown shaded in place of its outline; a cell is cut away when its centre falls inside the tool. Each tool cuts with its own shape: flat, ball, corner radius, V, chamfer, taper and drill ends (a thread mill as a plain cylinder). The tool is drawn in yellow where it is, its whole length, with the machine's tool holder above it in grey. Operations run in the sequence's order, each in its own Set Origin's direction, so tilted origins cut along their tool axis. The shank (the tool above its flutes, up to its overall length; with a Reduced neck, the neck at the cutting diameter up to the neck length and the shank at the shank diameter above it) and the tool holder (a cylinder of the machine's Tool Holder Diameter and Depth, from the tool's overall length up) are checked against the stock: any of them touching it stops the simulation with a warning. Nothing is checked against the parts yet. Open it with Simulate on the CAM tab's right-click menus; it needs a stock, and operations with no toolpath, origin or tool are left out (the dialog says which).</p>
 <dl>
   <dt>Position</dt>
   <dd>The operation being cut, the move of all the moves (arcs are split into short straight moves), and the machining time so far of the whole: from the feeds, the machine's Rapid rate and dwells, with no allowance for acceleration.</dd>
@@ -248,7 +248,8 @@
   <dd>The simulation stops after a move that does one of these, which is drawn in thick red, and the warning names the operation and its toolpath move:
     <ul>
       <li><strong>Rapid into stock</strong>: a rapid move cut stock.</li>
-      <li><strong>The tool's shank hits the stock</strong>: the tool above its flute length touched stock. A tool with no flute length, or flutes as long as the tool, isn't checked.</li>
+      <li><strong>The tool's shank hits the stock</strong>: the tool above its flute length (or, with a Reduced neck, the wide shank above the neck length) touched stock. A tool with no flute length, or flutes as long as the tool, isn't checked.</li>
+      <li><strong>The tool's neck hits the stock</strong>: a Reduced neck tool's neck, between its flute length and its neck length, touched stock.</li>
       <li><strong>The tool holder hits the stock</strong>: the holder touched stock.</li>
     </ul>
     Play, Step or the other buttons carry on from there.</dd>
@@ -437,6 +438,12 @@
   <dd>Thread mills: the thread form's angle, such as 60.</dd>
   <dt>Point angle (deg)</dt>
   <dd>The drill's included point angle, such as 118. Used by the Drilling tab's Add drill tip to depth.</dd>
+  <dt>Reduced neck</dt>
+  <dd>Any type. Tick it for a tool that keeps its cutting diameter only part of the way up, then widens to a thicker shank, such as a long reach end mill. Ticking it fills an empty Neck length and Shank diameter with the flute length and diameter, to be changed. Used by the simulation's collision checks and drawn in it; toolpaths don't use it yet. Off by default.</dd>
+  <dt>Neck length</dt>
+  <dd>Only with Reduced neck. How far from the tip the tool keeps its cutting diameter, before it widens to the shank. From the flute length to the overall length.</dd>
+  <dt>Shank diameter</dt>
+  <dd>Only with Reduced neck. The diameter of the wide part, from the neck length up to the overall length (the part held in the collet). No less than the diameter.</dd>
   <dt>Speeds &amp; Feeds</dt>
   <dd>One row for each material the tool has speeds and feeds for, with its spindle speed and cut feed. An operation's Feeds &amp; Speeds tab can be filled from the row for the job's material.</dd>
   <dt>Add, Edit, Remove</dt>

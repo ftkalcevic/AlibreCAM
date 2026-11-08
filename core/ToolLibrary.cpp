@@ -117,6 +117,12 @@ namespace camcore
                 item["pitch"] = tool.pitch;
             if (fields.threadAngle)
                 item["threadAngle"] = tool.threadAngle;
+            if (tool.reducedNeck)
+            {
+                item["reducedNeck"] = true;
+                item["neckLength"] = tool.neckLength;
+                item["shankDiameter"] = tool.shankDiameter;
+            }
 
             json feeds = json::array();
             for (const ToolFeeds& row : tool.feeds)
@@ -179,6 +185,15 @@ namespace camcore
                 tool.pitch = item.at("pitch").get<double>();
             if (fields.threadAngle)
                 tool.threadAngle = item.at("threadAngle").get<double>();
+
+            // Older tools have no reduced neck.
+            const auto neck = item.find("reducedNeck");
+            if (neck != item.end() && neck->get<bool>())
+            {
+                tool.reducedNeck = true;
+                tool.neckLength = item.at("neckLength").get<double>();
+                tool.shankDiameter = item.at("shankDiameter").get<double>();
+            }
 
             // Version 1 libraries have no feeds.
             const auto feeds = item.find("feeds");
@@ -254,6 +269,13 @@ namespace camcore
             problems.push_back("The flute length must be more than 0.");
         if (!(tool.overallLength >= tool.fluteLength))
             problems.push_back("The overall length can't be less than the flute length.");
+        if (tool.reducedNeck)
+        {
+            if (!(tool.neckLength >= tool.fluteLength && tool.neckLength <= tool.overallLength))
+                problems.push_back("The neck length must be from the flute length to the overall length.");
+            if (!(tool.shankDiameter >= tool.diameter))
+                problems.push_back("The shank diameter can't be less than the diameter.");
+        }
 
         const ToolFields fields = FieldsOf(tool.type);
         if (fields.pointAngle && !(tool.pointAngle > 0.0 && tool.pointAngle <= 180.0))
@@ -316,6 +338,8 @@ namespace camcore
         result.diameter *= kMillimetresPerInch;
         result.fluteLength *= kMillimetresPerInch;
         result.overallLength *= kMillimetresPerInch;
+        result.neckLength *= kMillimetresPerInch;
+        result.shankDiameter *= kMillimetresPerInch;
         result.cornerRadius *= kMillimetresPerInch;
         result.tipDiameter *= kMillimetresPerInch;
         result.pitch *= kMillimetresPerInch;

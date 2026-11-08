@@ -9499,6 +9499,82 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 >
 > * Put images in all dialog tabs to show what each parameter means (where it makes sense)
 
+### 🤖 Claude
+
+> I've added both to `TODO.md`, without a priority mark:
+>
+> - Tool holder from a model: pick an Alibre part (or file) as the holder's shape, used in the simulation in place of the plain cylinder.
+> - Pictures on the dialog tabs showing what each parameter means, where it helps.
+>
+> If either should be marked 🔴 or 🟡, tell me which.
+
+### 🧑 Frank · 18:12
+
+> First, lets add some more parameters to tool, which will help with collision detection in simulation.  
+>
+> * Add a check box, Reduced Shank - if true, an edit box for Reduced Shank Length, and Non-Reduced Shank Diameter.  This describes a tool that has a larger diameter at the tool holder ("Non-Reduced Shank Diameter"), and part of the tool that has a reduced diameter - "Reduced Shank Length".  So the thick part will be Tool Length - Non-Reduced Shank Diameter.  If those names are confusing, feel free to rename them.
+
+### 🤖 Claude
+
+> I'll read how the tool's fields are defined and edited before choosing names:
+
+> The tool dialog has room for this: a check box on the last row of the Size group, and one more row below it. Before I start, the names:
+
+> Questions:
+> - Which names for the reduced-shank fields? (In all cases the length is measured from the tip, so the wide part runs from there to the overall length, and the narrow part is the cutting diameter.)
+>   - Reduced neck / Neck length / Shank diameter (Recommended): Check box 'Reduced neck'; 'Neck length' (from the tip to where the shank widens); 'Shank diameter' (the wide part held in the collet). Matches common tool catalogue terms.
+>   - Reach / Shank diameter: Check box 'Long reach'; 'Reach' (from the tip to where the shank widens); 'Shank diameter'.
+>   - Your names as given: 'Reduced Shank', 'Reduced Shank Length', 'Non-Reduced Shank Diameter'.
+
+### 🧑 Frank · 18:12
+
+> Answers:
+> - Which names for the reduced-shank fields? (In all cases the length is measured from the tip, so the wide part runs from there to the overall length, and the narrow part is the cutting diameter.)
+>   **Reduced neck / Neck length / Shank diameter (Recommended)**
+
+### 🤖 Claude
+
+> Adding the reduced-neck fields now; core and simulation first, then the dialog.
+
+> Core and simulation changes are in; now the Tool dialog, then building.
+
+> Build and tests pass; updating the help, spec and CLAUDE.md now.
+
+> Now the doc edits (help, SPEC.md, CLAUDE.md), then the Claude doc.
+
+> Reduced neck tools are done and installed, using your names. Debug and Release build cleanly and `CamCoreTests` passes in both, but none of it has been tried in Alibre yet, and nothing is committed.
+>
+> **What it does**
+> - **Tool dialog:** a **Reduced neck** check box under the Size group, for any tool type. Ticking it turns on **Neck length** and **Shank diameter**. If they're empty, it fills them with the flute length and diameter as a starting point.
+> - **The rules:**
+>   - The neck length is measured from the tip and must be between the flute length and the overall length.
+>   - The shank diameter can't be smaller than the cutting diameter.
+>   - Inch tools are converted to mm like the other sizes.
+> - **Saving:** the three fields are saved only when the box is ticked. Older files load with it off, so the file version stays at 3.
+> - **Simulation:**
+>   - The neck keeps the cutting diameter from the top of the flutes up to the neck length.
+>   - The shank is the shank diameter from there up to the overall length.
+>   - Both are checked against the stock, as the plain shank and the holder already were. A hit on the neck stops with the new warning "The tool's neck hits the stock".
+>   - The wide shank is drawn in yellow, as part of the tool.
+> - **Tool tab:** a reduced-neck tool's details now list its neck length and shank diameter.
+> - **Toolpaths don't use the neck yet**; only the simulation does.
+> - **Docs:**
+>   - The help is updated for the Tool dialog, the simulation's description and the new warning, and the installed copy matches.
+>   - The spec is updated in the Claude doc and `docs\SPEC.md` (both rev 228), and so is `CLAUDE.md`.
+>
+> **To test**
+> 1. Edit a tool. Check that the Size group shows Reduced neck, Neck length and Shank diameter, the boxes are greyed until it's ticked, and ticking it fills them from the flute length and diameter.
+> 2. Enter a neck length shorter than the flute length, then a shank diameter smaller than the diameter. Each should be refused with a message when you press OK.
+> 3. Save a reduced-neck tool, reopen the Machine dialog, and check the values come back. An unticked tool should still load as before.
+> 4. Simulate a deep cut with a reduced-neck tool. The tool should be drawn narrow up to the neck length, with a wider cylinder above it.
+> 5. Make the cut deeper than the flute length. It should stop with "The tool's neck hits the stock".
+> 6. Make it deeper than the neck length. It should stop with "The tool's shank hits the stock".
+> 7. Open the Tool dialog's ? button and check the three new fields are described.
+
+### 🧑 Frank · 18:28
+
+> Tests pass.
+
 ---
 
 # Side conversation

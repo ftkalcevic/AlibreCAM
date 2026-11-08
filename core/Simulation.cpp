@@ -838,14 +838,30 @@ namespace camcore
         return SweepTool<false>(const_cast<VoxelStock&>(stock), profile, from, to, axis, false, stopAtFirst);
     }
 
+    SimCylinder NeckOf(const Tool& tool)
+    {
+        SimCylinder neck;
+        if (tool.reducedNeck && tool.fluteLength > 0.0 && tool.neckLength > tool.fluteLength && tool.diameter > 0.0)
+        {
+            neck.start = tool.fluteLength;
+            neck.radius = tool.diameter / 2.0;
+            neck.length = (std::min)(tool.neckLength, tool.overallLength) - tool.fluteLength;
+        }
+        return neck;
+    }
+
     SimCylinder ShankOf(const Tool& tool)
     {
         SimCylinder shank;
-        if (tool.fluteLength > 0.0 && tool.overallLength > tool.fluteLength && tool.diameter > 0.0)
+        if (!(tool.fluteLength > 0.0 && tool.diameter > 0.0))
+            return shank;
+        const bool neck = tool.reducedNeck && tool.shankDiameter > 0.0;
+        const double start = neck ? (std::max)(tool.fluteLength, tool.neckLength) : tool.fluteLength;
+        if (tool.overallLength > start)
         {
-            shank.start = tool.fluteLength;
-            shank.radius = tool.diameter / 2.0;
-            shank.length = tool.overallLength - tool.fluteLength;
+            shank.start = start;
+            shank.radius = (neck ? tool.shankDiameter : tool.diameter) / 2.0;
+            shank.length = tool.overallLength - start;
         }
         return shank;
     }
@@ -1390,6 +1406,8 @@ namespace camcore
             warning = SimWarning::HolderHitsStock;
         else if (touches(operation.shank))
             warning = SimWarning::ShankHitsStock;
+        else if (touches(operation.neck))
+            warning = SimWarning::NeckHitsStock;
 
         const long long removed = CutMove(m_stock, operation.profile, a, b, operation.frame.zAxis);
         if (warning == SimWarning::None && move.rapid && removed > 0)

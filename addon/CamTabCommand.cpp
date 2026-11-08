@@ -1451,6 +1451,7 @@ void CCamTabCommand::SimulateOperations(std::vector<StepRef> refs)
         operation.tool = "T" + std::to_string(pTool->number) + " " + pTool->name + " (" +
                          camcore::ToolTypeTitle(tool.type) + ", " + diameter + " mm)";
         operation.profile = camcore::ProfileOf(tool);
+        operation.neck = camcore::NeckOf(tool);
         operation.shank = camcore::ShankOf(tool);
         operation.holder = camcore::HolderOf(tool, m_machine.holderDiameter, m_machine.holderDepth);
         operation.frame = frame.frame;
@@ -1661,6 +1662,7 @@ void CCamTabCommand::UpdateSimulationScene()
         m_scene.simAxis = pOperation->frame.zAxis;
         m_scene.simProfile = pOperation->profile;
         m_scene.simHolder = pOperation->holder;
+        m_scene.simShank = pOperation->shank;
     }
     m_scene.simWarning = m_simulation.HasWarning();
     if (m_scene.simWarning)

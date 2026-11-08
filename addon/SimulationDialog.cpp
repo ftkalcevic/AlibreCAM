@@ -244,6 +244,8 @@ void CSimulationDlg::ShowState()
             what = L"The tool holder hits the stock";
         else if (simulation.Warning() == camcore::SimWarning::ShankHitsStock)
             what = L"The tool's shank hits the stock";
+        else if (simulation.Warning() == camcore::SimWarning::NeckHitsStock)
+            what = L"The tool's neck hits the stock";
         warning = std::wstring(what) + L" in " + FromUtf8(simulation.Operations()[move.operation].name) +
                   L", toolpath move " + std::to_wstring(move.toolpathMove + 1) + L".";
     }

@@ -314,6 +314,82 @@ TEST_CASE("the shank and holder touching stock stop with a warning")
     CHECK_FALSE(simulation.HasWarning());
 }
 
+TEST_CASE("a reduced neck tool's neck and wide shank")
+{
+    // A 2 mm end mill with 3 mm flutes, its 2 mm neck 12 long, then a 6 mm shank
+    // up to 40.
+    Tool tool;
+    tool.id = "neck";
+    tool.name = "2 mm long reach";
+    tool.diameter = 2.0;
+    tool.fluteLength = 3.0;
+    tool.overallLength = 40.0;
+    tool.reducedNeck = true;
+    tool.neckLength = 12.0;
+    tool.shankDiameter = 6.0;
+    CHECK(ValidateTool(tool).empty());
+    const SimCylinder neck = NeckOf(tool);
+    const SimCylinder shank = ShankOf(tool);
+    CHECK(neck.start == 3.0);
+    CHECK(neck.radius == 1.0);
+    CHECK(neck.length == 9.0);
+    CHECK(shank.start == 12.0);
+    CHECK(shank.radius == 3.0);
+    CHECK(shank.length == 28.0);
+
+    // Without the reduced neck: no neck, and the shank is the tool's diameter.
+    Tool plain = tool;
+    plain.reducedNeck = false;
+    CHECK_FALSE(NeckOf(plain).Present());
+    CHECK(ShankOf(plain).start == 3.0);
+    CHECK(ShankOf(plain).radius == 1.0);
+
+    // A neck as long as the flutes: the wide shank starts at the flutes.
+    Tool shortNeck = tool;
+    shortNeck.neckLength = 3.0;
+    CHECK(ValidateTool(shortNeck).empty());
+    CHECK_FALSE(NeckOf(shortNeck).Present());
+    CHECK(ShankOf(shortNeck).start == 3.0);
+    CHECK(ShankOf(shortNeck).radius == 3.0);
+
+    // The checks.
+    Tool bad = tool;
+    bad.neckLength = 2.0;
+    CHECK(ValidateTool(bad).size() == 1);
+    bad.neckLength = 41.0;
+    CHECK(ValidateTool(bad).size() == 1);
+    bad = tool;
+    bad.shankDiameter = 1.5;
+    CHECK(ValidateTool(bad).size() == 1);
+
+    // In inches, both are converted.
+    Tool inches = tool;
+    inches.unit = ToolUnit::Inches;
+    const Tool mm = ToolInMillimetres(inches);
+    CHECK(mm.neckLength == doctest::Approx(12.0 * 25.4));
+    CHECK(mm.shankDiameter == doctest::Approx(6.0 * 25.4));
+
+    // Slots into stock 10 tall: 2 deep stays within the flutes, 8 deep puts the
+    // neck (3 to 12 above the tip) in the stock, 14 deep the wide shank too.
+    const auto run = [&](double depth) {
+        const std::vector<ToolpathMove> moves = {
+            Move(MoveKind::Rapid, { 5, 10, 15 }), Move(MoveKind::Feed, { 5, 10, 10 - depth }),
+            Move(MoveKind::Feed, { 15, 10, 10 - depth }),
+        };
+        SimOperation operation = Operation(Flat(2), moves);
+        operation.profile = ProfileOf(tool);
+        operation.neck = NeckOf(tool);
+        operation.shank = ShankOf(tool);
+        Simulation simulation;
+        simulation.Start({ { 0, 0, 0 }, { 20, 20, 10 } }, {}, { operation }, SimResolution{ true, 0.25 });
+        simulation.RunToEnd();
+        return simulation.HasWarning() ? simulation.Warning() : SimWarning::None;
+    };
+    CHECK(run(2.0) == SimWarning::None);            // within the flutes
+    CHECK(run(8.0) == SimWarning::NeckHitsStock);   // the neck in the stock
+    CHECK(run(14.0) == SimWarning::ShankHitsStock); // the shank too, which is checked first
+}
+
 TEST_CASE("counting a move leaves the stock as it was")
 {
     Simulation simulation;

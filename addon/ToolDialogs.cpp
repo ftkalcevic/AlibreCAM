@@ -175,6 +175,7 @@ void CToolFeedsDlg::OnOK()
 BEGIN_MESSAGE_MAP(CToolEditDlg, CDialog)
     ON_BN_CLICKED(IDC_HELP_BUTTON, &CToolEditDlg::OnHelpButton)
     ON_CBN_SELCHANGE(IDC_TOOL_TYPE, &CToolEditDlg::OnTypeChanged)
+    ON_BN_CLICKED(IDC_TOOL_REDUCED_NECK, &CToolEditDlg::OnReducedNeck)
     ON_BN_CLICKED(IDC_TOOL_FEEDS_ADD, &CToolEditDlg::OnAddFeeds)
     ON_BN_CLICKED(IDC_TOOL_FEEDS_EDIT, &CToolEditDlg::OnEditFeeds)
     ON_BN_CLICKED(IDC_TOOL_FEEDS_REMOVE, &CToolEditDlg::OnRemoveFeeds)
@@ -233,6 +234,12 @@ BOOL CToolEditDlg::OnInitDialog()
     SetNumber(IDC_TOOL_TAPER_ANGLE, m_tool.taperAngle);
     SetNumber(IDC_TOOL_PITCH, m_tool.pitch);
     SetNumber(IDC_TOOL_THREAD_ANGLE, m_tool.threadAngle);
+    CheckDlgButton(IDC_TOOL_REDUCED_NECK, m_tool.reducedNeck ? BST_CHECKED : BST_UNCHECKED);
+    if (m_tool.reducedNeck)
+    {
+        SetNumber(IDC_TOOL_NECK_LENGTH, m_tool.neckLength);
+        SetNumber(IDC_TOOL_SHANK_DIAMETER, m_tool.shankDiameter);
+    }
 
     m_feedsList.SubclassDlgItem(IDC_TOOL_FEEDS_LIST, this);
     m_feedsList.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
@@ -344,6 +351,36 @@ void CToolEditDlg::UpdateFieldsForType()
     GetDlgItem(IDC_TOOL_TAPER_ANGLE)->EnableWindow(fields.taperAngle);
     GetDlgItem(IDC_TOOL_PITCH)->EnableWindow(fields.pitch);
     GetDlgItem(IDC_TOOL_THREAD_ANGLE)->EnableWindow(fields.threadAngle);
+
+    const BOOL neck = (IsDlgButtonChecked(IDC_TOOL_REDUCED_NECK) == BST_CHECKED) ? TRUE : FALSE;
+    GetDlgItem(IDC_TOOL_NECK_LENGTH)->EnableWindow(neck);
+    GetDlgItem(IDC_TOOL_SHANK_DIAMETER)->EnableWindow(neck);
+}
+
+void CToolEditDlg::OnReducedNeck()
+{
+    // Ticked with nothing filled in yet: start from the flute length and the
+    // diameter, to be changed.
+    if (IsDlgButtonChecked(IDC_TOOL_REDUCED_NECK) == BST_CHECKED)
+    {
+        const struct { int box; int from; } starts[] = {
+            { IDC_TOOL_NECK_LENGTH, IDC_TOOL_FLUTE_LENGTH },
+            { IDC_TOOL_SHANK_DIAMETER, IDC_TOOL_DIAMETER },
+        };
+        for (const auto& start : starts)
+        {
+            CString text;
+            GetDlgItemText(start.box, text);
+            text.Trim();
+            if (text.IsEmpty())
+            {
+                CString from;
+                GetDlgItemText(start.from, from);
+                SetDlgItemText(start.box, from);
+            }
+        }
+    }
+    UpdateFieldsForType();
 }
 
 void CToolEditDlg::OnTypeChanged()
@@ -422,6 +459,12 @@ void CToolEditDlg::OnOK()
         ReadNumber(IDC_TOOL_PITCH, L"The pitch", tool.pitch, problems);
     if (fields.threadAngle)
         ReadNumber(IDC_TOOL_THREAD_ANGLE, L"The thread angle", tool.threadAngle, problems);
+    tool.reducedNeck = IsDlgButtonChecked(IDC_TOOL_REDUCED_NECK) == BST_CHECKED;
+    if (tool.reducedNeck)
+    {
+        ReadNumber(IDC_TOOL_NECK_LENGTH, L"The neck length", tool.neckLength, problems);
+        ReadNumber(IDC_TOOL_SHANK_DIAMETER, L"The shank diameter", tool.shankDiameter, problems);
+    }
 
     // Only check the values themselves once they've all been read as numbers.
     if (problems.empty())

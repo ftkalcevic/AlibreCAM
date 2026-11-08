@@ -76,6 +76,14 @@ namespace camcore
         double fluteLength = 0.0;
         double overallLength = 0.0;
 
+        // Any type: a reduced neck. The tool keeps its cutting diameter from the
+        // tip up to the neck length, then widens to the shank diameter up to the
+        // overall length (the part held in the collet). Without it, the shank is
+        // the cutting diameter all the way up.
+        bool reducedNeck = false;
+        double neckLength = 0.0;
+        double shankDiameter = 0.0;
+
         // Every type but drills
         int fluteCount = 2;
 

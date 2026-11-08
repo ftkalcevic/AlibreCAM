@@ -896,6 +896,11 @@ void CToolPage::ShowDetails(const Tool* pTool)
     add(L"Diameter", Length(pTool->diameter, pTool->unit));
     add(L"Flute length", Length(pTool->fluteLength, pTool->unit));
     add(L"Overall length", Length(pTool->overallLength, pTool->unit));
+    if (pTool->reducedNeck)
+    {
+        add(L"Neck length", Length(pTool->neckLength, pTool->unit));
+        add(L"Shank diameter", Length(pTool->shankDiameter, pTool->unit));
+    }
     const ToolFields fields = FieldsOf(pTool->type);
     const std::wstring degrees = L"\u00B0";
     if (fields.pointAngle)

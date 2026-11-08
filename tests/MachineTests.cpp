@@ -267,6 +267,12 @@ TEST_CASE("every tool type saves and loads with its own fields")
         tool.pitch = 1.5;
         tool.threadAngle = 55;
         tool.pointAngle = 135;
+        if (number == 2)
+        {
+            tool.reducedNeck = true;
+            tool.neckLength = tool.overallLength;
+            tool.shankDiameter = 12;
+        }
         library.tools.push_back(tool);
         ++number;
     }
@@ -283,6 +289,12 @@ TEST_CASE("every tool type saves and loads with its own fields")
         const Tool& back = loaded.library.tools[i];
         const ToolFields fields = FieldsOf(back.type);
         CHECK(back.type == library.tools[i].type);
+        CHECK(back.reducedNeck == (i == 1));
+        if (i == 1)
+        {
+            CHECK(back.neckLength == library.tools[i].neckLength);
+            CHECK(back.shankDiameter == 12);
+        }
         if (fields.cornerRadius)
             CHECK(back.cornerRadius == 2);
         if (fields.includedAngle)

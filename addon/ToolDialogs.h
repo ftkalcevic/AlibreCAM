@@ -75,6 +75,7 @@ protected:
     BOOL OnInitDialog() override;
     void OnOK() override;
     afx_msg void OnTypeChanged();
+    afx_msg void OnReducedNeck();
     afx_msg void OnHelpButton();
     afx_msg void OnAddFeeds();
     afx_msg void OnEditFeeds();

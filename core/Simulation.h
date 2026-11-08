@@ -188,10 +188,14 @@ namespace camcore
         bool Present() const { return length > 0.0 && radius > 0.0; }
     };
 
-    // The shank (the tool's diameter from its flute length up to its overall
-    // length) and the holder (from the overall length up), from a tool in mm and
-    // the machine's holder size. A tool with no flute length, or flutes as long
-    // as the tool, has no shank to check.
+    // The neck (a reduced neck tool's cutting diameter from its flute length up
+    // to its neck length; none without a reduced neck), the shank (from the neck
+    // length, or the flute length, up to the overall length, at the shank
+    // diameter, or the cutting diameter without a reduced neck) and the holder
+    // (from the overall length up), from a tool in mm and the machine's holder
+    // size. A tool with no flute length, or flutes as long as the tool, has no
+    // shank to check.
+    SimCylinder NeckOf(const Tool& tool);
     SimCylinder ShankOf(const Tool& tool);
     SimCylinder HolderOf(const Tool& tool, double holderDiameter, double holderDepth);
 
@@ -200,7 +204,8 @@ namespace camcore
     {
         None,
         RapidIntoStock,     // a rapid move cut stock
-        ShankHitsStock,     // the shank above the flutes touched stock
+        ShankHitsStock,     // the shank above the flutes (or above the neck) touched stock
+        NeckHitsStock,      // a reduced neck touched stock
         HolderHitsStock,    // the tool holder touched stock
     };
 
@@ -267,7 +272,8 @@ namespace camcore
         ToolProfile profile;
         Frame frame;
         Toolpath toolpath;
-        SimCylinder shank;      // checked for touching stock, if present
+        SimCylinder neck;       // checked for touching stock, if present
+        SimCylinder shank;
         SimCylinder holder;
     };
 
