@@ -23,6 +23,12 @@ these belong in the spec (`docs\SPEC.md`) once they're made.
 - 🔴 Show some summary information under each op, eg tool
 - 🔴 More details in tool
 - New dialogs should inherit speed/feeds for the last (?)  copy/paste(?)
+- Next, after adaptive clearing (Frank's order): ramp/helix entry for Waterline Roughing (Plunge, Ramp along path, Helix, falling back) and a Helix mode on Pocketing's Entry/Exit tab; then Steep/Shallow slope limits (From/To angle) on Waterline and Parallel Finishing
+- Rest machining: clear only what a bigger tool left, from the simulated stock or a previous tool's diameter
+- More posts (GRBL, Mach3/4, UCCNC, Masso) and arc fitting (G2/G3) of 3D and contour output
+- Undo in the CAM tree
+- Inch display units
+- Clamps and vices as keep-out for toolpaths and the simulation
 - Performance
   - Spline faces are now read as NURBS (`GetBSplineCurvesData`) and worked out
     by CamCore. A face whose data can't be read that way (several surfaces in

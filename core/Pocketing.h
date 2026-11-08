@@ -43,6 +43,11 @@ namespace camcore
         PocketStart start = PocketStart::Inside;
         PocketLinearStart linearStart = PocketLinearStart::Bottom;
         ToolRelativeSize stepover{ true, 50.0, 2.0 };
+
+        // Adaptive clearing: constant engagement at the stepover in place of the
+        // pattern, helixing into closed areas.
+        bool adaptive = false;
+        RampEntry rampEntry;
     };
 
     // The direction the cut type actually uses: Spiral can't be Mixed.

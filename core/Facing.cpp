@@ -29,6 +29,11 @@ namespace camcore
         if (over.usePercent ? !(over.percent >= 0.0) : !(over.distance >= 0.0))
             problems.push_back("The overtravel can't be negative.");
 
+        if (settings.adaptive)
+        {
+            for (const std::string& problem : ValidateRampEntry(settings.rampEntry))
+                problems.push_back(problem);
+        }
         return problems;
     }
 

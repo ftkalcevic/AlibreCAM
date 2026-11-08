@@ -2,6 +2,8 @@
 
 #include "FacingToolpath.h"
 
+#include "AdaptiveClearing.h"
+
 #include "PathBuilder.h"
 
 #include <algorithm>
@@ -334,8 +336,47 @@ namespace camcore
         // until each has its own.
         // Entry and exit are at every level, or only into the first and out of the last.
         ToolpathResult result;
+
+        // Adaptive clearing of each area, worked out once: the boundary is the
+        // material, and the tool's centre may go the overtravel past it.
+        std::vector<std::vector<AdaptiveCut>> adaptiveCuts(areas.size());
+        if (facing.adaptive)
+        {
+            for (size_t a = 0; a < areas.size(); ++a)
+            {
+                const Area& area = areas[a];
+                double xLow = 0.0, xHigh = 0.0, yLow = 0.0, yHigh = 0.0;
+                PathExtent(*area.pBoundary, { 1.0, 0.0, 0.0 }, xLow, xHigh);
+                PathExtent(*area.pBoundary, { 0.0, 1.0, 0.0 }, yLow, yHigh);
+                const double cell = AdaptiveCell(input.tool->diameter, step, xHigh - xLow + 2.0 * overtravel,
+                                                 yHigh - yLow + 2.0 * overtravel);
+                AdaptiveSettings adaptive;
+                adaptive.toolRadius = input.tool->diameter / 2.0;
+                adaptive.optimalLoad = step;
+                adaptive.climb = facing.direction != CutDirection::Conventional;
+                adaptive.ramp = facing.rampEntry;
+                adaptiveCuts[a] = AdaptiveClear(
+                    AdaptiveGridFromOutlines({ *area.pBoundary }, cell, -overtravel, adaptive.toolRadius), adaptive).cuts;
+            }
+        }
+
         auto cut = [&](const Area& area, size_t l) {
             const CutLevel& level = levels[l];
+            if (facing.adaptive)
+            {
+                // Down from 2 mm above the level above (the cut's top for the first).
+                const double top = (l == 0) ? CutTopZ(pOperation->cutLevels, z) : levels[l - 1].z;
+                AdaptiveWriting writing;
+                writing.z = level.z;
+                writing.top = top;
+                writing.enter = (std::min)(top + 2.0, clearance);
+                writing.clearance = clearance;
+                writing.feeds = pOperation->feeds;
+                writing.climb = facing.direction != CutDirection::Conventional;
+                writing.rampAngle = facing.rampEntry.rampAngle;
+                WriteAdaptiveCuts(adaptiveCuts[static_cast<size_t>(&area - areas.data())], writing, result.toolpath);
+                return;
+            }
             PathBuilder path(result.toolpath, pOperation->feeds, clearance, level.z);
             path.SetEntryExit(&entryExit, entryExit.eachCutLevel || l == 0,
                               entryExit.eachCutLevel || l + 1 == levels.size());

@@ -688,6 +688,12 @@
   <dd>Rectangular loops around the area, from the outside in.</dd>
   <dt>Cut Start</dt>
   <dd>The corner the cut starts from, seen from the origin's +Z: Top Left, Top Right, Bottom Left or Bottom Right. For one-way Linear passes, it picks the side the passes start along, and the direction picks the end.</dd>
+  <dt>Use Adaptive Clearing</dt>
+  <dd>Clears the area with constant engagement in place of the pattern: the tool's side cut stays about the step distance wide all the way, so it can cut the full depth of a level at a low stepover without the full-width cuts (corners, the first pass) that load a light machine. Its passes spread out a step distance at a time from where the tool can already be, from outside the boundary when the Overtravel is more than the tool's radius (otherwise by a helix inside it), following the walls and going round islands, cut climb (or conventional if that's chosen; Mixed cuts climb). Moves between passes stay down where the way is clear, and otherwise lift. At each level it comes down at rapid to 2 mm above the level before (the cut's top for the first), then at the plunge feed or down the helix. While it's ticked, the pattern's own choices (cut type, start, angle, Mixed) are greyed and not used. Use a smaller step distance than for the ordinary pattern: 10 to 25% of the tool's diameter is usual. Off by default.</dd>
+  <dt>Helix Dia (%)</dt>
+  <dd>Adaptive clearing only. Where there's no air to start from, the tool goes down a helix of this diameter (its centre's path), as a percentage of the tool's diameter, at the roomiest place, then spreads out from there. Where there isn't room for a helix at least a tenth of the tool's radius, it plunges straight down instead. 80% by default; 0 to 200.</dd>
+  <dt>Ramp Angle (deg)</dt>
+  <dd>Adaptive clearing only. How steeply the helix goes down, in degrees from horizontal, at the engage feed; it then goes once more round at the level. 2 degrees by default; more than 0 and at most 45.</dd>
 </dl>
 </section>
 
@@ -778,6 +784,12 @@
   <dd>For Linear Cuts, start the rows at the origin's -Y side or +Y side.</dd>
   <dt>Stepover</dt>
   <dd>How far apart the loops or rows are, as a % of the tool diameter or a distance.</dd>
+  <dt>Use Adaptive Clearing</dt>
+  <dd>Clears the area with constant engagement in place of the pattern: the tool's side cut stays about the stepover wide all the way, so it can cut the full depth of a level at a low stepover without the full-width cuts (corners, the first pass) that load a light machine. Its passes spread out a stepover at a time from where the tool can already be, a helix into each pocket, following the walls and going round islands, cut climb (or conventional if that's chosen; Mixed cuts climb). Moves between passes stay down where the way is clear, and otherwise lift. At each level it comes down at rapid to 2 mm above the level before (the cut's top for the first), then down the helix. The wall is then cut with one exact lap at the Stock to Leave, as the ordinary patterns do. While it's ticked, the pattern's own choices (cut type, start, angle, Mixed) are greyed and not used. Use a smaller stepover than for the ordinary pattern: 10 to 25% of the tool's diameter is usual. Off by default.</dd>
+  <dt>Helix Dia (%)</dt>
+  <dd>Adaptive clearing only. Where there's no air to start from, the tool goes down a helix of this diameter (its centre's path), as a percentage of the tool's diameter, at the roomiest place, then spreads out from there. Where there isn't room for a helix at least a tenth of the tool's radius, it plunges straight down instead. 80% by default; 0 to 200.</dd>
+  <dt>Ramp Angle (deg)</dt>
+  <dd>Adaptive clearing only. How steeply the helix goes down, in degrees from horizontal, at the engage feed; it then goes once more round at the level. 2 degrees by default; more than 0 and at most 45.</dd>
 </dl>
 </section>
 
@@ -827,6 +839,12 @@
   <dd>For Linear: the rows' direction. 90 runs along the origin's X, 0 along its Y.</dd>
   <dt>Stepover: % Tool Dia / Distance / Scallop</dt>
   <dd>How far apart the loops or rows are: a percentage of the tool's diameter (at most 100%; 50% is the default), a distance, or from the scallop height, the ridge left between two passes. Scallop works from the tool's corner radius (a ball mill's radius): the stepover is 2 &times; &radic;(h(2r &minus; h)). A flat end mill leaves no scallop, so it steps over 90% of its diameter.</dd>
+  <dt>Use Adaptive Clearing</dt>
+  <dd>Clears the area with constant engagement in place of the pattern: the tool's side cut stays about the stepover wide all the way, so it can cut the full depth of a level at a low stepover without the full-width cuts (corners, the first pass) that load a light machine. Its passes spread out a stepover at a time from where the tool can already be, from air past the stock where the Linear Extension reaches beyond it, otherwise a helix, following the walls and going round islands, cut climb (or conventional if that's chosen; Mixed cuts climb). Moves between passes stay down where the way is clear, and otherwise lift. Each level is cleared region by region, coming down at rapid to the Approach Distance above the level before; it finishes with laps along the parts and walls where material is left. While it's ticked, the pattern's own choices (cut type, start, angle, Mixed) are greyed and not used. Use a smaller stepover than for the ordinary pattern: 10 to 25% of the tool's diameter is usual. Off by default.</dd>
+  <dt>Helix Dia (%)</dt>
+  <dd>Adaptive clearing only. Where there's no air to start from, the tool goes down a helix of this diameter (its centre's path), as a percentage of the tool's diameter, at the roomiest place, then spreads out from there. Where there isn't room for a helix at least a tenth of the tool's radius, it plunges straight down instead. 80% by default; 0 to 200.</dd>
+  <dt>Ramp Angle (deg)</dt>
+  <dd>Adaptive clearing only. How steeply the helix goes down, in degrees from horizontal, at the engage feed; it then goes once more round at the level. 2 degrees by default; more than 0 and at most 45.</dd>
 </dl>
 </section>
 

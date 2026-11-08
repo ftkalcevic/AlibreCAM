@@ -676,9 +676,40 @@ namespace camcore
             }
         }
 
+        // Adaptive clearing's settings, in an operation's own block.
+        void WriteAdaptive(json& item, bool adaptive, const RampEntry& ramp)
+        {
+            item["adaptive"] = adaptive;
+            item["helixPercent"] = ramp.helixPercent;
+            item["rampAngle"] = ramp.rampAngle;
+        }
+
+        // Saved before adaptive clearing existed: off, with the defaults.
+        bool ReadAdaptive(const json& item, bool& adaptive, RampEntry& ramp)
+        {
+            const auto flag = item.find("adaptive");
+            if (flag != item.end())
+            {
+                if (!flag->is_boolean())
+                    return false;
+                adaptive = flag->get<bool>();
+            }
+            for (const auto& [name, value] : { std::pair<const char*, double*>{ "helixPercent", &ramp.helixPercent },
+                                               std::pair<const char*, double*>{ "rampAngle", &ramp.rampAngle } })
+            {
+                const auto found = item.find(name);
+                if (found == item.end())
+                    continue;
+                if (!found->is_number())
+                    return false;
+                *value = found->get<double>();
+            }
+            return true;
+        }
+
         json WriteFacing(const FacingSettings& facing)
         {
-            return
+            json item =
             {
                 { "direction", CutDirectionName(facing.direction) },
                 { "stepDistance", WriteSize(facing.stepDistance) },
@@ -688,6 +719,8 @@ namespace camcore
                 { "start", CornerName(facing.start) },
                 { "arcStepOver", facing.arcStepOver }
             };
+            WriteAdaptive(item, facing.adaptive, facing.rampEntry);
+            return item;
         }
 
         // Facings saved before these settings existed keep the defaults.
@@ -988,7 +1021,7 @@ namespace camcore
 
         json WriteWaterlineRoughing(const WaterlineRoughingSettings& w)
         {
-            return
+            json item =
             {
                 { "stockToLeave", w.stockToLeave },
                 { "pattern", NameOf(kWaterlinePatterns, w.pattern) },
@@ -1016,6 +1049,8 @@ namespace camcore
                 { "optimiseStepover", w.optimiseStepover },
                 { "approachDistance", w.approachDistance }
             };
+            WriteAdaptive(item, w.adaptive, w.rampEntry);
+            return item;
         }
 
         // Waterline Roughing missing its settings has the defaults, and those saved
@@ -1059,7 +1094,8 @@ namespace camcore
                    ReadOptionalBool(item, "clearFlats", w.clearFlats) &&
                    ReadOptionalBool(item, "finishFlats", w.finishFlats) &&
                    ReadOptionalBool(item, "optimiseStepover", w.optimiseStepover) &&
-                   ReadOptionalNumber(item, "approachDistance", w.approachDistance);
+                   ReadOptionalNumber(item, "approachDistance", w.approachDistance) &&
+                   ReadAdaptive(item, w.adaptive, w.rampEntry);
         }
 
         json WriteChamfer(const ChamferSettings& chamfer)
@@ -1148,7 +1184,7 @@ namespace camcore
 
         json WritePocketing(const PocketingSettings& pocketing)
         {
-            return
+            json item =
             {
                 { "stockToLeave", pocketing.stockToLeave },
                 { "cutType", PocketCutTypeName(pocketing.cutType) },
@@ -1158,6 +1194,8 @@ namespace camcore
                 { "linearStart", pocketing.linearStart == PocketLinearStart::Top ? "top" : "bottom" },
                 { "stepover", WriteSize(pocketing.stepover) }
             };
+            WriteAdaptive(item, pocketing.adaptive, pocketing.rampEntry);
+            return item;
         }
 
         // Pocketing saved before the Pocketing tab existed has the defaults.
@@ -1214,7 +1252,8 @@ namespace camcore
                    ReadChoice(*item, "start", "inside", PocketStart::Inside, "outside", PocketStart::Outside,
                               pocketing.start) &&
                    ReadChoice(*item, "linearStart", "bottom", PocketLinearStart::Bottom, "top", PocketLinearStart::Top,
-                              pocketing.linearStart);
+                              pocketing.linearStart) &&
+                   ReadAdaptive(*item, pocketing.adaptive, pocketing.rampEntry);
         }
 
         const char* HoleStepDownName(HoleStepDown stepDown)
@@ -1371,7 +1410,8 @@ namespace camcore
 
             std::string direction;
             if (!ReadString(*item, "direction", direction) || !ReadSize(*item, "stepDistance", facing.stepDistance) ||
-                !ReadSize(*item, "overtravel", facing.overtravel) || !ReadFacingPattern(*item, facing))
+                !ReadSize(*item, "overtravel", facing.overtravel) || !ReadFacingPattern(*item, facing) ||
+                !ReadAdaptive(*item, facing.adaptive, facing.rampEntry))
                 return false;
 
             static const CutDirection directions[] =

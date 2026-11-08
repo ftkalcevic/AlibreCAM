@@ -1612,6 +1612,7 @@ BEGIN_MESSAGE_MAP(CFacingPage, COperationPage)
     ON_BN_CLICKED(IDC_FACING_MIXED, &CFacingPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_FACING_LINEAR, &CFacingPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_FACING_SPIRAL, &CFacingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_ADAPTIVE_USE, &CFacingPage::OnChoiceChanged)
 END_MESSAGE_MAP()
 
 CFacingPage::CFacingPage(COperationDlg* pOwner)
@@ -1645,6 +1646,7 @@ void CFacingPage::Load(const SequenceStep& step)
                                                                    : IDC_FACING_TOP_LEFT;
     CheckRadioButton(IDC_FACING_TOP_LEFT, IDC_FACING_BOTTOM_RIGHT, start);
     CheckDlgButton(IDC_FACING_ARC_STEPOVER, facing.arcStepOver ? BST_CHECKED : BST_UNCHECKED);
+    LoadAdaptive(facing.adaptive, facing.rampEntry);
     UpdateFields();
 }
 
@@ -1676,6 +1678,7 @@ bool CFacingPage::Save(SequenceStep& step, std::wstring& problems)
     facing.cutType = (IsDlgButtonChecked(IDC_FACING_SPIRAL) == BST_CHECKED) ? FacingCutType::Spiral
                                                                             : FacingCutType::Linear;
     ReadNumber(IDC_FACING_CUT_ANGLE, L"The cut angle", facing.cutAngle, found);
+    SaveAdaptive(facing.adaptive, facing.rampEntry, found);
     facing.arcStepOver = IsDlgButtonChecked(IDC_FACING_ARC_STEPOVER) == BST_CHECKED;     // kept when greyed
     switch (GetCheckedRadioButton(IDC_FACING_TOP_LEFT, IDC_FACING_BOTTOM_RIGHT))
     {
@@ -1714,11 +1717,55 @@ void CFacingPage::UpdateFields()
     const bool zigzag = IsDlgButtonChecked(IDC_FACING_MIXED) == BST_CHECKED &&
                         IsDlgButtonChecked(IDC_FACING_SPIRAL) != BST_CHECKED;
     GetDlgItem(IDC_FACING_ARC_STEPOVER)->EnableWindow(zigzag);
+
+    // Adaptive clearing has its own pattern.
+    ShowAdaptive({ IDC_FACING_MIXED, IDC_FACING_CUT_ANGLE, IDC_FACING_ARC_STEPOVER, IDC_FACING_LINEAR, IDC_FACING_SPIRAL,
+                   IDC_FACING_TOP_LEFT, IDC_FACING_TOP_RIGHT, IDC_FACING_BOTTOM_LEFT, IDC_FACING_BOTTOM_RIGHT });
 }
 
 void CFacingPage::OnChoiceChanged()
 {
     UpdateFields();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// Adaptive Clearing group, shared
+
+void COperationPage::LoadAdaptive(bool adaptive, const RampEntry& ramp)
+{
+    CheckDlgButton(IDC_ADAPTIVE_USE, adaptive ? BST_CHECKED : BST_UNCHECKED);
+    SetNumber(IDC_ADAPTIVE_HELIX, ramp.helixPercent);
+    SetNumber(IDC_ADAPTIVE_RAMP, ramp.rampAngle);
+}
+
+void COperationPage::SaveAdaptive(bool& adaptive, RampEntry& ramp, std::wstring& problems)
+{
+    adaptive = AdaptiveChosen();
+    if (!adaptive)
+        return;     // the boxes keep what they had
+    ReadNumber(IDC_ADAPTIVE_HELIX, L"The helix diameter", ramp.helixPercent, problems);
+    ReadNumber(IDC_ADAPTIVE_RAMP, L"The ramp angle", ramp.rampAngle, problems);
+}
+
+bool COperationPage::AdaptiveChosen() const
+{
+    return IsDlgButtonChecked(IDC_ADAPTIVE_USE) == BST_CHECKED;
+}
+
+bool COperationPage::ShowAdaptive(std::initializer_list<int> patternIds)
+{
+    const bool adaptive = AdaptiveChosen();
+    for (int id : { IDC_ADAPTIVE_HELIX, IDC_ADAPTIVE_HELIX_LABEL, IDC_ADAPTIVE_RAMP, IDC_ADAPTIVE_RAMP_LABEL })
+        GetDlgItem(id)->EnableWindow(adaptive);
+    if (adaptive)
+    {
+        for (int id : patternIds)
+        {
+            if (CWnd* pControl = GetDlgItem(id))
+                pControl->EnableWindow(FALSE);
+        }
+    }
+    return adaptive;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -2017,6 +2064,7 @@ BEGIN_MESSAGE_MAP(CWaterlineRoughingPage, COperationPage)
     ON_BN_CLICKED(IDC_WL_STEP_PERCENT_RADIO, &CWaterlineRoughingPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_WL_STEP_DISTANCE_RADIO, &CWaterlineRoughingPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_WL_SCALLOP_RADIO, &CWaterlineRoughingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_ADAPTIVE_USE, &CWaterlineRoughingPage::OnChoiceChanged)
 END_MESSAGE_MAP()
 
 CWaterlineRoughingPage::CWaterlineRoughingPage(COperationDlg* pOwner)
@@ -2058,6 +2106,7 @@ void CWaterlineRoughingPage::Load(const SequenceStep& step)
     SetNumber(IDC_WL_STEP_PERCENT, w.stepoverPercent);
     SetNumber(IDC_WL_STEP_DISTANCE, w.stepoverDistance);
     SetNumber(IDC_WL_SCALLOP, w.scallop);
+    LoadAdaptive(w.adaptive, w.rampEntry);
     UpdateFields();
 }
 
@@ -2091,6 +2140,7 @@ bool CWaterlineRoughingPage::Save(SequenceStep& step, std::wstring& problems)
         ReadNumber(IDC_WL_STEP_DISTANCE, L"The stepover distance", w.stepoverDistance, found);
     else
         ReadNumber(IDC_WL_SCALLOP, L"The scallop height", w.scallop, found);
+    SaveAdaptive(w.adaptive, w.rampEntry, found);
 
     if (found.empty())
     {
@@ -2116,6 +2166,8 @@ bool CWaterlineRoughingPage::Save(SequenceStep& step, std::wstring& problems)
     saved.stepoverPercent = w.stepoverPercent;
     saved.stepoverDistance = w.stepoverDistance;
     saved.scallop = w.scallop;
+    saved.adaptive = w.adaptive;
+    saved.rampEntry = w.rampEntry;
     return true;
 }
 
@@ -2132,6 +2184,10 @@ void CWaterlineRoughingPage::UpdateFields()
     GetDlgItem(IDC_WL_STEP_PERCENT)->EnableWindow(IsDlgButtonChecked(IDC_WL_STEP_PERCENT_RADIO) == BST_CHECKED);
     GetDlgItem(IDC_WL_STEP_DISTANCE)->EnableWindow(IsDlgButtonChecked(IDC_WL_STEP_DISTANCE_RADIO) == BST_CHECKED);
     GetDlgItem(IDC_WL_SCALLOP)->EnableWindow(IsDlgButtonChecked(IDC_WL_SCALLOP_RADIO) == BST_CHECKED);
+
+    // Adaptive clearing has its own pattern.
+    ShowAdaptive({ IDC_WL_PART_OFFSET, IDC_WL_STOCK_OFFSET, IDC_WL_LINEAR, IDC_WL_MIXED, IDC_WL_START, IDC_WL_START_LABEL,
+                   IDC_WL_LINEAR_BOTTOM, IDC_WL_LINEAR_TOP, IDC_WL_ANGLE_LABEL, IDC_WL_ANGLE });
 }
 
 void CWaterlineRoughingPage::OnChoiceChanged()
@@ -2591,6 +2647,7 @@ BEGIN_MESSAGE_MAP(CPocketingPage, COperationPage)
     ON_BN_CLICKED(IDC_POCK_START_B, &CPocketingPage::OnStartChanged)
     ON_BN_CLICKED(IDC_POCK_STEP_PERCENT_RADIO, &CPocketingPage::OnStepoverChanged)
     ON_BN_CLICKED(IDC_POCK_STEP_DISTANCE_RADIO, &CPocketingPage::OnStepoverChanged)
+    ON_BN_CLICKED(IDC_ADAPTIVE_USE, &CPocketingPage::OnCutTypeChanged)
 END_MESSAGE_MAP()
 
 CPocketingPage::CPocketingPage(COperationDlg* pOwner)
@@ -2632,6 +2689,7 @@ void CPocketingPage::Load(const SequenceStep& step)
                      stepover.usePercent ? IDC_POCK_STEP_PERCENT_RADIO : IDC_POCK_STEP_DISTANCE_RADIO);
     SetNumber(IDC_POCK_STEP_PERCENT, stepover.percent);
     SetNumber(IDC_POCK_STEP_DISTANCE, stepover.distance);
+    LoadAdaptive(pocketing.adaptive, pocketing.rampEntry);
     UpdateFields();
 }
 
@@ -2654,6 +2712,7 @@ bool CPocketingPage::Save(SequenceStep& step, std::wstring& problems)
         ReadNumber(IDC_POCK_STEP_PERCENT, L"The stepover percentage", pocketing.stepover.percent, found);
     else
         ReadNumber(IDC_POCK_STEP_DISTANCE, L"The stepover distance", pocketing.stepover.distance, found);
+    SaveAdaptive(pocketing.adaptive, pocketing.rampEntry, found);
 
     if (found.empty())
     {
@@ -2702,6 +2761,10 @@ void CPocketingPage::UpdateFields()
     const bool percent = IsDlgButtonChecked(IDC_POCK_STEP_DISTANCE_RADIO) != BST_CHECKED;
     GetDlgItem(IDC_POCK_STEP_PERCENT)->EnableWindow(percent);
     GetDlgItem(IDC_POCK_STEP_DISTANCE)->EnableWindow(!percent);
+
+    // Adaptive clearing has its own pattern.
+    ShowAdaptive({ IDC_POCK_OFFSET, IDC_POCK_LINEAR, IDC_POCK_SPIRAL, IDC_POCK_RADIAL, IDC_POCK_MIXED, IDC_POCK_ANGLE,
+                   IDC_POCK_ANGLE_LABEL, IDC_POCK_START_A, IDC_POCK_START_B });
 }
 
 void CPocketingPage::OnCutTypeChanged()

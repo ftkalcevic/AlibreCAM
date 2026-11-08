@@ -6,6 +6,7 @@
 #include <cmath>
 #include <utility>
 
+#include "AdaptiveClearing.h"
 #include "FacingToolpath.h"
 #include "PathBuilder.h"
 #include "PocketToolpath.h"
@@ -1667,6 +1668,7 @@ namespace camcore
         {
             std::vector<Seg> outline;
             std::vector<PocketPiece> pieces;
+            std::vector<AdaptiveCut> adaptive;      // with Use Adaptive Clearing, then a lap of the wall
         };
         std::vector<Pocket> pockets;
         const CutDirection direction = PocketDirection(settings);
@@ -1686,6 +1688,26 @@ namespace camcore
 
             Pocket pocket;
             pocket.outline = ToSegs(outline, true);
+            if (settings.adaptive)
+            {
+                // Adaptive clearing inside the wall, then the wall's own loop, exactly.
+                double xLow = 0.0, xHigh = 0.0, yLow = 0.0, yHigh = 0.0;
+                PathExtent(outline, { 1.0, 0.0, 0.0 }, xLow, xHigh);
+                PathExtent(outline, { 0.0, 1.0, 0.0 }, yLow, yHigh);
+                const double cell = AdaptiveCell(input.tool->diameter, stepover, xHigh - xLow, yHigh - yLow);
+                AdaptiveSettings adaptive;
+                adaptive.toolRadius = input.tool->diameter / 2.0;
+                adaptive.optimalLoad = stepover;
+                adaptive.climb = settings.direction != CutDirection::Conventional;
+                adaptive.ramp = settings.rampEntry;
+                adaptive.wallLaps = false;
+                pocket.adaptive =
+                    AdaptiveClear(AdaptiveGridFromOutlines({ outline }, cell, wall, adaptive.toolRadius), adaptive).cuts;
+                pocket.pieces = OffsetPieces({ rings.front() }, true,
+                                             adaptive.climb ? CutDirection::Climb : CutDirection::Conventional);
+                pockets.push_back(std::move(pocket));
+                continue;
+            }
             switch (settings.cutType)
             {
             case PocketCutType::Linear:
@@ -1709,6 +1731,20 @@ namespace camcore
         const double furthest = 2.0 * stepover + 1e-6;
         ToolpathResult result;
         auto cut = [&](const Pocket& pocket, size_t l) {
+            if (settings.adaptive)
+            {
+                // Down from 2 mm above the level above (the cut's top for the first).
+                const double top = (l == 0) ? CutTopZ(pOperation->cutLevels, z) : levels[l - 1].z;
+                AdaptiveWriting writing;
+                writing.z = levels[l].z;
+                writing.top = top;
+                writing.enter = (std::min)(top + 2.0, clearance);
+                writing.clearance = clearance;
+                writing.feeds = pOperation->feeds;
+                writing.climb = settings.direction != CutDirection::Conventional;
+                writing.rampAngle = settings.rampEntry.rampAngle;
+                WriteAdaptiveCuts(pocket.adaptive, writing, result.toolpath);
+            }
             PathBuilder path(result.toolpath, pOperation->feeds, clearance, levels[l].z);
             path.SetEntryExit(&entryExit, entryExit.eachCutLevel || l == 0,
                               entryExit.eachCutLevel || l + 1 == levels.size());

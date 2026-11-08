@@ -38,6 +38,11 @@ namespace camcore
             problems.push_back(step.usePercent ? "The stepover must be more than 0% and at most 100% of the tool."
                                                : "The stepover must be more than 0.");
         }
+        if (settings.adaptive)
+        {
+            for (const std::string& problem : ValidateRampEntry(settings.rampEntry))
+                problems.push_back(problem);
+        }
         return problems;
     }
 }

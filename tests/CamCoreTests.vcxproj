@@ -68,6 +68,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="AdaptiveClearingTests.cpp" />
     <ClCompile Include="BoundaryTests.cpp" />
     <ClCompile Include="CamCoreTests.cpp" />
     <ClCompile Include="FacingToolpathTests.cpp" />

@@ -2,6 +2,8 @@
 
 #include "WaterlineRoughToolpath.h"
 
+#include "AdaptiveClearing.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -359,6 +361,7 @@ namespace camcore
             double yLow = 0.0;
             size_t cells = 0;
             std::vector<char> inArea;       // where the tool's centre may go at all
+            std::vector<char> inPickedArea; // the area itself, before the linear extension grows it
             std::vector<float> tips;        // the lowest the tip may go; lowest() with no part near
 
             bool CellAt(const Vec3& p, size_t& q) const
@@ -534,6 +537,7 @@ namespace camcore
                 for (int i = 0; i < w.nx; ++i)
                     w.inArea[static_cast<size_t>(j) * w.nx + i] = area.Inside(i, j) ? 1 : 0;
             }
+            w.inPickedArea = w.inArea;
             if (extension > 0.0)
             {
                 bool any = false;
@@ -590,6 +594,13 @@ namespace camcore
 
             const Vec3& At() const { return m_at; }
             bool Started() const { return m_started; }
+
+            // Where the tool is after moves were added to the toolpath some other way.
+            void SyncTo(const Vec3& at)
+            {
+                m_at = at;
+                m_started = true;
+            }
             size_t Count() const { return m_path.moves.size(); }
 
         private:
@@ -828,6 +839,7 @@ namespace camcore
             size_t level = 0;
             int parent = -1;            // in the level above, or -1
             std::vector<Piece> pieces;
+            std::vector<AdaptiveCut> adaptive;  // in place of the pieces, with Use Adaptive Clearing
             std::vector<int> children;  // indexes into regions
         };
         std::vector<Region> regions;
@@ -891,6 +903,38 @@ namespace camcore
                     region.parent = previousBase + previousLabels[q];
                     regions[static_cast<size_t>(region.parent)].children.push_back(base + labels[q]);
                 }
+            }
+
+            // Adaptive clearing: each separate region on its own, its material the
+            // picked area (the stock between this level and the one above), starting
+            // from any air the linear extension reaches past it.
+            if (settings.adaptive)
+            {
+                for (int c = 0; c < count; ++c)
+                {
+                    AdaptiveGrid grid;
+                    grid.xLow = w.xLow + 0.5 * gridCell;
+                    grid.yLow = w.yLow + 0.5 * gridCell;
+                    grid.cell = gridCell;
+                    grid.nx = nx;
+                    grid.ny = ny;
+                    grid.free.assign(cells, 0);
+                    grid.material.assign(cells, 0);
+                    for (size_t q = 0; q < cells; ++q)
+                    {
+                        grid.free[q] = (labels[q] == c) ? 1 : 0;
+                        grid.material[q] = w.inPickedArea[q] ? 1 : 0;
+                    }
+                    AdaptiveSettings adaptive;
+                    adaptive.toolRadius = w.radius;
+                    adaptive.optimalLoad = pitch;
+                    adaptive.climb = settings.direction != CutDirection::Conventional;
+                    adaptive.ramp = settings.rampEntry;
+                    regions[static_cast<size_t>(base + c)].adaptive = AdaptiveClear(std::move(grid), adaptive).cuts;
+                }
+                previousLabels = labels;
+                previousBase = base;
+                continue;
             }
 
             // Pieces from a field's contour, kept to where the tool may go. Contours
@@ -1081,7 +1125,7 @@ namespace camcore
         for (int r : order)
         {
             Region& region = regions[static_cast<size_t>(r)];
-            if (region.pieces.empty())
+            if (region.pieces.empty() && region.adaptive.empty())
                 continue;
             const double z = levels[region.level];
             const double above = (region.parent >= 0) ? levels[regions[static_cast<size_t>(region.parent)].level]
@@ -1089,6 +1133,24 @@ namespace camcore
             // At rapid to the approach distance above the level above (the top of the
             // material still to cut here), then at the plunge feed.
             const double enter = (std::min)(above + settings.approachDistance, w.clearance);
+            if (settings.adaptive)
+            {
+                if (region.adaptive.empty())
+                    continue;
+                writer.Lift();
+                AdaptiveWriting writing;
+                writing.z = z;
+                writing.top = above;
+                writing.enter = enter;
+                writing.clearance = w.clearance;
+                writing.feeds = feeds;
+                writing.climb = settings.direction != CutDirection::Conventional;
+                writing.rampAngle = settings.rampEntry.rampAngle;
+                WriteAdaptiveCuts(region.adaptive, writing, result.toolpath);
+                if (!result.toolpath.moves.empty())
+                    writer.SyncTo(result.toolpath.moves.back().to);
+                continue;
+            }
             const std::vector<float>& field = freeFields[region.level];
 
             // A move stays down if it's short and stays where the tool may be.

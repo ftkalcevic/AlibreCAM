@@ -83,6 +83,12 @@ namespace camcore
         // (Waterline Roughing, as the material between is still to cut), then at
         // the plunge feed.
         double approachDistance = 2.0;
+
+        // Adaptive clearing: constant engagement at the stepover in place of the
+        // pattern, helixing into closed areas. Waterline
+        // Roughing only.
+        bool adaptive = false;
+        RampEntry rampEntry;
     };
 
     // Returns a sentence for each problem. Empty means the settings are valid.

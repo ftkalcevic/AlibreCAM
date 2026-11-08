@@ -8342,6 +8342,294 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 > - Waterline Roughing's last loop on each level runs right round the part (at the Stock to Leave), made of hundreds of tiny jagged moves. What should roughing do there?
 >   **No Change.  Leave it as is.**
 
+### 🤖 Claude
+
+> Leaving it as it is, so I haven't changed anything.
+>
+> Here's what was happening. The feed rate in Waterline Roughing 2 is a steady 1000 mm/min the whole way, so it never really slows down. The last loop on each level runs right round the part at the Stock to Leave. It's made of hundreds of tiny, jagged moves (roughly 600 under 0.2 mm on each level), which makes it look slow and look like a finishing pass. Because this operation's Stock to Leave is 0, that loop really is on the part's wall.
+>
+> If it gets in the way later, the two fixes are to make that loop smooth with longer moves, or to leave it out.
+
+### 🧑 Frank · 11:44
+
+> This seems to be a good checkpoint.  What should we do next?  What am I missing that other CAM programs have?  Targeting intermediate level home users - we still make complex parts, on our home made machines 3-5 axis, but we don't need production level features to economically make parts.
+
+### 🤖 Claude
+
+> Questions:
+> - Which should come next? Pick any number; I'll plan them in this order unless you say otherwise. (Sizes: S small, M medium, L large.)
+>   - Ramp/helix roughing entry: S. Waterline Roughing plunges straight down today; ramp along the path or helix in instead, reusing the existing Entry/Exit and Hole Pocketing code.
+>   - Steep/shallow slope limits: S–M. Limit Waterline Finishing to steep walls and Parallel Finishing to gentle slopes so together they finish evenly.
+>   - Time estimate + setup sheet: S–M. Machining time per operation and job, a printable sheet (tools, stickout, stock, origins), and a summary under each operation in the tree.
+>   - Adaptive clearing: L. Constant-engagement (trochoidal) roughing at full flute depth: 2½D pockets first, then 3D roughing. The biggest capability gap for light home machines.
+> - Any of these to put on the list too (added to TODO.md with a priority)?
+>   - Rest machining: Clear only what a bigger tool left, from the simulated stock or a previous tool's diameter.
+>   - Out-of-date + Regenerate All: Mark toolpaths stale when the model or settings change, with one button to regenerate them.
+>   - More posts + arc fitting: GRBL, Mach3/4, UCCNC, Masso posts; G2/G3 fitting of 3D and contour output for smaller, smoother G-code.
+>   - Undo, inch units, clamps: Undo in the CAM tree; inch display; picking clamps/vices as keep-out for toolpaths and the simulation.
+
+### 🧑 Frank · 11:47
+
+> Answers:
+> - Which should come next? Pick any number; I'll plan them in this order unless you say otherwise. (Sizes: S small, M medium, L large.)
+>   **Ramp/helix roughing entry,Steep/shallow slope limits,Adaptive clearing**
+> - Any of these to put on the list too (added to TODO.md with a priority)?
+>   **Rest machining,More posts + arc fitting,Undo, inch units, clamps**
+
+### 🤖 Claude
+
+> You picked ramp/helix roughing entry, steep/shallow slope limits and adaptive clearing, plus three additions to TODO.md. Next I'll read the code each one would build on.
+
+> Questions:
+> - Ramp/helix entry: which operations get it, and how? (Waterline Roughing plunges straight down today; Pocketing already has a ramp along the path on its Entry/Exit tab but no helix.)
+>   - WL Roughing + Pocketing helix (Recommended): Waterline Roughing gets Entry: Plunge, Ramp along path, or Helix (with ramp angle and helix diameter); Helix falls back to Ramp, then Plunge, where there's no room. Pocketing's Entry/Exit tab gains Helix too.
+>   - Waterline Roughing only: Only Waterline Roughing gets Plunge / Ramp / Helix. Pocketing keeps what it has.
+>   - Ramp along path only: No helix: Waterline Roughing ramps along its own path (zigzag on open pieces, round and round on loops).
+> - Steep/shallow limits for the finishing operations: how should they be set?
+>   - From/To angle on each (Recommended): Waterline Finishing and Parallel Finishing each get a Slope group: From angle and To angle (0–90° from horizontal, defaults 0 and 90 = no limit). You'd set e.g. Waterline 40–90 and Parallel 0–45 for a little overlap.
+>   - One threshold angle: A single 'Steep above' angle: Waterline cuts only steeper, Parallel only shallower, plus an overlap angle.
+> - Adaptive clearing: where should it live? (It would be built once, on a grid of free cells, like the waterline code, so both 2½D and 3D can use it.)
+>   - New op + WL pattern (Recommended): A new 2½D operation 'Adaptive Clearing' (pockets and areas, with parts/islands avoided, Cut Levels for the stepdown), then an 'Adaptive' Cut Pattern in Waterline Roughing for 3D, both using the same core.
+>   - Waterline pattern only: Only an 'Adaptive' Cut Pattern in Waterline Roughing (which can already do 2½D-style areas with the stock footprint).
+>   - Pattern in Pocketing too: An 'Adaptive' cut type in Pocketing plus the Waterline Roughing pattern, no new operation.
+> - Order of the three?
+>   - Ramp, slopes, adaptive (Recommended): Small wins first, each installed for you to test before the next; adaptive last as a larger piece with its own prototype and tests.
+>   - Adaptive first: Start with the biggest gap; ramp and slope limits after.
+
+### 🧑 Frank · 11:52
+
+> Answers:
+> - Ramp/helix entry: which operations get it, and how? (Waterline Roughing plunges straight down today; Pocketing already has a ramp along the path on its Entry/Exit tab but no helix.)
+>   **WL Roughing + Pocketing helix (Recommended)**
+> - Steep/shallow limits for the finishing operations: how should they be set?
+>   **From/To angle on each (Recommended)**
+> - Adaptive clearing: where should it live? (It would be built once, on a grid of free cells, like the waterline code, so both 2½D and 3D can use it.)
+>   **Rather than a new op, can this be just a check box**
+> - Order of the three?
+>   **Adaptive first**
+
+### 🤖 Claude
+
+> Plan:
+>
+> # Next: adaptive clearing, then ramp/helix entry, then slope limits
+>
+> ## Context
+>
+> At a checkpoint, Frank asked what AlibreCAM is missing against other hobby CAM. The target is intermediate home users on light, home-built 3 to 5 axis machines.
+>
+> I compared it with Fusion (Personal), Estlcam, Vectric, Carbide Create, MeshCAM and FreeCAD Path. The biggest gaps for light machines:
+> - **Adaptive (constant-engagement) clearing:** full flute depth at a low, steady load.
+> - **Ramp or helix entry:** Waterline Roughing plunges straight down today.
+> - **Steep and shallow limits:** so the two finishing operations can be combined for an even finish.
+>
+> **Frank's choices:**
+> - **Order:** adaptive first, then ramp/helix, then slope limits. Each is installed for him to test before the next.
+> - **Adaptive:** not a new operation, but a **"Use Adaptive Clearing" check box** on every operation that clears horizontally.
+> - **Ramp/helix:** Waterline Roughing gets Entry: Plunge, Ramp along path or Helix. Helix falls back to Ramp, then to Plunge, where there's no room. Pocketing's Entry/Exit tab gains Helix.
+> - **Slope limits:** a Slope group with From and To angles (0 to 90° from horizontal) on Waterline Finishing and on Parallel Finishing.
+> - **Add to `TODO.md`:**
+>   - rest machining;
+>   - more posts (GRBL, Mach3/4, UCCNC, Masso) and arc fitting;
+>   - undo, inch units, and clamps as keep-out.
+>
+> ---
+>
+> ## Phase 1: Use Adaptive Clearing
+>
+> ### Where it appears
+> A **Use Adaptive Clearing** check box on three tabs:
+> - **Pocketing:** each closed pocket at each cut level.
+> - **Facing:** each area at each level.
+> - **Waterline Roughing:** each level's free region, so it works in 3D.
+>
+> Ticked:
+> - **Pattern controls greyed:** the tab's own cut pattern and type (Offset, Linear, Spiral, start point, angle, Mixed) are greyed.
+> - **Optimal load:** it's the **tab's stepover**, so no new field. The help suggests 10–25% for adaptive.
+> - **Direction:** Climb or Conventional. Mixed counts as Climb.
+> - **Two new fields for the entry:**
+>   - **Helix Diameter**, % of the tool, default 80;
+>   - **Ramp Angle**, degrees, default 2.
+>
+>   They live in a shared `RampEntry` struct, which Phase 2 reuses.
+>
+> Saved as `adaptive`, plus `rampEntry`, in each operation's settings. A missing field reads as off. The `.cam` format stays 12, as an older add-on just ignores the fields.
+>
+> ### Core: `core\AdaptiveClearing.h/.cpp` (new, no Alibre code)
+> - **Inputs:**
+>   - **Grid (`AdaptiveGrid`):** origin, cell size and nx × ny, with masks:
+>     - `free`: where the tool's centre may go;
+>     - `material`: what's still to cut. This is only material the tool can reach, so the band of stock to leave on the walls never counts;
+>     - `cleared`: air at the start, such as outside the stock.
+>   - **Settings:** tool radius, optimal load (mm), climb, helix radius, ramp angle, and the level Z with the "above" Z to ramp from.
+> - **Output:** a list of cuts. Each is a polyline in XY at the level Z, with how it's entered (from outside, a helix at a centre, or a straight plunge into cleared space) and whether the link to it stays down. A link stays down when a path through cleared, free cells exists; it's found by a breadth-first search and shortened to a few straight lines.
+> - **Algorithm** (grid-based, like FreeCAD's Adaptive):
+>   1. **Start.** If no cleared cell touches the material, a helix is placed at the free cell furthest from the free edge (a distance transform, `SquaredDistanceTransform` from `core\PlungeRoughToolpath`). It clears the helix circle plus the tool. With too little room, the smallest helix that fits is used; failing that, a plunge.
+>   2. **Each pass** starts at the free point on the cleared edge nearest the tool that touches the material. It walks in short steps (about a tenth of the tool's radius). At each step the turn angle is bisected so that the newly removed area (material cells under the tool's disc that aren't cleared yet) ≈ optimal load × step. Climb keeps the material on the right. Cleared cells are marked along the way. The pass ends when no angle removes enough, or the next step would leave the free region.
+>   3. **Repeat** until no reachable material is left. Scraps under a small area are ignored.
+>   4. **Tidy up:** simplify to 0.01 mm. Positions are continuous, not snapped to the grid, so the paths are smooth.
+> - **Grid size:** about a fortieth of the tool's diameter, as the waterline code uses.
+> - **Speed:** counts done over the crescent between consecutive discs. Progress goes through a callback, for the Generating window.
+>
+> ### Each operation builds the masks, then writes the cuts with its usual writer
+> - **Waterline Roughing** (`GenerateWaterlineRoughToolpath`, `core\WaterlineRoughToolpath.cpp`):
+>   - per level and region: `free` from the existing free region; `material` from the stock's footprint; `cleared` outside the stock, inside the area grown by the Linear Extension;
+>   - written with `MoveWriter`, with the Approach Distance and the helix at the engage feed.
+> - **Pocketing** (`GeneratePocketToolpath`, `core\ProfileToolpath.cpp`):
+>   - each loop is rasterised with the existing point-in-path tests in `core\Boundary`;
+>   - `free` is the loop inset by the tool's radius plus the stock to leave;
+>   - nothing starts cleared, so it always helixes in;
+>   - its levels come from `CutLevelHeights`.
+> - **Facing** (`GenerateFacingToolpath`, `core\FacingToolpath.cpp`):
+>   - the area's boundary is the material;
+>   - `free` is the area grown by its overtravel;
+>   - outside the boundary starts cleared, so it enters from outside.
+>
+> ### Add-on
+> - **The three tab templates:** a check box, the two new fields, and IDs from 13456 (next control 13456).
+> - **The three page classes** (`addon\OperationDialog.cpp`): `Load`, `Save` and `UpdateFields` (which greys the pattern controls).
+> - **Bulk editing** picks up the new controls through `Snapshot` without further work.
+>
+> ### Tests (`tests\AdaptiveClearingTests.cpp`, new)
+> 1. **Full clearing of a square pocket:** simulated with `core\Simulation` (`VoxelStock`, `CutMove`), every reachable cell is cut and no free-boundary rule is broken.
+> 2. **Engagement:** the material removed per unit length, measured in the simulation step by step, stays at most about 1.5 × the optimal load, except on the helix.
+> 3. **Islands:** a pocket with an island; the tool's centre never enters the island's keep-out.
+> 4. **Facing from outside:** no helix; the first cut starts outside the stock.
+> 5. **Waterline:** one level of the existing block test with the box ticked; the area is cleared and the part isn't gouged.
+> 6. **Saving:** `adaptive` and `rampEntry` round-trip, and are off when missing.
+> 7. **Timing (skipped):** a 150 × 150 pocket with a 6 mm tool.
+>
+> ### Docs
+> - **Help:** the three tabs (the check box, the two fields, which controls grey out, and advice on the optimal load).
+> - **The spec:** both copies.
+> - **`CLAUDE.md`**, then **`TODO.md`** (Frank's three additions) and `Discussion.md`.
+>
+> ---
+>
+> ## Phase 2: Ramp/helix entry (after Phase 1 is tested)
+> - **Waterline Roughing:**
+>   - **The field:** Entry is Plunge, Ramp or Helix (default Helix), with the shared `RampEntry` from Phase 1.
+>   - **Each piece's entry:** a helix at its start if the free field there ≥ the helix radius. Otherwise a ramp along the piece itself: round and round on a loop, back and forth on an open piece. Otherwise a plunge.
+>   - **Where the ramp starts:** at the level above (the material's top), at the engage feed, after the Approach Distance rapid.
+> - **Pocketing:** Entry/Exit gets a Helix mode beside Along Path, using `HolePocketToolpath`'s helix code.
+> - **Tests:** no feed move goes down steeper than the ramp angle except the fallback plunge, and the helix stays inside the free region.
+>
+> ## Phase 3: Slope limits (after Phase 2)
+> - **Settings:** the Slope group, From and To, in `WaterlineRoughingSettings`, used by both finishing operations. Defaults 0 and 90 (no limit).
+> - **How the slope is found:** from the gradient of the tool's tip-height grid (`PartHeightField::TipHeights`). That's the angle of the contact normal for a ball.
+> - **Waterline Finishing:** laps are split where their slope falls outside the range.
+> - **Parallel Finishing:** rows are trimmed the same way.
+> - **Tests:** on the half sphere, Waterline 45–90 and Parallel 0–45 together cover it, with no lap below 45° and no row above.
+>
+> ## Verification (each phase)
+> 1. Build Debug and Release, and run `CamCoreTests.exe` with the new tests.
+> 2. Install, and update the help, spec, `CLAUDE.md` and `Discussion.md`.
+> 3. Frank gets a numbered test list in Alibre. For Phase 1:
+>    - tick Use Adaptive Clearing on a pocket, a facing area and a Waterline Roughing operation;
+>    - Generate, then Simulate. Look for steady, curving passes, a helix into closed pockets, and no rapid-into-stock or holder warnings.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Plan approved. Adaptive comes first. I'll start with the core algorithm, after reading the grid helpers it builds on.
+
+> Before testing, one fix to the pass loop: a pass from a normal start point that cuts nothing should be dropped whatever its entry, not only for links. Then the tests.
+
+> It runs, but it's very slow (over 7 minutes for three small tests) and the results are wrong. I'll look at the first test's output.
+
+> A known trap: the heredoc turned `\n` into real line breaks. Fixing the two strings directly:
+
+> The shell choked on my quoting, so I'll put the edit script in a file instead.
+
+> The worst is down from 2.3 to 1.9 mm. Next I'll find where it happens, by printing the worst places in a debug run.
+
+> Same newline trap, plus `getenv` is refused. Fixing both:
+
+> Down to 4.4 s. Next I'll time the stages properly to see what remains.
+
+> 0.8 s for a 150 × 150 pocket, with every test passing: worst cut 1.12 mm against a 0.9 mm load, and 63 mm³ left, almost all in the corners the tool can't reach. One look at the shape:
+
+> The core works. It's on to wiring it into the operations, starting with Pocketing.
+
+> First, the geometry helpers in `core\Boundary.h`, for rasterising the pocket outlines:
+
+> `PathCrossings` gives a scanline fill for the outlines. Next, how Facing defines its area and overtravel:
+
+> Next, the settings: a small shared `core\RampEntry.h`, plus `adaptive` and `rampEntry` in all three settings structs. First, how settings are compared and saved:
+
+> Adaptive core is done and tested. Now adding the settings fields and saving for the three operations.
+
+> The waterline writer is shared by the finishing operations too, so it gets the same treatment (harmless for them):
+
+> It builds. Next, wiring adaptive into Waterline Roughing's generator:
+
+> The region loop skips regions with no pieces, and adaptive regions have none, so that test needs to allow for them:
+
+> I'll put a shared grid-building helper in AdaptiveClearing for Pocketing and Facing, plus a switch to turn off the grid wall lap (Pocketing cuts its exact one instead).
+
+> It all builds and all 303 existing tests pass. Next, tests for the three operations with adaptive on, and for saving. I'll look at how existing tests set up a pocket, a facing and a saved job.
+
+> Next, the integration tests: a pocket, a facing, a waterline level, and saving.
+
+> The cut-level fields are named differently. With the outline at the top (z 5) and 5 mm deep in 2.5 mm steps:
+
+> All seven adaptive tests pass. Next, the add-on's tabs. I'll drop the temporary move printing from the test, then look at the three tab templates.
+
+> The tab area has room for pages about 198 units tall. With the dialog 16 units taller, a full-width "Adaptive Clearing" group fits at the bottom of each tab. Next, the three page classes:
+
+> The three page classes follow the same pattern, so shared helpers on `COperationPage` will load, save and grey the controls. Making the template and code changes:
+
+> Now both full builds:
+
+> Both builds are clean, and all 307 tests pass in Release; the Debug run is going in the background. Meanwhile, the help page:
+
+> The help script tripped on apostrophes inside single-quoted Python strings. Fixing it, and adding the spec text:
+
+> Next, the spec: a new Adaptive Clearing entry, in both copies.
+
+> The Claude doc is updated (rev 210). Now `docs\SPEC.md`, `CLAUDE.md` and `TODO.md`:
+
+> The docs are done. Installing the Release build while the Debug tests finish:
+
+> Adaptive clearing is built: a **Use Adaptive Clearing** check box on the Pocketing, Facing and Waterline Roughing tabs. All 307 tests pass in Debug and Release. It isn't installed, because the administrator prompt was cancelled, and none of it has been tried in Alibre yet.
+>
+> **How it behaves**
+> - **Where it is:** a full-width Adaptive Clearing group at the bottom of each of those three tabs. It has the check box, **Helix Dia (%)** (default 80) and **Ramp Angle (deg)** (default 2). The operation dialog is 16 units taller to fit it.
+> - **When ticked:** the tab's own pattern controls (cut type, start, angle, Mixed) are greyed. The tab's stepover becomes the optimal load (the step distance on Facing). The help suggests 10–25% of the tool's diameter.
+> - **The passes:** they spread out a load at a time from where the tool can already be, following walls and going round islands, in climb (or conventional).
+>   - It starts from air where there is some: outside the boundary when Facing's overtravel is more than the tool's radius, or past the stock where Waterline Roughing's Linear Extension reaches.
+>   - Otherwise it goes down a helix at the roomiest place, or plunges where there isn't room for one.
+> - **The walls:** Pocketing finishes with its usual exact wall lap. The other two finish with laps where material is left along the walls and parts.
+> - **Coming down:** Pocketing and Facing come down at rapid to 2 mm above the level before. That 2 mm is my choice, since neither operation has an approach setting of its own. Waterline Roughing uses its Approach Distance.
+>
+> **How well it works (tests cut the toolpaths in the simulation)**
+> - **40 × 30 pocket, 6 mm tool, 0.9 mm load:** the cut is 0.67 mm wide on average and 1.06 mm at most. The only material left is in the corners the tool can't reach.
+> - **Facing from outside:** nothing left, at most 1.15 mm wide for a 1.2 mm load.
+> - **Waterline Roughing:** never comes within the stock to leave of the part.
+> - **Speed:** a 150 × 150 mm pocket takes 0.8 s to work out.
+>
+> **A change from the plan.** I first built the method in the plan, which steers the tool by bisecting the turn at each step. Near walls it made hundreds of short hooks, and the worst cut reached 2.3 mm. I replaced it with a method based on distance fronts, which gives smooth spiralling rings and sweeping arcs. The spec and `CLAUDE.md` describe what's built now.
+>
+> **Also updated:**
+> - the help page;
+> - the spec (both copies now at rev 210);
+> - `CLAUDE.md`;
+> - `TODO.md`, with ramp/helix entry and slope limits next, then the additions you picked: rest machining, more posts plus arc fitting, undo, inch units, and clamps as keep-out.
+>
+> **To test, after installing:**
+> 1. On a Pocketing operation, tick Use Adaptive Clearing. The cut type, start and angle should grey out and the helix and ramp boxes should enable. Set the stepover to about 15%, then Generate. You should see a helix, then rings spiralling out, then one lap round the wall.
+> 2. Simulate it. There should be no rapid-into-stock or collision warnings, and the cut should look even.
+> 3. On a Facing operation with Overtravel at 100%, tick it and Generate. It should start outside the boundary, with no helix.
+> 4. On Waterline Roughing, tick it, use a Linear Extension of a few mm, and Generate. Each level should be cleared round the parts, starting outside the stock. Then Simulate.
+> 5. Close and reopen the job. The check box and both values should be kept, and older jobs should open with it off.
+> 6. Check the bigger operation dialog looks right on every tab.
+> 7. The help changed: check the Facing, Pocketing and Waterline Roughing tab sections.
+
+### 🧑 Frank · 12:57
+
+> Install it
+
 ---
 
 # Side conversation

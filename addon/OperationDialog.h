@@ -87,6 +87,14 @@ protected:
                     bool blankAllowed = false, bool* pBlank = nullptr);
     void SetNumber(int id, double value);
 
+    // The Adaptive Clearing group, on the tabs of operations that clear by levels.
+    void LoadAdaptive(bool adaptive, const camcore::RampEntry& ramp);
+    void SaveAdaptive(bool& adaptive, camcore::RampEntry& ramp, std::wstring& problems);
+    bool AdaptiveChosen() const;
+    // Greys the helix and ramp boxes unless it's ticked, and the pattern's own
+    // controls (ids) while it is. Returns whether it's ticked.
+    bool ShowAdaptive(std::initializer_list<int> patternIds);
+
     // Reads a number quietly, as the user types. False if the box isn't one.
     bool ReadValue(int id, double& value);
 

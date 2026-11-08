@@ -59,6 +59,11 @@ namespace camcore
             problems.push_back("The top and bottom must be numbers.");
         if (settings.useTop && settings.useBottom && !(settings.top > settings.bottom))
             problems.push_back("The top must be above the bottom.");
+        if (settings.adaptive)
+        {
+            for (const std::string& problem : ValidateRampEntry(settings.rampEntry))
+                problems.push_back(problem);
+        }
         return problems;
     }
 
