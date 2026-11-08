@@ -28,6 +28,8 @@ these belong in the spec (`docs\SPEC.md`) once they're made.
 - Undo in the CAM tree
 - Inch display units
 - Clamps and vices as keep-out for toolpaths and the simulation
+- Tool holder from a model: pick an Alibre part (or file) as the holder's shape, used in the simulation in place of the plain cylinder
+- Pictures on the dialog tabs showing what each parameter means, where it helps
 - Performance
   - Spline faces are now read as NURBS (`GetBSplineCurvesData`) and worked out
     by CamCore. A face whose data can't be read that way (several surfaces in

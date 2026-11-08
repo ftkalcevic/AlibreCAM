@@ -9480,6 +9480,25 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > That worked
 
+### 🤖 Claude
+
+> Good. I've marked slope limits as tested in `CLAUDE.md`. Nothing is committed: that's yours to commit along with the rest.
+>
+> That completes all three items from the adaptive plan. The next items on `TODO.md` are:
+> - rest machining;
+> - more posts (GRBL, Mach3/4, UCCNC, Masso);
+> - undo in the CAM tree;
+> - inch display units;
+> - clamps and vices as keep-out.
+
+### 🧑 Frank · 18:03
+
+> Some more items for the todo list 
+>
+> * allow model selection for tool holder.  Used in simulation.
+>
+> * Put images in all dialog tabs to show what each parameter means (where it makes sense)
+
 ---
 
 # Side conversation
