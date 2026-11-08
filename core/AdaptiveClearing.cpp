@@ -1053,6 +1053,32 @@ namespace camcore
         return grid;
     }
 
+    void AppendHelix(Toolpath& toolpath, const Vec3& start, const Vec3& centre, double bottom, double rampAngle,
+                     double feed, bool anticlockwise)
+    {
+        const double r = std::hypot(start.x - centre.x, start.y - centre.y);
+        double angle = std::atan2(start.y - centre.y, start.x - centre.x);
+        const double turnSign = anticlockwise ? 1.0 : -1.0;
+        const double top = start.z;
+        const double dropPerHalf = kPi * r * std::tan(rampAngle * kPi / 180.0);
+        const int halves = (top - bottom > 1e-9 && dropPerHalf > 1e-9)
+                               ? (std::max)(1, static_cast<int>(std::ceil((top - bottom) / dropPerHalf)))
+                               : 0;
+        for (int k = 1; k <= halves + 2; ++k)
+        {
+            angle += turnSign * kPi;
+            const double h = (k <= halves) ? top - (top - bottom) * k / halves : bottom;
+            ToolpathMove move;
+            move.kind = MoveKind::Feed;
+            move.to = { centre.x + r * std::cos(angle), centre.y + r * std::sin(angle), h };
+            move.feed = feed;
+            move.arc = true;
+            move.centre = { centre.x, centre.y, h };
+            move.clockwise = !anticlockwise;
+            toolpath.moves.push_back(move);
+        }
+    }
+
     void WriteAdaptiveCuts(const std::vector<AdaptiveCut>& cuts, const AdaptiveWriting& writing, Toolpath& toolpath)
     {
         const auto add = [&](MoveKind kind, const Vec3& to, double feed) {
@@ -1102,20 +1128,8 @@ namespace camcore
                 add(MoveKind::Feed, { first.x, first.y, top }, writing.feeds.plunge);
 
                 // Half turns down at the ramp angle, then a flat turn at the level.
-                const Vec3& c = cut.helixCentre;
-                const double r = cut.helixRadius;
-                double angle = std::atan2(first.y - c.y, first.x - c.x);
-                const double turnSign = writing.climb ? 1.0 : -1.0;
-                const double dropPerHalf = kPi * r * std::tan(writing.rampAngle * kPi / 180.0);
-                const int halves = (top - z > 1e-9 && dropPerHalf > 1e-9)
-                                       ? (std::max)(1, static_cast<int>(std::ceil((top - z) / dropPerHalf)))
-                                       : 0;
-                for (int k = 1; k <= halves + 2; ++k)
-                {
-                    angle += turnSign * kPi;
-                    const double h = (k <= halves) ? top - (top - z) * k / halves : z;
-                    arc({ c.x + r * std::cos(angle), c.y + r * std::sin(angle), h }, c, writing.feeds.engage);
-                }
+                AppendHelix(toolpath, { first.x, first.y, top }, cut.helixCentre, z, writing.rampAngle,
+                            writing.feeds.engage, writing.climb);
             }
             else
             {

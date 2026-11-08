@@ -2,6 +2,8 @@
 
 #include "PathBuilder.h"
 
+#include "AdaptiveClearing.h"     // AppendHelix
+
 #include <cmath>
 
 namespace camcore
@@ -24,7 +26,9 @@ namespace camcore
     void PathBuilder::SetEntryExit(const EntryExitSettings* pSettings, bool entry, bool exit)
     {
         m_pEntryExit = pSettings;
-        m_useEntry = entry && pSettings != nullptr && pSettings->entry != EntryMode::None;
+        // A helix is for getting into the material, which every level needs.
+        m_useEntry = (entry || (pSettings != nullptr && pSettings->entry == EntryMode::Helix)) && pSettings != nullptr &&
+                     pSettings->entry != EntryMode::None;
         m_useExit = exit && pSettings != nullptr && pSettings->exit != ExitMode::None;
     }
 
@@ -37,6 +41,38 @@ namespace camcore
         }
 
         const EntryExitSettings& settings = *m_pEntryExit;
+        if (settings.entry == EntryMode::Helix)
+        {
+            // Down a helix whose circle passes through the start, from the path height
+            // above the cut, its centre that far in from the start (up the room's
+            // slope) where there's room round it, smaller where there isn't.
+            const double h = (std::max)(0.01, 0.05 * m_toolRadius);
+            double nx = 0.0, ny = 0.0;
+            if (m_helixRoom)
+            {
+                nx = m_helixRoom({ point.x + h, point.y, point.z }) - m_helixRoom({ point.x - h, point.y, point.z });
+                ny = m_helixRoom({ point.x, point.y + h, point.z }) - m_helixRoom({ point.x, point.y - h, point.z });
+            }
+            const double g = std::hypot(nx, ny);
+            nx = (g > 1e-12) ? nx / g : 1.0;
+            ny = (g > 1e-12) ? ny / g : 0.0;
+            for (double radius = settings.helixPercent / 100.0 * m_toolRadius; m_toolRadius > 0.0 &&
+                                                                                 radius >= 0.1 * m_toolRadius;
+                 radius *= 0.5)
+            {
+                const Vec3 centre{ point.x + nx * radius, point.y + ny * radius, m_cutZ };
+                if (m_helixRoom && m_helixRoom(centre) < radius - 0.01)
+                    continue;
+                const Vec3 first{ point.x, point.y, m_cutZ + settings.alongPathHeight };
+                TransferTo(first);
+                Add(MoveKind::Feed, first, m_feeds.plunge);
+                AppendHelix(m_toolpath, first, centre, m_cutZ, settings.alongPathAngle, m_feeds.engage,
+                            m_helixAnticlockwise);
+                return;
+            }
+            ArriveAt(point);    // no room for one
+            return;
+        }
         if (settings.entry == EntryMode::AlongPath3D)
         {
             // Down a ramp in line with the cut, from the height above it.

@@ -1452,6 +1452,7 @@ BEGIN_MESSAGE_MAP(CEntryExitPage, COperationPage)
     ON_BN_CLICKED(IDC_EE_ENTRY_NONE, &CEntryExitPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_EE_ENTRY_2D, &CEntryExitPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_EE_ENTRY_3D, &CEntryExitPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_EE_ENTRY_HELIX, &CEntryExitPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_EE_ENGAGE_LINEAR, &CEntryExitPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_EE_ENGAGE_RADIAL, &CEntryExitPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_EE_EXIT_NONE, &CEntryExitPage::OnChoiceChanged)
@@ -1477,10 +1478,13 @@ void CEntryExitPage::Load(const SequenceStep& step)
 {
     const EntryExitSettings& settings = step.entryExit;
 
+    m_helixAllowed = step.type == StepType::Pocketing;
     const int entry = (settings.entry == EntryMode::Entry2D)       ? IDC_EE_ENTRY_2D
                       : (settings.entry == EntryMode::AlongPath3D) ? IDC_EE_ENTRY_3D
+                      : (settings.entry == EntryMode::Helix)       ? IDC_EE_ENTRY_HELIX
                                                                    : IDC_EE_ENTRY_NONE;
-    CheckRadioButton(IDC_EE_ENTRY_NONE, IDC_EE_ENTRY_3D, entry);
+    CheckEntry(entry);
+    SetNumber(IDC_EE_HELIX, settings.helixPercent);
     LoadLead(kEngage, settings.engage);
     SetNumber(IDC_EE_PATH_ANGLE, settings.alongPathAngle);
     SetNumber(IDC_EE_PATH_HEIGHT, settings.alongPathHeight);
@@ -1515,8 +1519,14 @@ bool CEntryExitPage::Save(SequenceStep& step, std::wstring& problems)
     EntryExitSettings settings = step.entryExit;
     std::wstring found;
 
-    switch (GetCheckedRadioButton(IDC_EE_ENTRY_NONE, IDC_EE_ENTRY_3D))
+    switch (CheckedEntry())
     {
+    case IDC_EE_ENTRY_HELIX:
+        settings.entry = EntryMode::Helix;
+        ReadNumber(IDC_EE_PATH_ANGLE, L"The helix's angle", settings.alongPathAngle, found);
+        ReadNumber(IDC_EE_PATH_HEIGHT, L"The helix's height", settings.alongPathHeight, found);
+        ReadNumber(IDC_EE_HELIX, L"The helix diameter", settings.helixPercent, found);
+        break;
     case IDC_EE_ENTRY_2D:
         settings.entry = EntryMode::Entry2D;
         SaveLead(kEngage, L"engage", settings.engage, found);
@@ -1573,10 +1583,14 @@ void CEntryExitPage::EnableLead(const LeadControls& ids, bool enabled)
 
 void CEntryExitPage::UpdateFields()
 {
-    const int entry = GetCheckedRadioButton(IDC_EE_ENTRY_NONE, IDC_EE_ENTRY_3D);
+    const int entry = CheckedEntry();
     EnableLead(kEngage, entry == IDC_EE_ENTRY_2D);
 
-    const BOOL path = (entry == IDC_EE_ENTRY_3D);
+    // The 3D path's angle and height are the helix's too.
+    const BOOL path = (entry == IDC_EE_ENTRY_3D || entry == IDC_EE_ENTRY_HELIX);
+    GetDlgItem(IDC_EE_ENTRY_HELIX)->EnableWindow(m_helixAllowed || entry == IDC_EE_ENTRY_HELIX);
+    GetDlgItem(IDC_EE_HELIX_LABEL)->EnableWindow(entry == IDC_EE_ENTRY_HELIX);
+    GetDlgItem(IDC_EE_HELIX)->EnableWindow(entry == IDC_EE_ENTRY_HELIX);
     for (int id : { IDC_EE_PATH_GROUP, IDC_EE_PATH_ANGLE_LABEL, IDC_EE_PATH_ANGLE, IDC_EE_PATH_HEIGHT_LABEL,
                     IDC_EE_PATH_HEIGHT })
         GetDlgItem(id)->EnableWindow(path);
@@ -1587,6 +1601,22 @@ void CEntryExitPage::UpdateFields()
 void CEntryExitPage::OnChoiceChanged()
 {
     UpdateFields();
+}
+
+int CEntryExitPage::CheckedEntry() const
+{
+    for (int id : { IDC_EE_ENTRY_2D, IDC_EE_ENTRY_3D, IDC_EE_ENTRY_HELIX })
+    {
+        if (IsDlgButtonChecked(id) == BST_CHECKED)
+            return id;
+    }
+    return IDC_EE_ENTRY_NONE;
+}
+
+void CEntryExitPage::CheckEntry(int id)
+{
+    for (int each : { IDC_EE_ENTRY_NONE, IDC_EE_ENTRY_2D, IDC_EE_ENTRY_3D, IDC_EE_ENTRY_HELIX })
+        CheckDlgButton(each, each == id ? BST_CHECKED : BST_UNCHECKED);
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -2065,6 +2095,7 @@ BEGIN_MESSAGE_MAP(CWaterlineRoughingPage, COperationPage)
     ON_BN_CLICKED(IDC_WL_STEP_DISTANCE_RADIO, &CWaterlineRoughingPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_WL_SCALLOP_RADIO, &CWaterlineRoughingPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_ADAPTIVE_USE, &CWaterlineRoughingPage::OnChoiceChanged)
+    ON_CBN_SELCHANGE(IDC_WL_ENTRY, &CWaterlineRoughingPage::OnChoiceChanged)
 END_MESSAGE_MAP()
 
 CWaterlineRoughingPage::CWaterlineRoughingPage(COperationDlg* pOwner)
@@ -2078,6 +2109,10 @@ BOOL CWaterlineRoughingPage::OnInitDialog()
     CComboBox* pStart = static_cast<CComboBox*>(GetDlgItem(IDC_WL_START));
     pStart->AddString(L"Inside");
     pStart->AddString(L"Outside");
+    CComboBox* pEntry = static_cast<CComboBox*>(GetDlgItem(IDC_WL_ENTRY));
+    pEntry->AddString(L"Plunge");
+    pEntry->AddString(L"Ramp");
+    pEntry->AddString(L"Helix");
     return TRUE;
 }
 
@@ -2107,6 +2142,8 @@ void CWaterlineRoughingPage::Load(const SequenceStep& step)
     SetNumber(IDC_WL_STEP_DISTANCE, w.stepoverDistance);
     SetNumber(IDC_WL_SCALLOP, w.scallop);
     LoadAdaptive(w.adaptive, w.rampEntry);
+    static_cast<CComboBox*>(GetDlgItem(IDC_WL_ENTRY))
+        ->SetCurSel(w.rampEntry.kind == EntryKind::Plunge ? 0 : w.rampEntry.kind == EntryKind::Ramp ? 1 : 2);
     UpdateFields();
 }
 
@@ -2141,6 +2178,16 @@ bool CWaterlineRoughingPage::Save(SequenceStep& step, std::wstring& problems)
     else
         ReadNumber(IDC_WL_SCALLOP, L"The scallop height", w.scallop, found);
     SaveAdaptive(w.adaptive, w.rampEntry, found);
+    const int entry = static_cast<CComboBox*>(GetDlgItem(IDC_WL_ENTRY))->GetCurSel();
+    w.rampEntry.kind = (entry == 0) ? EntryKind::Plunge : (entry == 1) ? EntryKind::Ramp : EntryKind::Helix;
+    if (!w.adaptive)
+    {
+        // The entry's own boxes (adaptive clearing read them already).
+        if (w.rampEntry.kind != EntryKind::Plunge)
+            ReadNumber(IDC_ADAPTIVE_RAMP, L"The ramp angle", w.rampEntry.rampAngle, found);
+        if (w.rampEntry.kind == EntryKind::Helix)
+            ReadNumber(IDC_ADAPTIVE_HELIX, L"The helix diameter", w.rampEntry.helixPercent, found);
+    }
 
     if (found.empty())
     {
@@ -2186,8 +2233,22 @@ void CWaterlineRoughingPage::UpdateFields()
     GetDlgItem(IDC_WL_SCALLOP)->EnableWindow(IsDlgButtonChecked(IDC_WL_SCALLOP_RADIO) == BST_CHECKED);
 
     // Adaptive clearing has its own pattern.
-    ShowAdaptive({ IDC_WL_PART_OFFSET, IDC_WL_STOCK_OFFSET, IDC_WL_LINEAR, IDC_WL_MIXED, IDC_WL_START, IDC_WL_START_LABEL,
-                   IDC_WL_LINEAR_BOTTOM, IDC_WL_LINEAR_TOP, IDC_WL_ANGLE_LABEL, IDC_WL_ANGLE });
+    const bool adaptive =
+        ShowAdaptive({ IDC_WL_PART_OFFSET, IDC_WL_STOCK_OFFSET, IDC_WL_LINEAR, IDC_WL_MIXED, IDC_WL_START,
+                       IDC_WL_START_LABEL, IDC_WL_LINEAR_BOTTOM, IDC_WL_LINEAR_TOP, IDC_WL_ANGLE_LABEL, IDC_WL_ANGLE });
+
+    // The entry: its own choice unless adaptive clearing makes its own; the helix and
+    // ramp boxes for whichever uses them.
+    const int entry = static_cast<CComboBox*>(GetDlgItem(IDC_WL_ENTRY))->GetCurSel();
+    GetDlgItem(IDC_WL_ENTRY)->EnableWindow(!adaptive);
+    GetDlgItem(IDC_WL_ENTRY_LABEL)->EnableWindow(!adaptive);
+    if (!adaptive)
+    {
+        for (int id : { IDC_ADAPTIVE_RAMP, IDC_ADAPTIVE_RAMP_LABEL })
+            GetDlgItem(id)->EnableWindow(entry != 0);
+        for (int id : { IDC_ADAPTIVE_HELIX, IDC_ADAPTIVE_HELIX_LABEL })
+            GetDlgItem(id)->EnableWindow(entry == 2);
+    }
 }
 
 void CWaterlineRoughingPage::OnChoiceChanged()

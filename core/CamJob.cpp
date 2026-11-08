@@ -603,6 +603,7 @@ namespace camcore
             {
             case EntryMode::Entry2D:     return "2d";
             case EntryMode::AlongPath3D: return "alongPath";
+            case EntryMode::Helix:       return "helix";
             default:                     return "none";
             }
         }
@@ -615,6 +616,7 @@ namespace camcore
                 { "engage", WriteLead(settings.engage) },
                 { "alongPathAngle", settings.alongPathAngle },
                 { "alongPathHeight", settings.alongPathHeight },
+                { "helixPercent", settings.helixPercent },
                 { "exit", settings.exit == ExitMode::Exit2D ? "2d" : "none" },
                 { "retract", WriteLead(settings.retract) },
                 { "eachCutLevel", settings.eachCutLevel }
@@ -644,8 +646,18 @@ namespace camcore
                 settings.entry = EntryMode::Entry2D;
             else if (entry == EntryModeName(EntryMode::AlongPath3D))
                 settings.entry = EntryMode::AlongPath3D;
+            else if (entry == EntryModeName(EntryMode::Helix))
+                settings.entry = EntryMode::Helix;
             else
                 return false;
+
+            const auto helix = item->find("helixPercent");
+            if (helix != item->end())
+            {
+                if (!helix->is_number())
+                    return false;
+                settings.helixPercent = helix->get<double>();
+            }
 
             if (exit == "none")
                 settings.exit = ExitMode::None;
@@ -693,6 +705,7 @@ namespace camcore
         void WriteAdaptive(json& item, bool adaptive, const RampEntry& ramp)
         {
             item["adaptive"] = adaptive;
+            item["entry"] = ramp.kind == EntryKind::Plunge ? "plunge" : ramp.kind == EntryKind::Ramp ? "ramp" : "helix";
             item["helixPercent"] = ramp.helixPercent;
             item["rampAngle"] = ramp.rampAngle;
         }
@@ -706,6 +719,21 @@ namespace camcore
                 if (!flag->is_boolean())
                     return false;
                 adaptive = flag->get<bool>();
+            }
+            const auto kind = item.find("entry");
+            if (kind != item.end())
+            {
+                if (!kind->is_string())
+                    return false;
+                const std::string name = kind->get<std::string>();
+                if (name == "plunge")
+                    ramp.kind = EntryKind::Plunge;
+                else if (name == "ramp")
+                    ramp.kind = EntryKind::Ramp;
+                else if (name == "helix")
+                    ramp.kind = EntryKind::Helix;
+                else
+                    return false;
             }
             for (const auto& [name, value] : { std::pair<const char*, double*>{ "helixPercent", &ramp.helixPercent },
                                                std::pair<const char*, double*>{ "rampAngle", &ramp.rampAngle } })

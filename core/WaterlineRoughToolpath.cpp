@@ -1171,6 +1171,113 @@ namespace camcore
                 return true;
             };
 
+            // Into the material between the level above and this one: down a helix
+            // round the start where there's room, else a ramp along the piece itself,
+            // else straight down.
+            const RampEntry& ramp = settings.rampEntry;
+            const bool climb = settings.direction != CutDirection::Conventional;
+            const double slope = std::tan((std::max)(0.1, ramp.rampAngle) * 3.14159265358979323846 / 180.0);
+            const auto enterPiece = [&](const Piece& piece, const Vec3& start) {
+                const double depth = above - z;
+                const auto comeDownAbove = [&](const Vec3& p) {
+                    writer.Lift();
+                    writer.Add(MoveKind::Rapid, { p.x, p.y, w.clearance }, 0.0);
+                    if (enter < w.clearance - 1e-9 && enter > above + 1e-9)
+                        writer.Add(MoveKind::Rapid, { p.x, p.y, enter }, 0.0);
+                    writer.Add(MoveKind::Feed, { p.x, p.y, above }, feeds.plunge);
+                    writer.SyncTo(writer.At());     // started, as Enter would mark it
+                };
+                if (depth > 1e-9 && ramp.kind == EntryKind::Helix)
+                {
+                    // The helix's circle passes through the start, its centre that far
+                    // in from it (up the room's slope), where there's room round it;
+                    // smaller where there isn't.
+                    const auto roomAt = [&](double x, double y) {
+                        size_t q = 0;
+                        return w.CellAt({ x, y, z }, q) ? static_cast<double>(field[q]) : 0.0;
+                    };
+                    double gx = roomAt(start.x + gridCell, start.y) - roomAt(start.x - gridCell, start.y);
+                    double gy = roomAt(start.x, start.y + gridCell) - roomAt(start.x, start.y - gridCell);
+                    const double g = std::hypot(gx, gy);
+                    gx = (g > 1e-12) ? gx / g : 1.0;
+                    gy = (g > 1e-12) ? gy / g : 0.0;
+                    const double smallest = (std::max)(0.1 * w.radius, 2.0 * gridCell);
+                    for (double radius = ramp.helixPercent / 100.0 * w.radius; radius >= smallest; radius *= 0.5)
+                    {
+                        const Vec3 centre{ start.x + gx * radius, start.y + gy * radius, z };
+                        if (roomAt(centre.x, centre.y) < radius - 0.5 * gridCell)     // the start is on it
+                            continue;
+                        const Vec3 first{ start.x, start.y, above };
+                        comeDownAbove(first);
+                        AppendHelix(result.toolpath, first, centre, z, ramp.rampAngle, feeds.engage, climb);
+                        writer.SyncTo(result.toolpath.moves.back().to);
+                        ++result.helixEntries;
+                        return;
+                    }
+                }
+                if (depth > 1e-9 && ramp.kind != EntryKind::Plunge)
+                {
+                    // Back along the piece from the start (round a loop, or to and fro
+                    // along an open run), as far as the ramp needs; then down it.
+                    const std::vector<Vec3>& pts = piece.points;
+                    double total = 0.0;
+                    for (size_t k = 1; k < pts.size(); ++k)
+                        total += std::hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y);
+                    if (piece.closed && pts.size() > 1)
+                        total += std::hypot(pts.front().x - pts.back().x, pts.front().y - pts.back().y);
+                    const double needed = depth / slope;
+                    if (total >= 2.0 * gridCell)
+                    {
+                        std::vector<Vec3> track{ start };
+                        double along = 0.0;
+                        const size_t n = pts.size();
+                        long long index = 0;
+                        int way = 1;        // an open run: forward first, then back
+                        while (along < needed - 1e-9 && track.size() < 1000000)
+                        {
+                            Vec3 next;
+                            if (piece.closed)
+                            {
+                                index = (index - 1 + static_cast<long long>(n)) % static_cast<long long>(n);
+                                next = pts[static_cast<size_t>(index)];
+                            }
+                            else
+                            {
+                                if (index + way < 0 || index + way >= static_cast<long long>(n))
+                                    way = -way;
+                                index += way;
+                                next = pts[static_cast<size_t>(index)];
+                            }
+                            const Vec3& last = track.back();
+                            const double step = std::hypot(next.x - last.x, next.y - last.y);
+                            if (along + step >= needed)
+                            {
+                                const double f = (needed - along) / step;
+                                track.push_back({ last.x + (next.x - last.x) * f, last.y + (next.y - last.y) * f, z });
+                                along = needed;
+                                break;
+                            }
+                            track.push_back(next);
+                            along += step;
+                        }
+                        std::reverse(track.begin(), track.end());
+                        comeDownAbove(track.front());
+                        double done = 0.0;
+                        for (size_t k = 1; k < track.size(); ++k)
+                        {
+                            done += std::hypot(track[k].x - track[k - 1].x, track[k].y - track[k - 1].y);
+                            const double height = above - depth * (std::min)(1.0, done / needed);
+                            writer.Add(MoveKind::Feed, { track[k].x, track[k].y, height }, feeds.engage);
+                        }
+                        writer.Add(MoveKind::Feed, start, feeds.engage);    // exactly at the level
+                        ++result.rampEntries;
+                        return;
+                    }
+                }
+                writer.Enter(start, enter, feeds.plunge);
+                ++result.plungeEntries;
+            };
+
             writer.Lift();
             bool down = false;
             for (Piece& piece : region.pieces)
@@ -1192,7 +1299,7 @@ namespace camcore
                 }
                 else
                 {
-                    writer.Enter(start, enter, feeds.plunge);
+                    enterPiece(piece, start);
                     down = true;
                 }
                 for (size_t p = 1; p < points.size(); ++p)

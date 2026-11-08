@@ -94,5 +94,8 @@ namespace camcore
         size_t lapWobbles = 0;          // and turns of over 10 degrees one way then the other within 0.5 mm
         size_t lapPointsBefore = 0;     // points in the laps before simplifying, and after
         size_t lapPointsAfter = 0;
+        size_t helixEntries = 0;        // Waterline Roughing: cuts entered down a helix, a ramp, or straight down
+        size_t rampEntries = 0;
+        size_t plungeEntries = 0;
     };
 }

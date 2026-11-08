@@ -451,6 +451,9 @@ TEST_CASE("adaptive clearing's settings save and load, and are off in older file
     rough.id = NewStableId();
     rough.waterlineRoughing.adaptive = true;
     rough.waterlineRoughing.rampEntry.helixPercent = 50.0;
+    rough.waterlineRoughing.rampEntry.kind = EntryKind::Ramp;
+    pocket.entryExit.entry = EntryMode::Helix;
+    pocket.entryExit.helixPercent = 60.0;
     group.children = { pocket, facing, rough };
     job.sequence.push_back(group);
     REQUIRE(SaveJob(job, path).ok);
@@ -467,6 +470,10 @@ TEST_CASE("adaptive clearing's settings save and load, and are off in older file
     CHECK(back[1].facing.rampEntry.rampAngle == 4.0);
     CHECK(back[2].waterlineRoughing.adaptive);
     CHECK(back[2].waterlineRoughing.rampEntry.helixPercent == 50.0);
+    CHECK(back[2].waterlineRoughing.rampEntry.kind == EntryKind::Ramp);
+    CHECK(back[0].entryExit.entry == EntryMode::Helix);
+    CHECK(back[0].entryExit.helixPercent == 60.0);
+    CHECK(RampEntry().kind == EntryKind::Helix);
 
     // Settings without the fields: off, with the defaults.
     CHECK_FALSE(PocketingSettings().adaptive);

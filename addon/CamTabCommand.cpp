@@ -1446,6 +1446,10 @@ void CCamTabCommand::SimulateOperations(std::vector<StepRef> refs)
         camcore::SimOperation operation;
         operation.name = pStep->name;
         const camcore::Tool tool = camcore::ToolInMillimetres(*pTool);
+        char diameter[32];
+        std::snprintf(diameter, sizeof(diameter), "%g", std::round(tool.diameter * 1000.0) / 1000.0);
+        operation.tool = "T" + std::to_string(pTool->number) + " " + pTool->name + " (" +
+                         camcore::ToolTypeTitle(tool.type) + ", " + diameter + " mm)";
         operation.profile = camcore::ProfileOf(tool);
         operation.shank = camcore::ShankOf(tool);
         operation.holder = camcore::HolderOf(tool, m_machine.holderDiameter, m_machine.holderDepth);

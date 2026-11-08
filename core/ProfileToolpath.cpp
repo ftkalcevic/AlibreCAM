@@ -1749,6 +1749,10 @@ namespace camcore
             PathBuilder path(result.toolpath, pOperation->feeds, clearance, levels[l].z);
             path.SetEntryExit(&entryExit, entryExit.eachCutLevel || l == 0,
                               entryExit.eachCutLevel || l + 1 == levels.size());
+            // A helix's centre path stays the wall's distance from the outline.
+            const std::vector<Seg>& outline = pocket.outline;
+            path.SetHelix(input.tool->diameter / 2.0, direction != CutDirection::Conventional,
+                          [&outline, wall](const Vec3& p) { return DistanceToSegs(outline, p) - wall; });
             CutPieces(path, pocket.pieces, levels[l].z, pocket.outline, wall, furthest);
         };
         if (pOperation->cutLevels.order == CutLevelOrder::LevelFirst)

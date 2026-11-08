@@ -216,6 +216,7 @@ void CSimulationDlg::ShowState()
     if (simulation.Finished())
         status += L" (done)";
     SetDlgItemText(IDC_SIM_STATUS, status.c_str());
+    SetDlgItemText(IDC_SIM_TOOL, (pOperation != nullptr) ? (L"Tool: " + FromUtf8(pOperation->tool)).c_str() : L"");
     m_position.SetPos(static_cast<int>((std::min)(simulation.Position(), size_t(0x7FFFFFFF))));
 
     SetDlgItemText(IDC_SIM_INFO, (m_saved.empty() ? m_note : m_saved + L" " + m_note).c_str());

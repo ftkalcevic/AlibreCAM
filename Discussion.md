@@ -9185,276 +9185,6 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > The layout came out as planned. One tidy-up (both branches of the speed text's format were the same), then build:
 
-### 🧑 Frank · 15:32
-
-> We need to change the name of the application; AlibreCAM makes it sound like it is made by Alibre.  The program is a CAM Addon for Alibre Design built by Claude Code AI.  Suggest some alternate names.  It should be a name that makes a fun acronym.
-
-### 🤖 Claude
-
-> Here are some names that make it clear this is an add-on for Alibre Design, not something from Alibre itself, each with an acronym:
->
-> **CAM-themed**
-> - **CHISEL**: CAM Helper Inside Solid Engineering Layouts. Short, workshop-flavoured, and says "cutting".
-> - **SWARF**: Simple Workshop Add-in for Routing and Finishing. Swarf is the chips a cutter throws off, which machinists will get straight away.
-> - **FLUTE**: Fast Layout of Untold Toolpath Engineering. Named after the cutting edges on an end mill.
-> - **SPINDLE**: Simple Programs Into Numerically Driven Lathes and End mills.
-> - **CHIPS**: CAM Helper for Indexed Path Strategies.
-> - **GCODE-ish: G-WIZ**: G-code Wizard Inside the Zone.
->
-> **Playful**
-> - **MILLIE**: Machining Instructions for Lovingly Laid-out Indexed Engraving. A friendly name for the add-on.
-> - **ROUTER-TOOT**: Really Obliging Utility That Eats Rough Toolpaths. Silly, but memorable.
-> - **CRUMBS**: CAM Routines Unashamedly Made By Silicon. A nod to it being built by AI, and crumbs are what's left after cutting.
-> - **BYTE-CUT**: Built Yourself Through Experimentation, Cutting Unusual Things.
->
-> **Nods to Claude**
-> - **CLAUDE-CAM, or C-CAM**: Claude's Lightweight Add-in for Uniquely Designed Engineering. Makes the AI origin explicit.
-> - **CLAW**: CAM Layer for Alibre Workflows. A gripping tool, and "claw" also sounds like "Claude".
->
-> **My picks:** **SWARF** or **CHISEL**. Both are short and unmistakably about machining, and neither suggests it's an Alibre product. Wording like "a CAM add-on for Alibre Design" in the description keeps the compatibility clear without using Alibre's name in the product name.
->
-> Before choosing, check the name isn't already a trademark or an existing CAM product. **CHISEL** in particular is a common software name.
->
-> Once you pick one, the rename touches the DLL and project names, the tab and dialog captions, the help page, `%APPDATA%`/`%LOCALAPPDATA%` folder names (existing machine files and logs would need moving), the installed add-on folder and the spec. I can plan that when you're ready.
-
-### 🧑 Frank · 15:54
-
-> Rename the project to CAMForAlibre (CAM for Alibre Design)
-
-### 🤖 Claude
-
-> Renaming touches most of the project, and another session is editing these files right now (the real-time simulation work). A few decisions first:
-
-> Questions:
-> - How far should the rename go?
->   - Everything user-visible + build (Recommended): DLL CAMForAlibre.dll, .sln/.vcxproj names, add-on registration and installed folder, tab/dialog captions, help, posts, docs, log/settings folders. Code namespaces (camcore) and the repo folder D:\Projects\alibre\AlibreCAM stay.
->   - User-visible only: Captions, help, docs and installed folder; keep internal file/project names AlibreCAM.*
->   - Everything incl. repo folder: Also rename the repository folder (breaks open sessions and paths in CLAUDE.md).
-> - Existing data in %APPDATA%\AlibreCAM (machines, materials, posts, settings) and %LOCALAPPDATA%\AlibreCAM (log): what happens?
->   - Move it on first run (Recommended): If the new CAMForAlibre folder doesn't exist but the old one does, copy it across once and log it.
->   - Keep using old folders: Only the product name changes; data stays under AlibreCAM.
->   - Start fresh: New folders; you copy anything you want by hand.
-> - Another session is mid-way through the real-time simulation change, editing the same files. When should the rename run?
->   - After it finishes (Recommended): Plan now, run the rename once that session's work is done (and ideally committed), to avoid clashing edits.
->   - Now: Start the rename now in this session.
-
-### 🧑 Frank · 15:57
-
-> Answers:
-> - How far should the rename go?
->   **Everything user-visible + build (Recommended)**
-> - Existing data in %APPDATA%\AlibreCAM (machines, materials, posts, settings) and %LOCALAPPDATA%\AlibreCAM (log): what happens?
->   **Move it as part of this task.  Don't add backward support to the application**
-> - Another session is mid-way through the real-time simulation change, editing the same files. When should the rename run?
->   **After it finishes (Recommended)**
-
-### 🤖 Claude
-
-> Agreed. I'll wait until the [real-time simulation session](#local_299b3c11-4e62-4452-9ea6-a26281e1a5ab) has finished, so the two don't edit the same files at once. When it's done, ideally committed, tell me to go ahead. Here's what I'll do then:
->
-> **Renamed to CAMForAlibre ("CAM for Alibre Design")**
-> - **Build:** `CAMForAlibre.sln`, the add-on project (building `CAMForAlibre.dll`), its `.filters` and resource file. CamCore and the tests keep their names, as does the `camcore` namespace.
-> - **Add-on registration:** the `.adc` file, the add-on's name and description as Alibre shows them, and the install folder, `C:\ProgramData\Alibre AddOns\CAMForAlibre\`. The install script removes the old `AlibreCAM` add-on folder, so Alibre doesn't load both.
-> - **Everything you see:** the CAM tab, dialog titles, message boxes ("AlibreCAM" becomes "CAM for Alibre"), the help page, posts' "Posted by" line, and the G-code header comment.
-> - **Data folders:** `%APPDATA%\CAMForAlibre` (machines, materials, posts, settings) and `%LOCALAPPDATA%\CAMForAlibre` (log, crash dump, replay files), plus the environment variables (`CAMFORALIBRE_REPLAY` and so on).
-> - **Docs:** README, the spec (both copies), `CLAUDE.md` (also its paths and the `.cam`/`.post` notes), `TODO.md` and the help.
->
-> **Moving your data, as part of this task (no fallback in the add-on):** once Alibre is closed, I'll move `%APPDATA%\AlibreCAM` and `%LOCALAPPDATA%\AlibreCAM` to the new names and check nothing is left behind. Your `.cam` job files keep working: their format name stays as it is, so old jobs open without any special handling.
->
-> **Unchanged:** the repository folder `D:\Projects\alibre\AlibreCAM`, and the git history.
->
-> Then I'll build Debug and Release, run the tests and install, and give you a test list. Close Alibre first.
-
-### 🧑 Frank · 15:58
-
-> It's done.  Continue
-
-### 🤖 Claude
-
-> As expected, test data spelling out the format names got renamed too. I'll put those back:
-
-> All 320 tests pass. Next: Debug build in the background while I update the Claude doc.
-
-> Ten of the eleven mentions in the spec need changing. The eleventh is the repository path, which stays.
-
-> Now `docs\SPEC.md` to match:
-
-> Next, `CLAUDE.md`:
-
-> Installed. The registry entry points at the new folder, and the old add-on folder is gone. I'll also clear out the old-named build outputs left in `bin` and `obj`, which are only stale copies:
-
-> The project is now **CAMForAlibre** (CAM for Alibre Design), and it's built and installed. All 320 tests pass in Release. The Debug build and test run is still going, and I'll report its result when it finishes. Nothing is committed.
->
-> **What changed**
-> - **Files:** `CAMForAlibre.sln`, and in `addon\`: `CAMForAlibre.vcxproj`, `.filters`, `.rc`, `.cpp`, `.h`, `.def`, `.adc`, `res\CAMForAlibre.ico`. The help page is now `help\CAMForAlibre.html`. All were renamed with `git mv`, so their history follows.
-> - **The add-on:** `CAMForAlibre.dll`, installed in `C:\ProgramData\Alibre AddOns\CAMForAlibre\` under the same add-on identifier. The registry now points there, and the old `AlibreCAM` add-on folder is deleted, so Alibre won't load two copies.
-> - **Everything you see:** the ribbon tab, captions, the About box, messages, the help page, and the "Posted by CAMForAlibre" line in G-code.
-> - **Your data:** `%APPDATA%\AlibreCAM` became `%APPDATA%\CAMForAlibre` (machines, materials, settings), and `%LOCALAPPDATA%\AlibreCAM` became `%LOCALAPPDATA%\CAMForAlibre` (the log, now `CAMForAlibre.log` with its history kept, plus the crash dump and replay files). Nothing is left in the old folders.
-> - **Environment variables** now start with `CAMFORALIBRE_`, for example `CAMFORALIBRE_REPLAY`.
-> - **Docs:** README, `CLAUDE.md`, `TODO.md`, the help page, and the spec (both copies now at rev 224).
->
-> **Kept as AlibreCAM, on purpose**
-> - **The format names inside data files** ("AlibreCAM", "AlibreCAM machine" and so on). Changing them would make your existing jobs and machines unreadable, and you didn't want compatibility code. Each now has a one-line note saying so.
-> - **The repository folder** `D:\Projects\alibre\AlibreCAM`, and Claude Code's transcript folder, which is named after it.
-> - **The Claude doc's own title**, "Alibre CAM Add-on: Version 1 Specification". I didn't rename the document itself; you can rename it in Claude, and I'll update the header line in `docs\SPEC.md` to match.
->
-> **To test:**
-> 1. Start Alibre. The ribbon tab and the About box should say CAMForAlibre, and the Add-Ons list should show it once, with no AlibreCAM left.
-> 2. Open a job. Your machines, tools, materials and settings should all be there, and an existing `.cam` file should open normally.
-> 3. Generate and Post. The G-code header should say "Posted by CAMForAlibre".
-> 4. Check that the log is being written to `%LOCALAPPDATA%\CAMForAlibre\CAMForAlibre.log`.
-> 5. The help changed: press a ? button and check the page opens.
-
-### 🧑 Frank · 16:08
-
-> <task-notification>
-> <task-id>bqdnvvien</task-id>
-> <tool-use-id>toolu_01DHD7WfiqxUXrUMor4q4ib2</tool-use-id>
-> <output-file>C:\Users\FRANKT~1\AppData\Local\Temp\claude\af67b47206b29857\64d0696c-ff4a-4283-878a-178a5e0c71d9\tasks\bqdnvvien.output</output-file>
-> <status>completed</status>
-> <summary>Background command "cd /d/Projects/alibre/AlibreCAM; M="/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe"; "$M" CAMForAlibre.sln -p:Configuration=Debug -p:Platform=x64 -m -v:minimal -nologo 2&gt;&amp;1 | grep -v "C4278\|C4192" | grep -i "error\|warning" | head; timeout 1500 bin/x64/Debug/CamCoreTests.exe 2&gt;&amp;1 | tail -3" completed (exit code 0)</summary>
-> </task-notification>
-
-### 🤖 Claude
-
-> The Debug build is also clean, and all 320 tests pass. The rename is complete in both builds; the installed copy is the Release build.
-
----
-
-# Side conversation
-
-A forked copy of the session, kept apart from the main one.
-
-## 2026-11-04
-
-### 🧑 Frank · 15:23
-
-> is there a standard or preferred way to generate pseudo post code?  With macro place holders for plunge speed, spindle speed, etc?  Or do they just substitute numbers
-
-### 🤖 Claude
-
-> Yes, there is a standard, and the answer is real numbers. Placeholders like `{spindle}` belong in the post template, not in the intermediate file.
->
-> **The standard intermediate format is APT CL data**, "cutter location" data, standardised as ISO 3592 and ISO 4343. Most CAM systems produce something like it internally, then hand it to the post. It's a list of commands with concrete values, for example:
->
-> ```
-> LOADTL/3
-> SPINDL/RPM,18000,CLW
-> RAPID
-> GOTO/10.0,0.0,20.0
-> FEDRAT/MMPM,300
-> GOTO/10.0,0.0,-10.0
-> CYCLE/DRILL,10.0,MMPM,300,2.0
-> GOTO/30.0,5.0,0.0
-> CYCLE/OFF
-> ```
->
-> **Placeholders live in the post.** Posts in Fusion, Mastercam, SolidCAM and FreeCAD work the same way. The post receives each command, with its values as variables, and has a template or handler per command, for example `SPINDL` → `S{rpm} M3`. The post decides formatting, such as decimals and when to drop a value that hasn't changed. That matches the spec's style (`S{spindle} M3`, `G1 X{x} Y{y} Z{z} F{feed}`). So the split is a values-only intermediate file plus a template post. Your current pseudo code is already the first half, and an APT-style vocabulary would be the conventional way to name it.
->
-> **What the conventional approach does that ours doesn't yet:**
-> 1. **Canned cycles stay cycles.** A drill operation goes out as one cycle record per hole (depth, R plane, peck, dwell, feed), not expanded into moves. The post then chooses: LinuxCNC can emit `G81`/`G82`/`G83` with `G98`/`G99`, while a controller without cycles gets the moves expanded. Our generator expands drilling straight away, so the post can never use G83.
-> 2. **Moves say what they're for.** A plunge, a cut and a lead-in are tagged, not just "a feed at 300", so a post can handle each differently, for example a slower first plunge or arc lead-ins.
-> 3. **Modal values are separate statements.** Feed rate, spindle and tool are set once and stay in force, and moves carry only coordinates. That makes it easy for the post to drop repeated `F` words.
->
-> My recommendation is to keep concrete numbers in the intermediate file, switch our pseudo code to an APT-like command set, and make drilling a cycle record. The toolpath would then keep both the expanded moves, for drawing in the view, and the cycle parameters, for the post. That's worth settling before step 5, when the template post language is designed, because the template's placeholders come from whatever these records carry. I haven't changed any code here. This is a fork of the main session, so the change would be better made there.
-
-### 🧑 Frank · 18:23
-
-> how do i describe cnc climb milling of a part to ai? mixed is both, so we cut left to right, step, then right to left, step, and repeat.  How do I specify how climb milling engages the part
-
-### 🤖 Claude
-
-> Describe it geometrically, not by name. "Climb" and "conventional" get mixed up easily, while "which side of the tool the uncut material is on" can't be misread.
->
-> **The definition to give the AI**
->
-> Assume a clockwise spindle (M3) when viewed from above, looking down the tool axis:
->
-> - **Climb:** the uncut material is on the **right** of the tool's direction of travel. Each tooth enters at full chip thickness and leaves thin.
-> - **Conventional:** the uncut material is on the **left**.
->
-> The same thing in G-code terms: climb with M3 is the side cutter compensation G41 puts the tool on. For an outside profile, climb means going **clockwise** around the part. For a pocket wall or inside profile, it means going **anticlockwise**. If the spindle runs anticlockwise (M4), every rule flips.
->
-> **For facing with stepovers**
->
-> The engaged side is the side with stock still to be cut, which is the direction you're stepping towards. Suppose you step towards +Y. The uncut stock is then on the +Y side, so:
->
-> - **Climb, one way:** every pass runs **right to left (−X)**, which puts the uncut stock on the right. At the end of each pass the tool lifts, rapids back to the right-hand side, steps over and repeats.
-> - **Conventional, one way:** every pass runs left to right (+X).
-> - **Mixed (zigzag):** left to right, step, right to left, step. Passes alternate between conventional and climb, and the tool stays down between them.
->
-> So "climb" alone isn't enough to define a facing pattern. It only makes sense together with the step direction and the start corner.
->
-> **Template for describing it**
->
-> > Spindle turns clockwise viewed from above (M3). Climb milling means the uncut material is on the right side of the tool's direction of travel. Facing starts at the bottom-left corner of the area and steps over in +Y by 40% of the tool diameter. Cut direction: climb only. Each pass runs along X with the uncut material on the right, so passes go in −X. Between passes, retract to the clearance height, rapid back to the start side, plunge, and step over. Mixed means zigzag: alternate the X direction each pass and step over at cutting depth without retracting. Each pass overhangs the area by 50% of the tool diameter at both ends so the tool enters and leaves off the part.
->
-> **Things worth stating explicitly, because they change the result**
->
-> - Spindle direction.
-> - Pass direction (along X, Y or an angle) and step direction.
-> - Start corner.
-> - Stepover.
-> - How passes link: retract and rapid back, or stay down (zigzag).
-> - Overhang past the edges, so each pass enters off the part.
-> - Lead-in: straight, or an arc in the same rotational sense so the tool enters tangentially.
-> - Whether the final pass may be climb or conventional, if finish quality matters.
->
-> For AlibreCAM's Facing tab, those choices map onto a few fields: a cut direction of Climb / Conventional / Mixed, a pass angle, the start corner (the Features tab already has one), stepover as a percentage of the diameter, overhang, and the link type. Climb and Conventional would mean one-way passes, and Mixed would mean zigzag.
-
-## 2026-11-08
-
-### 🧑 Frank · 13:54
-
-> Should the planes be XY YZ ZX ?
-
-### 🤖 Claude
-
-> Strictly, yes. In G-code the three planes are XY (G17), ZX (G18) and YZ (G19), each named so the first axis turned towards the second gives the plane's positive normal (+Z, +Y, +X). "XZ" is the common loose name, but ZX is the correct one: XZ would give a normal of −Y and arcs turning the other way.
->
-> The code already handles G18 as ZX; only the name says XZ. That plane works internally with Z across and X up (`ToPlane` maps it to (z, x, y)). Clockwise is measured looking from +Y, as G2 and G3 do in G18, and the post test checks a G18 arc comes out as `G2 … I5 K0`. So arcs come out turning the right way.
->
-> Renaming would just be labels. The Machine tab check box and the help would say ZX, and in the code `ArcPlane::XZ` would become `ZX`. The machine file key `xz` and the post section `[plane xz]` could change too. A machine file saved since this build already uses `xz`, so reading would accept both. Shall I make that change?
-
-### 🧑 Frank · 13:54
-
-> Please rename the labels
-
-### 🤖 Claude
-
-> All of these are about the arc plane, so a word-level rename is safe. The machine file will still read the old `xz` key, and posts will still accept an old `[plane xz]` section.
-
-> The rename is done. The spec in the Claude doc needs the same change:
-
-> The doc is at rev 214 now; someone else has edited it too. I'll bring `docs\SPEC.md`'s header up to date, then build and run the tests:
-
-> The planes are now named XY, ZX and YZ everywhere. Release builds cleanly and all tests pass, but it isn't installed and hasn't been tried in Alibre.
->
-> **What changed:**
-> - **Machine tab:** the check box reads ZX.
-> - **Help and spec:** both say ZX. The Claude doc is updated, and `docs\SPEC.md`'s header now says rev 214.
-> - **Posts:** the section is `[plane zx]`, and the LinuxCNC post uses it.
-> - **Code:** `ArcPlane::ZX`, `ArcFitting::zx` and `IDC_MACHINE_ARC_ZX`, plus the tests and `CLAUDE.md`.
->
-> **Older files still work:**
-> - A machine file saved with the `xz` key still loads.
-> - A post with an old `[plane xz]` section is still used for G18.
->
-> **The doc and `docs\SPEC.md` now differ:** someone else edited the Claude doc since my last change (revs 212 and 213). Only my edits went into `docs\SPEC.md`, so it's missing theirs.
->
-> **To test, after installing:**
-> 1. The Machine tab's Arcs row shows XY, ZX, YZ, and your earlier settings for that plane are kept.
-> 2. Untick ZX, then Generate and Post a Parallel Finishing with rows along X. There should be no G18 arcs.
-> 3. The help changed: check the Machine and Post sections.
-
-### 🧑 Frank · 13:58
-
-> I'll test later.
-
-### 🤖 Claude
-
-> Fine. When you're ready, close Alibre and say "Install it". The test list from my last message still applies.
-
 > Now tests for the simulation's time and part-way moves, plus the machine file:
 
 > The first move of each operation (the rapid to its start) becomes a zero-length simulation move, so every index is one more than my tests assumed. That's existing behaviour, so I'll fix the tests:
@@ -9597,3 +9327,365 @@ A forked copy of the session, kept apart from the main one.
 ### 🧑 Frank · 16:45
 
 > Tests passed
+
+### 🤖 Claude
+
+> Great. I've noted in `CLAUDE.md` that the faster V-mill and chamfer simulation is tested in Alibre. Nothing is committed: the change is yours to commit along with the rest.
+>
+> Next on the agreed list is ramp/helix entry for Waterline Roughing, plus a Helix mode on Pocketing's Entry/Exit tab. After that come the steep/shallow slope limits for the finishing operations.
+
+### 🧑 Frank · 16:45
+
+> Add - ramp/helix entry for Waterline Roughing, plus a Helix mode on Pocketing’s Entry/Exit tab
+
+### 🤖 Claude
+
+> This is Phase 2 of the plan you approved earlier. I'll start by reading how Waterline Roughing enters its cuts, and Pocketing's Entry/Exit tab.
+
+> The script stopped at `CamJob.h`, whose comment now says ZX after the rename. Everything before it was applied. I'll check that line and run the rest:
+
+> Every level now enters by a ramp, and a ramp never marks the writer as started, so "nothing to cut" is reported. I'll mark it started when coming down:
+
+> One start case fits no helix. I'll print each case to see which:
+
+> All pass. Next, saving the new settings, checked in the existing round-trip test:
+
+> Release builds clean and all tests pass. Next, the docs. First, how the help describes the Entry/Exit tab:
+
+> `docs\SPEC.md` is already at rev 224, so the doc has moved on again. Adding the paragraph to the Claude doc after the Real time simulation entry:
+
+> Both entries are built and installed. All tests pass in Debug and Release, and the installed DLL and help page match the build; I haven't tried it in Alibre.
+>
+> **Waterline Roughing:** the bottom group is now **Entry and Adaptive Clearing**. It has an **Entry** list (Plunge, Ramp or Helix, default Helix), and Helix Dia and Ramp Angle are now used by the entry as well as by adaptive. Adaptive clearing has its own entries, so the Entry list is greyed while it's ticked.
+>
+> Each cut rapids to the Approach Distance above the level above and feeds down to it. Then:
+> - **Helix:** the helix's circle passes through the cut's start, with its centre moved inward to where there's room. It goes down at the Ramp Angle and the engage feed, then once round flat, finishing at the start. A smaller helix is tried where the full size doesn't fit, and a ramp if none does.
+> - **Ramp:** down along the cut itself at the Ramp Angle, back round a loop or to and fro along an open run.
+> - **Plunge:** straight down, as before.
+>
+> On the test block: Helix gave 13 helix entries, Ramp 13 ramps and Plunge 13 plunges. No helix or ramp went down steeper than the ramp angle, and none came within the stock to leave of the part.
+>
+> **Pocketing:** the Entry/Exit tab has a **Helix** radio with a **Dia (%)** box. The helix uses the 3D Path angle and height for its slope and starting height. Unlike the other entries it's used at **every** cut level, because each level goes into material. It's offered for Pocketing only, so it's greyed on the other operations.
+>
+> **Limits and changes to know about:**
+> - **Corners:** a helix can't start at a sharp corner of the wall loop, because no circle through that point stays inside the pocket. Pocketing with an **Outside** start on a square pocket therefore comes straight down, while **Inside** gets its helix.
+> - **Older jobs:** Waterline Roughing operations without the setting read as Helix, so they'll stop plunging straight down when you next Generate.
+> - **File format:** `.cam` files are now version 13 to 14. Older add-ons will refuse new files rather than misread them.
+>
+> The help page, the spec (rev 225 in both copies) and `CLAUDE.md` are updated.
+>
+> **To test:**
+> 1. Open a Waterline Roughing operation. The Entry list should show Helix, with Helix Dia and Ramp Angle enabled. Tick Use Adaptive Clearing and check the Entry list greys.
+> 2. Generate with each entry kind (Helix, Ramp, Plunge), look at the entries in the view, and Simulate. There should be no rapid-into-stock warnings.
+> 3. On a Pocketing operation's Entry/Exit tab, choose Helix with Start Point Inside, then Generate. There should be a helix at each level.
+> 4. Open another operation's Entry/Exit tab, such as Profiling's. Helix should be greyed.
+> 5. Save, close and reopen the job, and check the choices are kept.
+> 6. The help changed: check the Waterline Roughing and Entry/Exit tab sections.
+
+### 🧑 Frank · 17:25
+
+> Tested ok.  Add the current tool to the simulation dialog.
+
+### 🤖 Claude
+
+> Now the tool line. Each simulated operation will carry a description of its tool, shown on a new line under the status:
+
+> The layout is right. Next, the help entry, then build and install:
+
+> The Simulation dialog now shows the current tool on a line under the status, for example **Tool: T3 6 mm end mill (Flat end mill, 6 mm)**. It follows whichever operation is being cut. The Release build is done and tests pass, but it isn't installed yet because Alibre is running.
+>
+> - **The line:** the tool's T number and name from the library, then its type and diameter. The diameter is in mm even for an inch tool.
+> - **Layout:** the controls below it move down 10 units, and the dialog is that much taller.
+> - **Docs:** the help's Simulation section has a Tool entry, and `CLAUDE.md` notes the roughing entries as tested and describes the new line.
+>
+> To test, after closing Alibre and installing:
+> 1. Simulate a job that uses more than one tool. The Tool line should show each operation's tool, changing as playback moves from one operation to the next.
+> 2. Check the rest of the dialog still lines up.
+> 3. The help changed: check the Simulation section.
+
+### 🧑 Frank · 17:28
+
+> Install it
+
+### 🤖 Claude
+
+> It's installed. The installed DLL and help page match the new build, so start Alibre and it will load this version.
+>
+> To test:
+> 1. Simulate a job that uses more than one tool. The Tool line should show each operation's tool, changing as playback moves from one operation to the next.
+> 2. Check the rest of the dialog still lines up.
+> 3. The help changed: check the Simulation section.
+
+### 🧑 Frank · 17:31
+
+> Tested ok
+
+---
+
+# Side conversation
+
+A forked copy of the session, kept apart from the main one.
+
+## 2026-11-04
+
+### 🧑 Frank · 15:23
+
+> is there a standard or preferred way to generate pseudo post code?  With macro place holders for plunge speed, spindle speed, etc?  Or do they just substitute numbers
+
+### 🤖 Claude
+
+> Yes, there is a standard, and the answer is real numbers. Placeholders like `{spindle}` belong in the post template, not in the intermediate file.
+>
+> **The standard intermediate format is APT CL data**, "cutter location" data, standardised as ISO 3592 and ISO 4343. Most CAM systems produce something like it internally, then hand it to the post. It's a list of commands with concrete values, for example:
+>
+> ```
+> LOADTL/3
+> SPINDL/RPM,18000,CLW
+> RAPID
+> GOTO/10.0,0.0,20.0
+> FEDRAT/MMPM,300
+> GOTO/10.0,0.0,-10.0
+> CYCLE/DRILL,10.0,MMPM,300,2.0
+> GOTO/30.0,5.0,0.0
+> CYCLE/OFF
+> ```
+>
+> **Placeholders live in the post.** Posts in Fusion, Mastercam, SolidCAM and FreeCAD work the same way. The post receives each command, with its values as variables, and has a template or handler per command, for example `SPINDL` → `S{rpm} M3`. The post decides formatting, such as decimals and when to drop a value that hasn't changed. That matches the spec's style (`S{spindle} M3`, `G1 X{x} Y{y} Z{z} F{feed}`). So the split is a values-only intermediate file plus a template post. Your current pseudo code is already the first half, and an APT-style vocabulary would be the conventional way to name it.
+>
+> **What the conventional approach does that ours doesn't yet:**
+> 1. **Canned cycles stay cycles.** A drill operation goes out as one cycle record per hole (depth, R plane, peck, dwell, feed), not expanded into moves. The post then chooses: LinuxCNC can emit `G81`/`G82`/`G83` with `G98`/`G99`, while a controller without cycles gets the moves expanded. Our generator expands drilling straight away, so the post can never use G83.
+> 2. **Moves say what they're for.** A plunge, a cut and a lead-in are tagged, not just "a feed at 300", so a post can handle each differently, for example a slower first plunge or arc lead-ins.
+> 3. **Modal values are separate statements.** Feed rate, spindle and tool are set once and stay in force, and moves carry only coordinates. That makes it easy for the post to drop repeated `F` words.
+>
+> My recommendation is to keep concrete numbers in the intermediate file, switch our pseudo code to an APT-like command set, and make drilling a cycle record. The toolpath would then keep both the expanded moves, for drawing in the view, and the cycle parameters, for the post. That's worth settling before step 5, when the template post language is designed, because the template's placeholders come from whatever these records carry. I haven't changed any code here. This is a fork of the main session, so the change would be better made there.
+
+### 🧑 Frank · 18:23
+
+> how do i describe cnc climb milling of a part to ai? mixed is both, so we cut left to right, step, then right to left, step, and repeat.  How do I specify how climb milling engages the part
+
+### 🤖 Claude
+
+> Describe it geometrically, not by name. "Climb" and "conventional" get mixed up easily, while "which side of the tool the uncut material is on" can't be misread.
+>
+> **The definition to give the AI**
+>
+> Assume a clockwise spindle (M3) when viewed from above, looking down the tool axis:
+>
+> - **Climb:** the uncut material is on the **right** of the tool's direction of travel. Each tooth enters at full chip thickness and leaves thin.
+> - **Conventional:** the uncut material is on the **left**.
+>
+> The same thing in G-code terms: climb with M3 is the side cutter compensation G41 puts the tool on. For an outside profile, climb means going **clockwise** around the part. For a pocket wall or inside profile, it means going **anticlockwise**. If the spindle runs anticlockwise (M4), every rule flips.
+>
+> **For facing with stepovers**
+>
+> The engaged side is the side with stock still to be cut, which is the direction you're stepping towards. Suppose you step towards +Y. The uncut stock is then on the +Y side, so:
+>
+> - **Climb, one way:** every pass runs **right to left (−X)**, which puts the uncut stock on the right. At the end of each pass the tool lifts, rapids back to the right-hand side, steps over and repeats.
+> - **Conventional, one way:** every pass runs left to right (+X).
+> - **Mixed (zigzag):** left to right, step, right to left, step. Passes alternate between conventional and climb, and the tool stays down between them.
+>
+> So "climb" alone isn't enough to define a facing pattern. It only makes sense together with the step direction and the start corner.
+>
+> **Template for describing it**
+>
+> > Spindle turns clockwise viewed from above (M3). Climb milling means the uncut material is on the right side of the tool's direction of travel. Facing starts at the bottom-left corner of the area and steps over in +Y by 40% of the tool diameter. Cut direction: climb only. Each pass runs along X with the uncut material on the right, so passes go in −X. Between passes, retract to the clearance height, rapid back to the start side, plunge, and step over. Mixed means zigzag: alternate the X direction each pass and step over at cutting depth without retracting. Each pass overhangs the area by 50% of the tool diameter at both ends so the tool enters and leaves off the part.
+>
+> **Things worth stating explicitly, because they change the result**
+>
+> - Spindle direction.
+> - Pass direction (along X, Y or an angle) and step direction.
+> - Start corner.
+> - Stepover.
+> - How passes link: retract and rapid back, or stay down (zigzag).
+> - Overhang past the edges, so each pass enters off the part.
+> - Lead-in: straight, or an arc in the same rotational sense so the tool enters tangentially.
+> - Whether the final pass may be climb or conventional, if finish quality matters.
+>
+> For AlibreCAM's Facing tab, those choices map onto a few fields: a cut direction of Climb / Conventional / Mixed, a pass angle, the start corner (the Features tab already has one), stepover as a percentage of the diameter, overhang, and the link type. Climb and Conventional would mean one-way passes, and Mixed would mean zigzag.
+
+## 2026-11-08
+
+### 🧑 Frank · 13:54
+
+> Should the planes be XY YZ ZX ?
+
+### 🤖 Claude
+
+> Strictly, yes. In G-code the three planes are XY (G17), ZX (G18) and YZ (G19), each named so the first axis turned towards the second gives the plane's positive normal (+Z, +Y, +X). "XZ" is the common loose name, but ZX is the correct one: XZ would give a normal of −Y and arcs turning the other way.
+>
+> The code already handles G18 as ZX; only the name says XZ. That plane works internally with Z across and X up (`ToPlane` maps it to (z, x, y)). Clockwise is measured looking from +Y, as G2 and G3 do in G18, and the post test checks a G18 arc comes out as `G2 … I5 K0`. So arcs come out turning the right way.
+>
+> Renaming would just be labels. The Machine tab check box and the help would say ZX, and in the code `ArcPlane::XZ` would become `ZX`. The machine file key `xz` and the post section `[plane xz]` could change too. A machine file saved since this build already uses `xz`, so reading would accept both. Shall I make that change?
+
+### 🧑 Frank · 13:54
+
+> Please rename the labels
+
+### 🤖 Claude
+
+> All of these are about the arc plane, so a word-level rename is safe. The machine file will still read the old `xz` key, and posts will still accept an old `[plane xz]` section.
+
+> The rename is done. The spec in the Claude doc needs the same change:
+
+> The doc is at rev 214 now; someone else has edited it too. I'll bring `docs\SPEC.md`'s header up to date, then build and run the tests:
+
+> The planes are now named XY, ZX and YZ everywhere. Release builds cleanly and all tests pass, but it isn't installed and hasn't been tried in Alibre.
+>
+> **What changed:**
+> - **Machine tab:** the check box reads ZX.
+> - **Help and spec:** both say ZX. The Claude doc is updated, and `docs\SPEC.md`'s header now says rev 214.
+> - **Posts:** the section is `[plane zx]`, and the LinuxCNC post uses it.
+> - **Code:** `ArcPlane::ZX`, `ArcFitting::zx` and `IDC_MACHINE_ARC_ZX`, plus the tests and `CLAUDE.md`.
+>
+> **Older files still work:**
+> - A machine file saved with the `xz` key still loads.
+> - A post with an old `[plane xz]` section is still used for G18.
+>
+> **The doc and `docs\SPEC.md` now differ:** someone else edited the Claude doc since my last change (revs 212 and 213). Only my edits went into `docs\SPEC.md`, so it's missing theirs.
+>
+> **To test, after installing:**
+> 1. The Machine tab's Arcs row shows XY, ZX, YZ, and your earlier settings for that plane are kept.
+> 2. Untick ZX, then Generate and Post a Parallel Finishing with rows along X. There should be no G18 arcs.
+> 3. The help changed: check the Machine and Post sections.
+
+### 🧑 Frank · 13:58
+
+> I'll test later.
+
+### 🤖 Claude
+
+> Fine. When you're ready, close Alibre and say "Install it". The test list from my last message still applies.
+
+### 🧑 Frank · 15:32
+
+> We need to change the name of the application; AlibreCAM makes it sound like it is made by Alibre.  The program is a CAM Addon for Alibre Design built by Claude Code AI.  Suggest some alternate names.  It should be a name that makes a fun acronym.
+
+### 🤖 Claude
+
+> Here are some names that make it clear this is an add-on for Alibre Design, not something from Alibre itself, each with an acronym:
+>
+> **CAM-themed**
+> - **CHISEL**: CAM Helper Inside Solid Engineering Layouts. Short, workshop-flavoured, and says "cutting".
+> - **SWARF**: Simple Workshop Add-in for Routing and Finishing. Swarf is the chips a cutter throws off, which machinists will get straight away.
+> - **FLUTE**: Fast Layout of Untold Toolpath Engineering. Named after the cutting edges on an end mill.
+> - **SPINDLE**: Simple Programs Into Numerically Driven Lathes and End mills.
+> - **CHIPS**: CAM Helper for Indexed Path Strategies.
+> - **GCODE-ish: G-WIZ**: G-code Wizard Inside the Zone.
+>
+> **Playful**
+> - **MILLIE**: Machining Instructions for Lovingly Laid-out Indexed Engraving. A friendly name for the add-on.
+> - **ROUTER-TOOT**: Really Obliging Utility That Eats Rough Toolpaths. Silly, but memorable.
+> - **CRUMBS**: CAM Routines Unashamedly Made By Silicon. A nod to it being built by AI, and crumbs are what's left after cutting.
+> - **BYTE-CUT**: Built Yourself Through Experimentation, Cutting Unusual Things.
+>
+> **Nods to Claude**
+> - **CLAUDE-CAM, or C-CAM**: Claude's Lightweight Add-in for Uniquely Designed Engineering. Makes the AI origin explicit.
+> - **CLAW**: CAM Layer for Alibre Workflows. A gripping tool, and "claw" also sounds like "Claude".
+>
+> **My picks:** **SWARF** or **CHISEL**. Both are short and unmistakably about machining, and neither suggests it's an Alibre product. Wording like "a CAM add-on for Alibre Design" in the description keeps the compatibility clear without using Alibre's name in the product name.
+>
+> Before choosing, check the name isn't already a trademark or an existing CAM product. **CHISEL** in particular is a common software name.
+>
+> Once you pick one, the rename touches the DLL and project names, the tab and dialog captions, the help page, `%APPDATA%`/`%LOCALAPPDATA%` folder names (existing machine files and logs would need moving), the installed add-on folder and the spec. I can plan that when you're ready.
+
+### 🧑 Frank · 15:54
+
+> Rename the project to CAMForAlibre (CAM for Alibre Design)
+
+### 🤖 Claude
+
+> Renaming touches most of the project, and another session is editing these files right now (the real-time simulation work). A few decisions first:
+
+> Questions:
+> - How far should the rename go?
+>   - Everything user-visible + build (Recommended): DLL CAMForAlibre.dll, .sln/.vcxproj names, add-on registration and installed folder, tab/dialog captions, help, posts, docs, log/settings folders. Code namespaces (camcore) and the repo folder D:\Projects\alibre\AlibreCAM stay.
+>   - User-visible only: Captions, help, docs and installed folder; keep internal file/project names AlibreCAM.*
+>   - Everything incl. repo folder: Also rename the repository folder (breaks open sessions and paths in CLAUDE.md).
+> - Existing data in %APPDATA%\AlibreCAM (machines, materials, posts, settings) and %LOCALAPPDATA%\AlibreCAM (log): what happens?
+>   - Move it on first run (Recommended): If the new CAMForAlibre folder doesn't exist but the old one does, copy it across once and log it.
+>   - Keep using old folders: Only the product name changes; data stays under AlibreCAM.
+>   - Start fresh: New folders; you copy anything you want by hand.
+> - Another session is mid-way through the real-time simulation change, editing the same files. When should the rename run?
+>   - After it finishes (Recommended): Plan now, run the rename once that session's work is done (and ideally committed), to avoid clashing edits.
+>   - Now: Start the rename now in this session.
+
+### 🧑 Frank · 15:57
+
+> Answers:
+> - How far should the rename go?
+>   **Everything user-visible + build (Recommended)**
+> - Existing data in %APPDATA%\AlibreCAM (machines, materials, posts, settings) and %LOCALAPPDATA%\AlibreCAM (log): what happens?
+>   **Move it as part of this task.  Don't add backward support to the application**
+> - Another session is mid-way through the real-time simulation change, editing the same files. When should the rename run?
+>   **After it finishes (Recommended)**
+
+### 🤖 Claude
+
+> Agreed. I'll wait until the [real-time simulation session](#local_299b3c11-4e62-4452-9ea6-a26281e1a5ab) has finished, so the two don't edit the same files at once. When it's done, ideally committed, tell me to go ahead. Here's what I'll do then:
+>
+> **Renamed to CAMForAlibre ("CAM for Alibre Design")**
+> - **Build:** `CAMForAlibre.sln`, the add-on project (building `CAMForAlibre.dll`), its `.filters` and resource file. CamCore and the tests keep their names, as does the `camcore` namespace.
+> - **Add-on registration:** the `.adc` file, the add-on's name and description as Alibre shows them, and the install folder, `C:\ProgramData\Alibre AddOns\CAMForAlibre\`. The install script removes the old `AlibreCAM` add-on folder, so Alibre doesn't load both.
+> - **Everything you see:** the CAM tab, dialog titles, message boxes ("AlibreCAM" becomes "CAM for Alibre"), the help page, posts' "Posted by" line, and the G-code header comment.
+> - **Data folders:** `%APPDATA%\CAMForAlibre` (machines, materials, posts, settings) and `%LOCALAPPDATA%\CAMForAlibre` (log, crash dump, replay files), plus the environment variables (`CAMFORALIBRE_REPLAY` and so on).
+> - **Docs:** README, the spec (both copies), `CLAUDE.md` (also its paths and the `.cam`/`.post` notes), `TODO.md` and the help.
+>
+> **Moving your data, as part of this task (no fallback in the add-on):** once Alibre is closed, I'll move `%APPDATA%\AlibreCAM` and `%LOCALAPPDATA%\AlibreCAM` to the new names and check nothing is left behind. Your `.cam` job files keep working: their format name stays as it is, so old jobs open without any special handling.
+>
+> **Unchanged:** the repository folder `D:\Projects\alibre\AlibreCAM`, and the git history.
+>
+> Then I'll build Debug and Release, run the tests and install, and give you a test list. Close Alibre first.
+
+### 🧑 Frank · 15:58
+
+> It's done.  Continue
+
+### 🤖 Claude
+
+> As expected, test data spelling out the format names got renamed too. I'll put those back:
+
+> All 320 tests pass. Next: Debug build in the background while I update the Claude doc.
+
+> Ten of the eleven mentions in the spec need changing. The eleventh is the repository path, which stays.
+
+> Now `docs\SPEC.md` to match:
+
+> Next, `CLAUDE.md`:
+
+> Installed. The registry entry points at the new folder, and the old add-on folder is gone. I'll also clear out the old-named build outputs left in `bin` and `obj`, which are only stale copies:
+
+> The project is now **CAMForAlibre** (CAM for Alibre Design), and it's built and installed. All 320 tests pass in Release. The Debug build and test run is still going, and I'll report its result when it finishes. Nothing is committed.
+>
+> **What changed**
+> - **Files:** `CAMForAlibre.sln`, and in `addon\`: `CAMForAlibre.vcxproj`, `.filters`, `.rc`, `.cpp`, `.h`, `.def`, `.adc`, `res\CAMForAlibre.ico`. The help page is now `help\CAMForAlibre.html`. All were renamed with `git mv`, so their history follows.
+> - **The add-on:** `CAMForAlibre.dll`, installed in `C:\ProgramData\Alibre AddOns\CAMForAlibre\` under the same add-on identifier. The registry now points there, and the old `AlibreCAM` add-on folder is deleted, so Alibre won't load two copies.
+> - **Everything you see:** the ribbon tab, captions, the About box, messages, the help page, and the "Posted by CAMForAlibre" line in G-code.
+> - **Your data:** `%APPDATA%\AlibreCAM` became `%APPDATA%\CAMForAlibre` (machines, materials, settings), and `%LOCALAPPDATA%\AlibreCAM` became `%LOCALAPPDATA%\CAMForAlibre` (the log, now `CAMForAlibre.log` with its history kept, plus the crash dump and replay files). Nothing is left in the old folders.
+> - **Environment variables** now start with `CAMFORALIBRE_`, for example `CAMFORALIBRE_REPLAY`.
+> - **Docs:** README, `CLAUDE.md`, `TODO.md`, the help page, and the spec (both copies now at rev 224).
+>
+> **Kept as AlibreCAM, on purpose**
+> - **The format names inside data files** ("AlibreCAM", "AlibreCAM machine" and so on). Changing them would make your existing jobs and machines unreadable, and you didn't want compatibility code. Each now has a one-line note saying so.
+> - **The repository folder** `D:\Projects\alibre\AlibreCAM`, and Claude Code's transcript folder, which is named after it.
+> - **The Claude doc's own title**, "Alibre CAM Add-on: Version 1 Specification". I didn't rename the document itself; you can rename it in Claude, and I'll update the header line in `docs\SPEC.md` to match.
+>
+> **To test:**
+> 1. Start Alibre. The ribbon tab and the About box should say CAMForAlibre, and the Add-Ons list should show it once, with no AlibreCAM left.
+> 2. Open a job. Your machines, tools, materials and settings should all be there, and an existing `.cam` file should open normally.
+> 3. Generate and Post. The G-code header should say "Posted by CAMForAlibre".
+> 4. Check that the log is being written to `%LOCALAPPDATA%\CAMForAlibre\CAMForAlibre.log`.
+> 5. The help changed: press a ? button and check the page opens.
+
+### 🧑 Frank · 16:08
+
+> <task-notification>
+> <task-id>bqdnvvien</task-id>
+> <tool-use-id>toolu_01DHD7WfiqxUXrUMor4q4ib2</tool-use-id>
+> <output-file>C:\Users\FRANKT~1\AppData\Local\Temp\claude\af67b47206b29857\64d0696c-ff4a-4283-878a-178a5e0c71d9\tasks\bqdnvvien.output</output-file>
+> <status>completed</status>
+> <summary>Background command "cd /d/Projects/alibre/AlibreCAM; M="/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe"; "$M" CAMForAlibre.sln -p:Configuration=Debug -p:Platform=x64 -m -v:minimal -nologo 2&gt;&amp;1 | grep -v "C4278\|C4192" | grep -i "error\|warning" | head; timeout 1500 bin/x64/Debug/CamCoreTests.exe 2&gt;&amp;1 | tail -3" completed (exit code 0)</summary>
+> </task-notification>
+
+### 🤖 Claude
+
+> The Debug build is also clean, and all 320 tests pass. The rename is complete in both builds; the installed copy is the Release build.

@@ -14,7 +14,8 @@ namespace camcore
     {
         None,
         Entry2D,        // a 2D engage motion at the cut's level
-        AlongPath3D     // ramping down along the cut's own path
+        AlongPath3D,    // ramping down along the cut's own path
+        Helix           // down a helix centred on the cut's start (Pocketing), at every level
     };
 
     enum class ExitMode
@@ -45,8 +46,9 @@ namespace camcore
     {
         EntryMode entry = EntryMode::None;
         LeadMotion engage;
-        double alongPathAngle = 2.0;
-        double alongPathHeight = 2.0;
+        double alongPathAngle = 2.0;        // and the helix's
+        double alongPathHeight = 2.0;       // and the helix's
+        double helixPercent = 80.0;         // the helix's diameter, % of the tool's
 
         ExitMode exit = ExitMode::None;
         LeadMotion retract;

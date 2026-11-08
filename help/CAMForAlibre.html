@@ -220,6 +220,8 @@
 <dl>
   <dt>Position</dt>
   <dd>The operation being cut, the move of all the moves (arcs are split into short straight moves), and the machining time so far of the whole: from the feeds, the machine's Rapid rate and dwells, with no allowance for acceleration.</dd>
+  <dt>Tool</dt>
+  <dd>The tool the operation being cut uses: its number, name, type and diameter (in mm).</dd>
   <dt>Scrub bar</dt>
   <dd>Drag to any point in the program. When you let go, the stock is cut to there (going back starts again from the whole stock, which can take a moment).</dd>
   <dt>Rewind</dt>
@@ -655,14 +657,18 @@
   <dd>The tool goes down beside the cut and leads in at the cut's level, as set in Engage Motion.</dd>
   <dt>Entry Motions: Along 3D Path</dt>
   <dd>The tool ramps down into the cut, starting in line with it, as set in 3D Path.</dd>
+  <dt>Entry Motions: Helix</dt>
+  <dd>Pocketing only. The tool goes down a helix whose circle passes through the cut's start, its centre in from there where there's room, from the Along Path Height above the cut at the Along Path Angle, at the engage feed, then once round flat, ending at the start. Unlike the other entries it's used at every cut level, as each level goes into material. Where a circle of the diameter doesn't fit (a sharp corner of the wall, say) a smaller one is tried down to a tenth of the tool's radius, then the tool comes straight down; starting Inside suits a helix best.</dd>
+  <dt>Dia (%)</dt>
+  <dd>The helix's diameter (its centre's path), as a percentage of the tool's diameter. Only with Helix. 80% by default; more than 0 and at most 200.</dd>
   <dt>Engage Motion: Linear</dt>
   <dd>A straight lead in of the Length, at the Angle from the cut's line (0 in line with it, 90 square to it, -180 to 180).</dd>
   <dt>Engage Motion: Radial</dt>
   <dd>A quarter circle lead in of the Radius, tangent to the cut.</dd>
   <dt>Along Path Angle</dt>
-  <dd>The ramp's slope, more than 0 and under 90 degrees.</dd>
+  <dd>The ramp's (or the helix's) slope, more than 0 and under 90 degrees.</dd>
   <dt>Along Path Height</dt>
-  <dd>How far above the cut the ramp starts. It must be below the clearance plane.</dd>
+  <dd>How far above the cut the ramp (or the helix) starts. It must be below the clearance plane.</dd>
   <dt>Exit Motions: None</dt>
   <dd>The tool lifts straight up at the end of the cut.</dd>
   <dt>Exit Motions: 2D Exit</dt>
@@ -851,10 +857,17 @@
   <dd>How far apart the loops or rows are: a percentage of the tool's diameter (at most 100%; 50% is the default), a distance, or from the scallop height, the ridge left between two passes. Scallop works from the tool's corner radius (a ball mill's radius): the stepover is 2 &times; &radic;(h(2r &minus; h)). A flat end mill leaves no scallop, so it steps over 90% of its diameter.</dd>
   <dt>Use Adaptive Clearing</dt>
   <dd>Clears the area with constant engagement in place of the pattern: the tool's side cut stays about the stepover wide all the way, so it can cut the full depth of a level at a low stepover without the full-width cuts (corners, the first pass) that load a light machine. Its passes spread out a stepover at a time from where the tool can already be, from air past the stock where the Linear Extension reaches beyond it, otherwise a helix, following the walls and going round islands, cut climb (or conventional if that's chosen; Mixed cuts climb). Moves between passes stay down where the way is clear, and otherwise lift. Each level is cleared region by region, coming down at rapid to the Approach Distance above the level before; it finishes with laps along the parts and walls where material is left. While it's ticked, the pattern's own choices (cut type, start, angle, Mixed) are greyed and not used. Use a smaller stepover than for the ordinary pattern: 10 to 25% of the tool's diameter is usual. Off by default.</dd>
+  <dt>Entry</dt>
+  <dd>How each cut goes down into the material between the level above and its own level (adaptive clearing has its own entries, so this is greyed while it's ticked). After the rapid to the Approach Distance above the level above, the tool feeds down to that level, then:
+    <ul>
+      <li><strong>Helix</strong> (the default): down a helix whose circle passes through the cut's start, its centre in from there where there's room, at the Ramp Angle and the engage feed, then once round flat, ending at the start. Where the Helix Dia doesn't fit, a smaller one is tried down to a tenth of the tool's radius; failing that, a ramp.</li>
+      <li><strong>Ramp</strong>: down along the cut itself at the Ramp Angle and the engage feed: round a loop, or to and fro along an open run, ending at the start. A piece too short for it comes straight down.</li>
+      <li><strong>Plunge</strong>: straight down at the plunge feed.</li>
+    </ul></dd>
   <dt>Helix Dia (%)</dt>
-  <dd>Adaptive clearing only. Where there's no air to start from, the tool goes down a helix of this diameter (its centre's path), as a percentage of the tool's diameter, at the roomiest place, then spreads out from there. Where there isn't room for a helix at least a tenth of the tool's radius, it plunges straight down instead. 80% by default; 0 to 200.</dd>
+  <dd>The helix's diameter (its centre's path), as a percentage of the tool's diameter: for the Helix entry, and for adaptive clearing's helix where it has no air to start from (at the roomiest place, then spreading out from there; a plunge where there isn't room for one a tenth of the tool's radius). 80% by default; 0 to 200.</dd>
   <dt>Ramp Angle (deg)</dt>
-  <dd>Adaptive clearing only. How steeply the helix goes down, in degrees from horizontal, at the engage feed; it then goes once more round at the level. 2 degrees by default; more than 0 and at most 45.</dd>
+  <dd>How steeply the helix or ramp goes down, in degrees from horizontal, at the engage feed. 2 degrees by default; more than 0 and at most 45.</dd>
 </dl>
 </section>
 

@@ -2,6 +2,8 @@
 
 #include <doctest/doctest.h>
 
+#include <set>
+
 #include <cmath>
 
 #include "PocketToolpath.h"
@@ -291,5 +293,46 @@ TEST_CASE("pocketing needs a closed outline the tool fits in, and radial isn't b
     {
         CHECK(p.x >= 3 - 1e-6);
         CHECK(p.x <= 17 + 1e-6);
+    }
+}
+
+TEST_CASE("a Helix entry goes down a helix inside the wall, at every level, no steeper than its angle")
+{
+    for (PocketStart start : { PocketStart::Inside, PocketStart::Outside })
+    {
+        SequenceStep step = PocketStep(PocketCutType::Offset);
+        step.pocketing.start = start;
+        step.cutLevels = CutLevelSettings();        // levels at -0.4, -0.8 and -1.0
+        step.entryExit.entry = EntryMode::Helix;
+        step.entryExit.alongPathAngle = 3.0;
+        step.entryExit.alongPathHeight = 1.0;
+        step.feeds.engage = 400;
+        const ToolpathResult result = Generate(step);
+        REQUIRE(result.ok);
+        const std::vector<ToolpathMove>& moves = result.toolpath.moves;
+        size_t arcs = 0;
+        std::set<double> levels;
+        const double steepest = std::tan(3.0 * 3.14159265358979323846 / 180.0) + 1e-6;
+        for (size_t m = 1; m < moves.size(); ++m)
+        {
+            const ToolpathMove& move = moves[m];
+            if (move.kind != MoveKind::Feed || move.feed != 400.0 || !move.arc)
+                continue;
+            ++arcs;
+            levels.insert(std::round(move.to.z * 1000.0) / 1000.0);
+            const Vec3& from = moves[m - 1].to;
+            const double run = std::fabs(ArcMoveSweep(from, move)) *
+                               std::hypot(from.x - move.centre.x, from.y - move.centre.y);
+            CHECK(from.z - move.to.z <= run * steepest);
+            // The helix's circle stays the wall's distance inside the 20 x 20 pocket (tool 4: 2 in).
+            CHECK(move.to.x >= 2.0 - 1e-6);
+            CHECK(move.to.x <= 18.0 + 1e-6);
+            CHECK(move.to.y >= 2.0 - 1e-6);
+            CHECK(move.to.y <= 18.0 + 1e-6);
+        }
+        if (start == PocketStart::Outside)
+            continue;   // it starts at the wall loop's corner: no circle through it fits, so straight down
+        CHECK(arcs > 0);
+        CHECK(levels.count(-1.0) == 1);     // down to the last level too
     }
 }

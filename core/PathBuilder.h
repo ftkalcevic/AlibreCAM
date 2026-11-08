@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <functional>
+
 #include "EntryExit.h"
 #include "Feeds.h"
 #include "Toolpath.h"
@@ -19,6 +21,17 @@ namespace camcore
 
         // The entry and exit motions, and whether this level uses each.
         void SetEntryExit(const EntryExitSettings* pSettings, bool entry, bool exit);
+
+        // For a Helix entry: the tool's radius, which way round (anticlockwise for
+        // climb), and how much room each start has for the helix's radius (the tool's
+        // centre staying where it may). Without room for a tenth of the tool's radius,
+        // it comes straight down.
+        void SetHelix(double toolRadius, bool anticlockwise, std::function<double(const Vec3&)> room)
+        {
+            m_toolRadius = toolRadius;
+            m_helixAnticlockwise = anticlockwise;
+            m_helixRoom = std::move(room);
+        }
 
         // The Z that cuts, plunges and leads go to.
         void SetCutZ(double z) { m_cutZ = z; }
@@ -53,6 +66,9 @@ namespace camcore
 
     private:
         void Add(MoveKind kind, const Vec3& to, double feed);
+        double m_toolRadius = 0.0;
+        bool m_helixAnticlockwise = true;
+        std::function<double(const Vec3&)> m_helixRoom;
 
         Toolpath& m_toolpath;
         const FeedSettings& m_feeds;

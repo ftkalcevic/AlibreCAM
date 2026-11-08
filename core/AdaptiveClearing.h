@@ -85,6 +85,12 @@ namespace camcore
     // overtravel). The free cells err on the safe side by most of a cell.
     AdaptiveGrid AdaptiveGridFromOutlines(const std::vector<Path>& outlines, double cell, double inset, double toolRadius);
 
+    // A helix round centre, from start (on its circle, at its Z) down to bottom at
+    // the ramp angle, in half turns, then once round flat, ending back at start's
+    // angle at bottom. Anticlockwise (seen from +Z) for climb with a clockwise spindle.
+    void AppendHelix(Toolpath& toolpath, const Vec3& start, const Vec3& centre, double bottom, double rampAngle,
+                     double feed, bool anticlockwise);
+
     // How the cuts are written at a level.
     struct AdaptiveWriting
     {

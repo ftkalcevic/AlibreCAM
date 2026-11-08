@@ -306,6 +306,9 @@ private:
     void SaveLead(const LeadControls& ids, const wchar_t* name, camcore::LeadMotion& lead, std::wstring& found);
     void EnableLead(const LeadControls& ids, bool enabled);
     void UpdateFields();
+    int CheckedEntry() const;       // which of the four entry buttons
+    void CheckEntry(int id);
+    bool m_helixAllowed = false;    // only Pocketing offers a helix
 
     static const LeadControls kEngage;
     static const LeadControls kRetract;

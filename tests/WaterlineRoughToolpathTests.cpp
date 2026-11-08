@@ -548,6 +548,7 @@ TEST_CASE("waterline roughing comes down at rapid to the approach distance above
     {
         SequenceStep step = WaterlineStep(0.5, 2.0);
         step.waterlineRoughing.approachDistance = approach;
+        step.waterlineRoughing.rampEntry.kind = EntryKind::Plunge;     // straight down, to see the approach
         const Tool tool = Mill(6);
         const ToolpathResult result = GenerateWaterlineRoughToolpath(Input(step, tool));
         REQUIRE(result.ok);
@@ -574,6 +575,61 @@ TEST_CASE("waterline roughing comes down at rapid to the approach distance above
             if (moves[m].kind == MoveKind::Feed && moves[m].feed == doctest::Approx(150.0) &&
                 moves[m - 1].kind == MoveKind::Rapid && moves[m - 1].to.z < 20.0 - 1e-9)
                 CHECK(moves[m - 1].to.z >= moves[m].to.z + approach - 1e-6);
+        }
+    }
+}
+
+TEST_CASE("waterline roughing enters by helix, ramp or plunge, never steeper than the ramp angle")
+{
+    const Tool tool = Mill(6);
+    const double angle = 3.0;
+    const double steepest = std::tan(angle * 3.14159265358979323846 / 180.0) + 1e-6;
+    for (EntryKind kind : { EntryKind::Helix, EntryKind::Ramp, EntryKind::Plunge })
+    {
+        SequenceStep step = WaterlineStep(0.5, 2.0);
+        step.waterlineRoughing.rampEntry.kind = kind;
+        step.waterlineRoughing.rampEntry.rampAngle = angle;
+        step.feeds.engage = 400;
+        const ToolpathResult result = GenerateWaterlineRoughToolpath(Input(step, tool));
+        REQUIRE(result.ok);
+        MESSAGE("kind " << static_cast<int>(kind) << ": " << result.helixEntries << " helixes, " << result.rampEntries
+                        << " ramps, " << result.plungeEntries << " plunges");
+        if (kind == EntryKind::Plunge)
+        {
+            CHECK(result.helixEntries + result.rampEntries == 0);
+            CHECK(result.plungeEntries > 0);
+            continue;
+        }
+        CHECK(result.plungeEntries == 0);
+        if (kind == EntryKind::Helix)
+            CHECK(result.helixEntries > 0);
+        else
+            CHECK(result.rampEntries > 0);
+
+        // Every move at the engage feed (the ramps and helixes) goes down no steeper than the angle.
+        const std::vector<ToolpathMove>& moves = result.toolpath.moves;
+        for (size_t m = 1; m < moves.size(); ++m)
+        {
+            const ToolpathMove& move = moves[m];
+            if (move.kind != MoveKind::Feed || move.feed != 400.0)
+                continue;
+            const Vec3& from = moves[m - 1].to;
+            const double drop = from.z - move.to.z;
+            if (drop <= 1e-9)
+                continue;
+            double run = std::hypot(move.to.x - from.x, move.to.y - from.y);
+            if (move.arc)
+                run = std::fabs(ArcMoveSweep(from, move)) * std::hypot(from.x - move.centre.x, from.y - move.centre.y);
+            CHECK(drop <= run * steepest);
+        }
+        // And they stay clear of the block, as the cuts do.
+        for (const ToolpathMove& move : moves)
+        {
+            if (move.kind != MoveKind::Feed || move.to.z >= 6.0)
+                continue;
+            const double dx = (std::max)({ 10.0 - move.to.x, 0.0, move.to.x - 30.0 });
+            const double dy = (std::max)({ 8.0 - move.to.y, 0.0, move.to.y - 22.0 });
+            CHECK(std::hypot(dx, dy) >= 3.0 + 0.5 - 0.3);
         }
     }
 }

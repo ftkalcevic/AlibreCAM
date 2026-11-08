@@ -263,6 +263,7 @@ namespace camcore
     struct SimOperation
     {
         std::string name;
+        std::string tool;       // what the Simulation dialog shows, such as "T3 6 mm end mill (Flat end mill, 6 mm)"
         ToolProfile profile;
         Frame frame;
         Toolpath toolpath;
