@@ -406,7 +406,7 @@
 
 <section id="tool-edit">
 <h2>Tool</h2>
-<p>One tool's number, name and size, and its speeds and feeds for each material. Version 1 has flat end mills and drills.</p>
+<p>One tool's number, name and size, and its speeds and feeds for each material. The drawing at the right shows the chosen type of tool, tip down, and what each measurement means: the letter on a measurement is the letter at the end of its field's label. It isn't to scale. It changes with the Type, and shows the neck and wider shank while Reduced neck is ticked.</p>
 <dl>
   <dt>Number</dt>
   <dd>The tool number (T number) the machine knows the tool by. It's written at tool changes.</dd>
@@ -416,33 +416,33 @@
   <dd>A description of the tool, shown in lists and written in the program.</dd>
   <dt>Units</dt>
   <dd>The unit of the tool's sizes. Each tool keeps its own unit, so an imperial cutter keeps its exact size in a metric job.</dd>
-  <dt>Diameter</dt>
+  <dt>Diameter (a)</dt>
   <dd>The cutting diameter.</dd>
-  <dt>Flute length</dt>
+  <dt>Flute length (b)</dt>
   <dd>The length of the cutting part.</dd>
-  <dt>Overall length</dt>
+  <dt>Overall length (c)</dt>
   <dd>The tool's length out of the holder.</dd>
   <dt>Flute count</dt>
   <dd>The number of flutes. Every type but drills.</dd>
-  <dt>Corner radius</dt>
+  <dt>Corner radius (f)</dt>
   <dd>Corner radius mills: the radius at the end's corner, no more than half the diameter.</dd>
-  <dt>Tip diameter</dt>
+  <dt>Tip diameter (g)</dt>
   <dd>V-mills, chamfer mills and taper mills: the diameter at the tip, 0 for a sharp point. It must be less than the diameter.</dd>
-  <dt>Included angle (deg)</dt>
+  <dt>Included angle (deg) (h)</dt>
   <dd>V-mills and chamfer mills: the angle across the point, such as 90 or 60.</dd>
-  <dt>Pitch</dt>
+  <dt>Pitch (k)</dt>
   <dd>Thread mills: the thread's pitch.</dd>
-  <dt>Taper angle (deg)</dt>
+  <dt>Taper angle (deg) (i)</dt>
   <dd>Taper mills: each side's angle from the tool's axis, such as 5.</dd>
-  <dt>Thread angle (deg)</dt>
+  <dt>Thread angle (deg) (l)</dt>
   <dd>Thread mills: the thread form's angle, such as 60.</dd>
-  <dt>Point angle (deg)</dt>
+  <dt>Point angle (deg) (j)</dt>
   <dd>The drill's included point angle, such as 118. Used by the Drilling tab's Add drill tip to depth.</dd>
   <dt>Reduced neck</dt>
   <dd>Any type. Tick it for a tool that keeps its cutting diameter only part of the way up, then widens to a thicker shank, such as a long reach end mill. Ticking it fills an empty Neck length and Shank diameter with the flute length and diameter, to be changed. Used by the simulation's collision checks and drawn in it; toolpaths don't use it yet. Off by default.</dd>
-  <dt>Neck length</dt>
+  <dt>Neck length (d)</dt>
   <dd>Only with Reduced neck. How far from the tip the tool keeps its cutting diameter, before it widens to the shank. From the flute length to the overall length.</dd>
-  <dt>Shank diameter</dt>
+  <dt>Shank diameter (e)</dt>
   <dd>Only with Reduced neck. The diameter of the wide part, from the neck length up to the overall length (the part held in the collet). No less than the diameter.</dd>
   <dt>Speeds &amp; Feeds</dt>
   <dd>One row for each material the tool has speeds and feeds for, with its spindle speed and cut feed. An operation's Feeds &amp; Speeds tab can be filled from the row for the job's material.</dd>

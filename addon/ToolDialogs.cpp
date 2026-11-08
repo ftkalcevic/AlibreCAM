@@ -4,6 +4,7 @@
 #include "stdafx.h"
 #include "CAMForAlibre.h"
 #include "ToolDialogs.h"
+#include "ToolDrawing.h"
 #include "Help.h"
 #include "ModelReader.h"
 #include "OperationDialog.h"
@@ -172,6 +173,18 @@ void CToolFeedsDlg::OnOK()
 /////////////////////////////////////////////////////////////////////////////
 // CToolEditDlg
 
+void CToolDrawingCtrl::SetTool(ToolType type, bool reducedNeck)
+{
+    m_type = type;
+    m_reducedNeck = reducedNeck;
+    Invalidate(FALSE);
+}
+
+void CToolDrawingCtrl::DrawItem(LPDRAWITEMSTRUCT pDraw)
+{
+    DrawToolDiagram(pDraw->hDC, pDraw->rcItem, m_type, m_reducedNeck);
+}
+
 BEGIN_MESSAGE_MAP(CToolEditDlg, CDialog)
     ON_BN_CLICKED(IDC_HELP_BUTTON, &CToolEditDlg::OnHelpButton)
     ON_CBN_SELCHANGE(IDC_TOOL_TYPE, &CToolEditDlg::OnTypeChanged)
@@ -240,6 +253,8 @@ BOOL CToolEditDlg::OnInitDialog()
         SetNumber(IDC_TOOL_NECK_LENGTH, m_tool.neckLength);
         SetNumber(IDC_TOOL_SHANK_DIAMETER, m_tool.shankDiameter);
     }
+
+    m_drawing.SubclassDlgItem(IDC_TOOL_DRAWING, this);
 
     m_feedsList.SubclassDlgItem(IDC_TOOL_FEEDS_LIST, this);
     m_feedsList.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
@@ -355,6 +370,8 @@ void CToolEditDlg::UpdateFieldsForType()
     const BOOL neck = (IsDlgButtonChecked(IDC_TOOL_REDUCED_NECK) == BST_CHECKED) ? TRUE : FALSE;
     GetDlgItem(IDC_TOOL_NECK_LENGTH)->EnableWindow(neck);
     GetDlgItem(IDC_TOOL_SHANK_DIAMETER)->EnableWindow(neck);
+
+    m_drawing.SetTool(SelectedType(), neck != FALSE);
 }
 
 void CToolEditDlg::OnReducedNeck()

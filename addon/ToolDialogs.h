@@ -60,6 +60,20 @@ private:
     std::unique_ptr<CFeedsPage> m_page;
 };
 
+// The Tool dialog's drawing of what each measurement means.
+class CToolDrawingCtrl : public CStatic
+{
+public:
+    void SetTool(camcore::ToolType type, bool reducedNeck);
+
+protected:
+    void DrawItem(LPDRAWITEMSTRUCT pDraw) override;
+
+private:
+    camcore::ToolType m_type = camcore::ToolType::FlatEndMill;
+    bool m_reducedNeck = false;
+};
+
 class CToolEditDlg : public CDialog
 {
 public:
@@ -102,6 +116,7 @@ private:
     CComboBox m_type;
     CComboBox m_unit;
     CListCtrl m_feedsList;
+    CToolDrawingCtrl m_drawing;
 };
 
 // The material's name, or a note that it's no longer in the list.

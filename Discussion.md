@@ -9575,6 +9575,60 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Tests pass.
 
+### 🤖 Claude
+
+> Good, I've marked reduced neck tools as tested in `CLAUDE.md`. The changes are still uncommitted, ready for you to commit.
+>
+> You said "First" when you asked for this, so tell me what's next when you're ready.
+
+### 🧑 Frank · 18:31
+
+> Next we want to add images to the tool dialog.  Each different tool should a drawing that shows what each of the tool measurements means.  The descriptions are quiet long so use either an abbreviation, or just letters, eg a, b, c.  Letters should be added to the end of the field labels, eg "Label (a)".
+
+### 🤖 Claude
+
+> Drawing code is written. I'm rendering all eight tools outside Alibre to check how they look before wiring up the dialog.
+
+> The Tool dialog now has a drawing for each tool type, built in Debug and Release, but it **isn't installed** because the administrator prompt was cancelled. `CamCoreTests` still passes. I rendered all eight tools with and without a neck outside Alibre and they look right, but the dialog itself hasn't been opened. Nothing is committed.
+>
+> **The drawing**
+> - It sits in a new Measurements panel on the right of the dialog, so the dialog is wider and OK and Cancel have moved to its right edge.
+> - It shows the chosen tool tip down, and it isn't to scale. It changes with the Type, and shows the neck and wider shank while Reduced neck is ticked.
+> - It's drawn by code rather than stored as pictures, so it can follow those two settings.
+>
+> **The letters**
+> I used letters rather than abbreviations. Each field keeps the same letter on every tool type, and only the letters that apply to the chosen type appear on the drawing. Flute count has no letter, as it isn't a length or an angle you can mark.
+>
+> | Letter | Field | Letter | Field |
+> |---|---|---|---|
+> | a | Diameter | g | Tip diameter |
+> | b | Flute length | h | Included angle |
+> | c | Overall length | i | Taper angle |
+> | d | Neck length | j | Point angle |
+> | e | Shank diameter | k | Pitch |
+> | f | Corner radius | l | Thread angle |
+>
+> The Tool section of the help has the same letters and describes the drawing. The spec (both copies, rev 229) and `CLAUDE.md` are updated too.
+>
+> **To test, once it's installed**
+> 1. Open a tool and check the drawing appears on the right, with the dialog's controls still lined up and nothing cut off.
+> 2. Check that the longer labels, such as "Included angle (deg) (h):", fit beside their boxes.
+> 3. Change the Type through all eight and check the drawing follows.
+> 4. Tick and untick Reduced neck. The neck, the wider shank and letters d and e should appear and disappear.
+> 5. Click the ? button and check the help matches.
+
+### 🧑 Frank · 18:44
+
+> Install it
+
+### 🤖 Claude
+
+> It's installed, and the installed add-on and help both match this build. Start Alibre and go through the five tests from my last message.
+
+### 🧑 Frank · 18:46
+
+> Tests pass
+
 ---
 
 # Side conversation

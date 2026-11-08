@@ -37,6 +37,7 @@
     <ClCompile Include="ProgressDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SimulationDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ToolDialogs.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ToolDrawing.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="CAMForAlibre.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="stdafx.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
@@ -61,6 +62,7 @@
     <ClInclude Include="ProgressDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SimulationDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ToolDialogs.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ToolDrawing.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="CAMForAlibre.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="resource.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="stdafx.h"><Filter>Header Files</Filter></ClInclude>
