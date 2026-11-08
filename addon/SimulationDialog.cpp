@@ -23,6 +23,9 @@ namespace
 
     CPoint g_lastPosition(-1, -1);
     int g_lastSpeed = 40;
+    bool g_realTime = false;
+    int g_realTimeSpeed = 50;       // the real time slider, 0 to kSpeedSteps: 50 is 1 times
+    const ULONGLONG kLongestTick = 250;     // real time: a slow tick counts as no more than this
     bool g_autoDivide = true;
     std::wstring g_stlFolder;       // where the last STL was saved this session
     CCamTabCommand::SimulationShow g_show;      // what's shown, remembered until Alibre closes
@@ -35,6 +38,18 @@ namespace
         if (g_resolutionStop < 0)
             return static_cast<int>(stops.size() / 2);
         return (std::min)(g_resolutionStop, static_cast<int>(stops.size()) - 1);
+    }
+
+    // Machining time as m:ss, or h:mm:ss from an hour.
+    std::wstring TimeText(double seconds)
+    {
+        const long long whole = static_cast<long long>(std::llround((std::max)(0.0, seconds)));
+        wchar_t text[32];
+        if (whole >= 3600)
+            swprintf_s(text, L"%lld:%02lld:%02lld", whole / 3600, (whole / 60) % 60, whole % 60);
+        else
+            swprintf_s(text, L"%lld:%02lld", whole / 60, whole % 60);
+        return text;
     }
 
     std::wstring WithCommas(size_t value)
@@ -59,6 +74,7 @@ BEGIN_MESSAGE_MAP(CSimulationDlg, CDialog)
     ON_BN_CLICKED(IDC_SIM_SHOW_PART, &CSimulationDlg::OnShowChanged)
     ON_BN_CLICKED(IDC_SIM_SHOW_NOT_ENOUGH, &CSimulationDlg::OnShowChanged)
     ON_BN_CLICKED(IDC_SIM_SHOW_TOO_MUCH, &CSimulationDlg::OnShowChanged)
+    ON_BN_CLICKED(IDC_SIM_REALTIME, &CSimulationDlg::OnRealTimeChanged)
     ON_WM_HSCROLL()
     ON_WM_TIMER()
     ON_WM_CTLCOLOR()
@@ -99,6 +115,10 @@ BOOL CSimulationDlg::OnInitDialog()
     m_speed.SubclassDlgItem(IDC_SIM_SPEED, this);
     m_speed.SetRange(0, kSpeedSteps);
     m_speed.SetPos(g_lastSpeed);
+    m_realTimeSpeed.SubclassDlgItem(IDC_SIM_REALTIME_SPEED, this);
+    m_realTimeSpeed.SetRange(0, kSpeedSteps);
+    m_realTimeSpeed.SetPos(g_realTimeSpeed);
+    CheckDlgButton(IDC_SIM_REALTIME, g_realTime ? BST_CHECKED : BST_UNCHECKED);
 
     // Resolution: Auto divide, or a stop from fine to coarse.
     m_resolution.SubclassDlgItem(IDC_SIM_RESOLUTION, this);
@@ -143,6 +163,20 @@ size_t CSimulationDlg::MovesPerTick() const
     return static_cast<size_t>(std::lround(std::pow(kMostMovesPerTick, fraction)));
 }
 
+double CSimulationDlg::RealTimeFactor() const
+{
+    // 0.1 times at the left, 1 in the middle, 10 at the right, on a log scale.
+    const double fraction = static_cast<double>(m_realTimeSpeed.GetPos()) / kSpeedSteps;
+    return 0.1 * std::pow(100.0, fraction);
+}
+
+void CSimulationDlg::OnRealTimeChanged()
+{
+    g_realTime = IsDlgButtonChecked(IDC_SIM_REALTIME) == BST_CHECKED;
+    m_lastTick = GetTickCount64();
+    ShowState();
+}
+
 void CSimulationDlg::Stop()
 {
     if (m_playing)
@@ -178,6 +212,7 @@ void CSimulationDlg::ShowState()
     if (pOperation != nullptr)
         status = FromUtf8(pOperation->name) + L" \u2014 ";
     status += L"move " + WithCommas(simulation.Position()) + L" of " + WithCommas(simulation.Moves().size());
+    status += L" \u2014 time " + TimeText(simulation.ElapsedSeconds()) + L" of " + TimeText(simulation.TotalSeconds());
     if (simulation.Finished())
         status += L" (done)";
     SetDlgItemText(IDC_SIM_STATUS, status.c_str());
@@ -188,6 +223,16 @@ void CSimulationDlg::ShowState()
 
     const size_t speed = MovesPerTick();
     SetDlgItemText(IDC_SIM_SPEED_TEXT, (WithCommas(speed) + (speed == 1 ? L" move a step" : L" moves a step")).c_str());
+
+    // Real time plays at the feeds, times the slider; moves a step aren't used.
+    const double factor = RealTimeFactor();
+    wchar_t times[32];
+    swprintf_s(times, L"%.2g\u00D7 real time", factor);
+    SetDlgItemText(IDC_SIM_REALTIME_TEXT, times);
+    GetDlgItem(IDC_SIM_REALTIME_SPEED)->EnableWindow(g_realTime ? TRUE : FALSE);
+    GetDlgItem(IDC_SIM_REALTIME_TEXT)->EnableWindow(g_realTime ? TRUE : FALSE);
+    GetDlgItem(IDC_SIM_SPEED)->EnableWindow(g_realTime ? FALSE : TRUE);
+    GetDlgItem(IDC_SIM_SPEED_TEXT)->EnableWindow(g_realTime ? FALSE : TRUE);
 
     std::wstring warning;
     if (simulation.HasWarning())
@@ -357,6 +402,7 @@ void CSimulationDlg::OnPlay()
         return;
     m_pTab->GetSimulation().ClearWarning();
     m_playing = true;
+    m_lastTick = GetTickCount64();
     SetDlgItemText(IDC_SIM_PLAY, L"Pause");
     SetTimer(kPlayTimer, kPlayMilliseconds, nullptr);
 }
@@ -379,7 +425,18 @@ void CSimulationDlg::OnTimer(UINT_PTR id)
         return;
     }
     camcore::Simulation& simulation = m_pTab->GetSimulation();
-    simulation.Step(MovesPerTick());
+    if (g_realTime)
+    {
+        // As much machining time as has passed since the last tick, times the slider.
+        const ULONGLONG now = GetTickCount64();
+        const ULONGLONG passed = (std::min)(kLongestTick, now - m_lastTick);
+        m_lastTick = now;
+        simulation.Advance(static_cast<double>(passed) / 1000.0 * RealTimeFactor());
+    }
+    else
+    {
+        simulation.Step(MovesPerTick());
+    }
     if (simulation.Finished() || simulation.HasWarning())
         Stop();
     Changed();
@@ -394,6 +451,12 @@ void CSimulationDlg::OnHScroll(UINT code, UINT position, CScrollBar* pScrollBar)
     if (pScrollBar->GetSafeHwnd() == m_speed.GetSafeHwnd())
     {
         g_lastSpeed = m_speed.GetPos();
+        ShowState();
+        return;
+    }
+    if (pScrollBar->GetSafeHwnd() == m_realTimeSpeed.GetSafeHwnd())
+    {
+        g_realTimeSpeed = m_realTimeSpeed.GetPos();
         ShowState();
         return;
     }

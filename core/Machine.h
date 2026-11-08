@@ -43,6 +43,7 @@ namespace camcore
         double travelZ = 100.0;
 
         double maxSpindleRpm = 24000.0;
+        double rapidRate = 5000.0;      // mm/min, for the simulation's real time and time estimates
 
         // The tool holder, as a cylinder from the tool's overall length up, in mm.
         // The simulation draws it and stops if it touches the stock. Files without

@@ -45,6 +45,7 @@ protected:
     afx_msg void OnAutoDivide();
     afx_msg void OnSaveStl();
     afx_msg void OnShowChanged();
+    afx_msg void OnRealTimeChanged();
 
     DECLARE_MESSAGE_MAP()
 
@@ -55,6 +56,7 @@ private:
     void RunTo(size_t end);     // starts running to that position on the run timer
     void RunTick();             // runs on for a tenth of a second
     size_t MovesPerTick() const;
+    double RealTimeFactor() const;      // the real time slider: 0.1 to 10 times
     void Finish();
     void ShowResolution();      // greys the slider while Auto divide is on
     void Restart();             // the stock again at the chosen resolution, cut to the same move
@@ -62,6 +64,8 @@ private:
     CCamTabCommand* m_pTab;
     CSliderCtrl m_position;
     CSliderCtrl m_speed;
+    CSliderCtrl m_realTimeSpeed;
+    ULONGLONG m_lastTick = 0;           // when the play timer last ticked, for real time
     CSliderCtrl m_resolution;
     std::vector<double> m_stops;
     int m_appliedStop = -1;

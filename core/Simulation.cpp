@@ -1226,7 +1226,8 @@ namespace camcore
     // Stepping
 
     void Simulation::Start(const StockBox& box, const std::vector<Vec3>& stockTriangles,
-                           const std::vector<SimOperation>& operations, const SimResolution& resolution)
+                           const std::vector<SimOperation>& operations, const SimResolution& resolution,
+                           double rapidRate)
     {
         double cell = resolution.cell;
         if (cell <= 0.0)
@@ -1250,7 +1251,9 @@ namespace camcore
         m_operations = operations;
         m_moves.clear();
         m_position = 0;
+        m_into = 0.0;
         m_warning = SimWarning::None;
+        const double rapid = (rapidRate > 0.0) ? rapidRate : 5000.0;
         // Each operation's moves in assembly mm. Arcs become chords within half a
         // cell, and dwells go nowhere.
         const double tolerance = m_stock.Cell() / 2.0;
@@ -1263,7 +1266,19 @@ namespace camcore
             {
                 const ToolpathMove& move = operation.toolpath.moves[m];
                 if (move.kind == MoveKind::Dwell)
+                {
+                    // Staying put, for its time.
+                    if (havePrevious && move.seconds > 0.0)
+                    {
+                        SimMove sim;
+                        sim.from = sim.to = FramePointToWorld(operation.frame, previous);
+                        sim.seconds = move.seconds;
+                        sim.operation = o;
+                        sim.toolpathMove = m;
+                        m_moves.push_back(sim);
+                    }
                     continue;
+                }
                 if (!havePrevious)
                     previous = move.to;     // where the operation starts; the move there isn't known
 
@@ -1288,6 +1303,8 @@ namespace camcore
                     sim.from = FramePointToWorld(operation.frame, points[p]);
                     sim.to = FramePointToWorld(operation.frame, points[p + 1]);
                     sim.rapid = move.kind == MoveKind::Rapid;
+                    const double rate = (sim.rapid || !(move.feed > 0.0)) ? rapid : move.feed;
+                    sim.seconds = Length(sim.to - sim.from) / rate * 60.0;
                     sim.operation = o;
                     sim.toolpathMove = m;
                     m_moves.push_back(sim);
@@ -1296,13 +1313,33 @@ namespace camcore
                 havePrevious = true;
             }
         }
+
+        m_moveStarts.assign(m_moves.size() + 1, 0.0);
+        for (size_t m = 0; m < m_moves.size(); ++m)
+            m_moveStarts[m + 1] = m_moveStarts[m] + m_moves[m].seconds;
+    }
+
+    double Simulation::ElapsedSeconds() const
+    {
+        if (m_moveStarts.empty())
+            return 0.0;
+        const size_t at = (std::min)(m_position, m_moves.size());
+        return m_moveStarts[at] + ((at < m_moves.size()) ? m_into : 0.0);
+    }
+
+    Vec3 Simulation::PointAlong(const SimMove& move, double seconds) const
+    {
+        if (!(move.seconds > 0.0))
+            return move.from;
+        const double f = (std::max)(0.0, (std::min)(1.0, seconds / move.seconds));
+        return move.from + (move.to - move.from) * f;
     }
 
     Vec3 Simulation::ToolTip() const
     {
         if (m_moves.empty())
             return Vec3();
-        return (m_position < m_moves.size()) ? m_moves[m_position].from : m_moves.back().to;
+        return (m_position < m_moves.size()) ? PointAlong(m_moves[m_position], m_into) : m_moves.back().to;
     }
 
     const SimOperation* Simulation::CurrentOperation() const
@@ -1313,37 +1350,45 @@ namespace camcore
         return &m_operations[m_moves[at].operation];
     }
 
+    SimWarning Simulation::CutPiece(const SimMove& move, const Vec3& a, const Vec3& b)
+    {
+        const SimOperation& operation = m_operations[move.operation];
+
+        // The holder and the shank above the flutes mustn't touch the stock as it
+        // is before the piece (the flutes cut below them).
+        SimWarning warning = SimWarning::None;
+        const auto touches = [&](const SimCylinder& cylinder) {
+            if (!cylinder.Present())
+                return false;
+            Vec3 w;
+            if (!Normalise(operation.frame.zAxis, w))
+                return false;
+            ToolProfile plain;
+            plain.type = ToolType::FlatEndMill;
+            plain.radius = cylinder.radius;
+            plain.length = cylinder.length;
+            return CountMove(m_stock, plain, a + w * cylinder.start, b + w * cylinder.start, w) > 0;
+        };
+        if (touches(operation.holder))
+            warning = SimWarning::HolderHitsStock;
+        else if (touches(operation.shank))
+            warning = SimWarning::ShankHitsStock;
+
+        const long long removed = CutMove(m_stock, operation.profile, a, b, operation.frame.zAxis);
+        if (warning == SimWarning::None && move.rapid && removed > 0)
+            warning = SimWarning::RapidIntoStock;
+        return warning;
+    }
+
     size_t Simulation::Step(size_t count)
     {
         size_t done = 0;
         while (done < count && m_position < m_moves.size())
         {
             const SimMove& move = m_moves[m_position];
-            const SimOperation& operation = m_operations[move.operation];
-
-            // The holder and the shank above the flutes mustn't touch the stock as
-            // it is before the move (the flutes cut below them).
-            SimWarning warning = SimWarning::None;
-            const auto touches = [&](const SimCylinder& cylinder) {
-                if (!cylinder.Present())
-                    return false;
-                Vec3 w;
-                if (!Normalise(operation.frame.zAxis, w))
-                    return false;
-                ToolProfile plain;
-                plain.type = ToolType::FlatEndMill;
-                plain.radius = cylinder.radius;
-                plain.length = cylinder.length;
-                return CountMove(m_stock, plain, move.from + w * cylinder.start, move.to + w * cylinder.start, w) > 0;
-            };
-            if (touches(operation.holder))
-                warning = SimWarning::HolderHitsStock;
-            else if (touches(operation.shank))
-                warning = SimWarning::ShankHitsStock;
-
-            const long long removed = CutMove(m_stock, operation.profile, move.from, move.to, operation.frame.zAxis);
-            if (warning == SimWarning::None && move.rapid && removed > 0)
-                warning = SimWarning::RapidIntoStock;
+            // From where an Advance left it, if it stopped part way along.
+            const SimWarning warning = CutPiece(move, PointAlong(move, m_into), move.to);
+            m_into = 0.0;
             ++m_position;
             ++done;
             if (warning != SimWarning::None)
@@ -1354,6 +1399,42 @@ namespace camcore
             }
         }
         return done;
+    }
+
+    size_t Simulation::Advance(double seconds)
+    {
+        size_t finished = 0;
+        double left = (std::max)(0.0, seconds);
+        while (m_position < m_moves.size())
+        {
+            const SimMove& move = m_moves[m_position];
+            const double remaining = move.seconds - m_into;
+            if (left >= remaining)
+            {
+                // The rest of this move.
+                left -= remaining;
+                if (Step(1) == 0)
+                    break;
+                ++finished;
+                if (HasWarning())
+                    break;
+                continue;
+            }
+            if (!(left > 0.0))
+                break;
+            // Part way along it.
+            const Vec3 a = PointAlong(move, m_into);
+            m_into += left;
+            const Vec3 b = PointAlong(move, m_into);
+            const SimWarning warning = CutPiece(move, a, b);
+            if (warning != SimWarning::None)
+            {
+                m_warning = warning;
+                m_warningMove = m_position;
+            }
+            break;
+        }
+        return finished;
     }
 
     size_t Simulation::OperationEnd() const
@@ -1377,13 +1458,15 @@ namespace camcore
         m_stock = m_start;
         m_stock.MarkAllDirty();
         m_position = 0;
+        m_into = 0.0;
         m_warning = SimWarning::None;
     }
 
     void Simulation::SeekTo(size_t position)
     {
         position = (std::min)(position, m_moves.size());
-        if (position < m_position)
+        // Back, or to where a move is part cut: from the start again.
+        if (position < m_position || (position == m_position && m_into > 0.0))
             Rewind();
         // Through any warnings on the way, keeping the last.
         while (m_position < position)

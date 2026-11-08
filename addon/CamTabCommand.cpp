@@ -1465,7 +1465,7 @@ void CCamTabCommand::SimulateOperations(std::vector<StepRef> refs)
         m_simulationBox = box;
         m_simulationTriangles = triangles;
         m_simulation.Start(box, triangles, operations,
-                           CSimulationDlg::ChosenResolution(camcore::ResolutionStops(box)));
+                           CSimulationDlg::ChosenResolution(camcore::ResolutionStops(box)), m_machine.rapidRate);
         Log(L"[simulate] %zu operations, %zu moves, %d x %d x %d cells of %g mm (%s), %d mixed bricks, ready in %llu ms",
             operations.size(), m_simulation.Moves().size(), m_simulation.Stock().SizeX(),
             m_simulation.Stock().SizeY(), m_simulation.Stock().SizeZ(), m_simulation.Stock().Cell(),
@@ -1500,7 +1500,7 @@ void CCamTabCommand::RestartSimulation(const camcore::SimResolution& resolution)
     const ULONGLONG start = GetTickCount64();
     const size_t position = m_simulation.Position();
     const std::vector<camcore::SimOperation> operations = m_simulation.Operations();
-    m_simulation.Start(m_simulationBox, m_simulationTriangles, operations, resolution);
+    m_simulation.Start(m_simulationBox, m_simulationTriangles, operations, resolution, m_machine.rapidRate);
     m_simulation.SeekTo(position);
     m_simulationChunks.assign(static_cast<size_t>(m_simulation.Stock().ChunkCount()), camcore::StockMesh());
     m_simulationMesh = camcore::StockMesh();

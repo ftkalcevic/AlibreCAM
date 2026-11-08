@@ -729,3 +729,93 @@ TEST_CASE("a cut into the part is too much removed, and divided or not gives the
         CHECK(difference.tooMuch.Divided() == divide);
     }
 }
+
+TEST_CASE("each move takes its time: feeds, the rapid rate and dwells")
+{
+    std::vector<ToolpathMove> moves = {
+        Move(MoveKind::Rapid, { 0, 10, 15 }), Move(MoveKind::Rapid, { 0, 10, 5 }),     // 10 at the rapid rate
+        Move(MoveKind::Feed, { 0, 10, 4 }), Move(MoveKind::Feed, { 100, 10, 4 }),
+    };
+    moves[2].feed = 300.0;          // 1 mm at 300 mm/min: 0.2 s
+    moves[3].feed = 600.0;          // 100 mm at 600 mm/min: 10 s
+    ToolpathMove dwell;
+    dwell.kind = MoveKind::Dwell;
+    dwell.to = { 100, 10, 4 };
+    dwell.seconds = 1.5;
+    moves.push_back(dwell);
+    Simulation simulation;
+    simulation.Start({ { 0, 0, 0 }, { 120, 20, 10 } }, {}, { Operation(Flat(4), moves) }, SimResolution{ true, 0.5 },
+                     3000.0);      // 10 mm at 3000 mm/min: 0.2 s
+    REQUIRE(simulation.Moves().size() == 5);     // the first only says where it starts
+    CHECK(simulation.Moves()[0].seconds == 0.0);
+    CHECK(simulation.Moves()[1].seconds == doctest::Approx(0.2));
+    CHECK(simulation.Moves()[2].seconds == doctest::Approx(0.2));
+    CHECK(simulation.Moves()[3].seconds == doctest::Approx(10.0));
+    CHECK(simulation.Moves()[4].seconds == doctest::Approx(1.5));
+    CHECK(simulation.TotalSeconds() == doctest::Approx(11.9));
+    CHECK(simulation.ElapsedSeconds() == 0.0);
+}
+
+TEST_CASE("advancing by time cuts part way along a move, and the rest matches cutting it whole")
+{
+    std::vector<ToolpathMove> moves = {
+        Move(MoveKind::Rapid, { 10, 10, 15 }), Move(MoveKind::Feed, { 10, 10, 6 }),
+        Move(MoveKind::Feed, { 110, 10, 6 }), Move(MoveKind::Rapid, { 110, 10, 15 }),
+    };
+    moves[1].feed = 600.0;      // 0.9 s
+    moves[2].feed = 600.0;      // 10 s
+    const auto start = [&](Simulation& simulation) {
+        simulation.Start({ { 0, 0, 0 }, { 120, 20, 10 } }, {}, { Operation(Flat(4), moves) }, SimResolution{ true, 0.5 });
+    };
+
+    Simulation whole;
+    start(whole);
+    whole.RunToEnd();
+    const long long cut = whole.Stock().Count();
+
+    // Half way along the long move: the tool is in the middle, with that much cut.
+    Simulation timed;
+    start(timed);
+    timed.Advance(0.9 + 5.0);
+    CHECK(timed.Position() == 2);
+    CHECK(timed.ToolTip().x == doctest::Approx(60.0));
+    CHECK(timed.ElapsedSeconds() == doctest::Approx(5.9));
+    CHECK_FALSE(FilledAt(timed.Stock(), 40, 10, 7));    // behind the tool
+    CHECK(FilledAt(timed.Stock(), 80, 10, 7));          // ahead of it
+    timed.Advance(100.0);
+    CHECK(timed.Finished());
+    CHECK(timed.Stock().Count() == cut);
+
+    // Many small steps: the same.
+    Simulation small;
+    start(small);
+    while (!small.Finished())
+        small.Advance(0.37);
+    CHECK(small.Stock().Count() == cut);
+
+    // Step after stopping part way finishes the move; Rewind clears it.
+    Simulation mixed;
+    start(mixed);
+    mixed.Advance(3.0);
+    mixed.Step(1);
+    CHECK(mixed.Position() == 3);
+    CHECK(mixed.ToolTip().x == doctest::Approx(110.0));
+    mixed.Rewind();
+    CHECK(mixed.ElapsedSeconds() == 0.0);
+    CHECK(mixed.ToolTip().x == doctest::Approx(10.0));
+}
+
+TEST_CASE("a rapid into stock found part way along stops there")
+{
+    const std::vector<ToolpathMove> moves = {
+        Move(MoveKind::Rapid, { 5, 10, 15 }), Move(MoveKind::Rapid, { 5, 10, 5 }),
+        Move(MoveKind::Feed, { 15, 10, 5 }),
+    };
+    Simulation simulation;
+    simulation.Start({ { 0, 0, 0 }, { 20, 20, 10 } }, {}, { Operation(Flat(4), moves) }, SimResolution{ true, 0.5 },
+                     600.0);   // the 10 mm rapid takes 1 s
+    simulation.Advance(0.8);    // 8 mm down: into the stock at Z 7
+    CHECK(simulation.HasWarning());
+    CHECK(simulation.Position() == 1);
+    CHECK(simulation.WarningMove() == 1);
+}

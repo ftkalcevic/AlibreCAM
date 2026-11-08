@@ -219,7 +219,7 @@
 <p>Plays the generated toolpaths against the stock in Alibre's view, cutting it a move at a time. The stock is a grid of small cubes (cells) over its box, shown shaded in place of its outline; a cell is cut away when its centre falls inside the tool. Each tool cuts with its own shape: flat, ball, corner radius, V, chamfer, taper and drill ends (a thread mill as a plain cylinder). The tool is drawn in yellow where it is, its whole length, with the machine's tool holder above it in grey. Operations run in the sequence's order, each in its own Set Origin's direction, so tilted origins cut along their tool axis. The shank (the tool above its flutes, up to its overall length) and the tool holder (a cylinder of the machine's Tool Holder Diameter and Depth, from the tool's overall length up) are checked against the stock: either touching it stops the simulation with a warning. Nothing is checked against the parts yet. Open it with Simulate on the CAM tab's right-click menus; it needs a stock, and operations with no toolpath, origin or tool are left out (the dialog says which).</p>
 <dl>
   <dt>Position</dt>
-  <dd>The operation being cut, and the move of all the moves. Arcs are split into short straight moves.</dd>
+  <dd>The operation being cut, the move of all the moves (arcs are split into short straight moves), and the machining time so far of the whole: from the feeds, the machine's Rapid rate and dwells, with no allowance for acceleration.</dd>
   <dt>Scrub bar</dt>
   <dd>Drag to any point in the program. When you let go, the stock is cut to there (going back starts again from the whole stock, which can take a moment).</dd>
   <dt>Rewind</dt>
@@ -233,7 +233,11 @@
   <dt>To End</dt>
   <dd>Cuts everything that's left as fast as it can, moving the scrub bar as it goes; the view is redrawn when it gets there. It stops at a warning, or when you click Pause (the Play button) or any other button.</dd>
   <dt>Speed</dt>
-  <dd>How many moves are cut at each step while playing, from 1 to 500.</dd>
+  <dd>How many moves are cut at each step while playing, from 1 to 500. Greyed while Real time is ticked.</dd>
+  <dt>Real time</dt>
+  <dd>Plays at the machine's own pace: each move takes its length at its feed (a rapid at the machine's Rapid rate, a dwell its time), so a long cut takes as long to appear as it would to cut, with the tool travelling along it. Play then stops part way along a move when you pause, and carries on from there. Step, To Op End, To End and the scrub bar work as without it. Remembered until Alibre closes.</dd>
+  <dt>Real time speed</dt>
+  <dd>The slider beside Real time: from 0.1 times (slower than the machine) through 1 (the middle) to 10 times, shown beside it. Greyed unless Real time is ticked. Remembered until Alibre closes.</dd>
   <dt>Auto divide voxels</dt>
   <dd>On (the default), solid and empty parts of the stock are kept whole, and are divided into small cells only where the tool cuts them. That lets the cells be fine, about 0.05 mm on a typical part, while starting quickly. Turn it off to choose the resolution yourself with the slider. Changing it starts the stock again and cuts back to the same move. Remembered until Alibre closes.</dd>
   <dt>Resolution</dt>
@@ -352,6 +356,8 @@
   <dd>How far the machine can move along each axis, in millimetres. Each must be more than 0. <span class="tbc">Not used for checking toolpaths yet.</span></dd>
   <dt>Max spindle speed</dt>
   <dd>The spindle's top speed, in RPM. It must be more than 0. <span class="tbc">Not used for checking speeds yet.</span></dd>
+  <dt>Rapid rate</dt>
+  <dd>How fast the machine moves at rapid, in mm/min. The simulation uses it to play rapids in real time and for its machining time. It must be more than 0; 5000 by default.</dd>
   <dt>Tool holder Diameter, Depth</dt>
   <dd>The tool holder (collet nut or chuck) as a plain cylinder, in millimetres: its diameter, and how far it reaches up from the tool's overall length. The simulation draws it and stops if it touches the stock. Each must be more than 0; 20 and 30 by default.</dd>
   <dt>Arcs: Fit arcs, XY, ZX, YZ</dt>

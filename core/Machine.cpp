@@ -70,6 +70,8 @@ namespace camcore
             problems.push_back("The machine must have 3 or 4 axes.");
         if (!(machine.travelX > 0.0) || !(machine.travelY > 0.0) || !(machine.travelZ > 0.0))
             problems.push_back("Each axis's travel must be more than 0.");
+        if (!(machine.rapidRate > 0.0))
+            problems.push_back("The rapid rate must be more than 0.");
         if (!(machine.maxSpindleRpm > 0.0))
             problems.push_back("The spindle's maximum speed must be more than 0.");
         if (!(machine.holderDiameter > 0.0) || !(machine.holderDepth > 0.0))
@@ -132,6 +134,9 @@ namespace camcore
             const auto spindle = root.find("maxSpindleRpm");
             if (spindle != root.end())
                 result.machine.maxSpindleRpm = spindle->get<double>();
+            const auto rapid = root.find("rapidRate");
+            if (rapid != root.end())
+                result.machine.rapidRate = rapid->get<double>();
             const auto holder = root.find("toolHolder");
             if (holder != root.end())
             {
@@ -191,6 +196,7 @@ namespace camcore
                 { "rotaryAxis", RotaryAxisName(machine.rotary) },
                 { "travel", json::array({ machine.travelX, machine.travelY, machine.travelZ }) },
                 { "maxSpindleRpm", machine.maxSpindleRpm },
+                { "rapidRate", machine.rapidRate },
                 { "toolHolder", { { "diameter", machine.holderDiameter }, { "depth", machine.holderDepth } } },
                 { "arcs",
                   { { "enabled", machine.arcs.enabled },

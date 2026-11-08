@@ -395,6 +395,12 @@
 #define IDC_MACHINE_ARC_TOL_LABEL       13467
 #define IDC_MACHINE_ARC_TOL             13468
 #define IDC_MACHINE_ARC_TOL_UNIT        13469
+#define IDC_MACHINE_RAPID_LABEL         13470
+#define IDC_MACHINE_RAPID               13471
+#define IDC_MACHINE_RAPID_UNIT          13472
+#define IDC_SIM_REALTIME                13473
+#define IDC_SIM_REALTIME_SPEED          13474
+#define IDC_SIM_REALTIME_TEXT           13475
 #define IDC_WL_STEPDOWN_GROUP           13442
 #define IDC_WL_ORDER_GROUP              13443
 #define IDC_WL_LEVELS_GROUP             13444
@@ -438,7 +444,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        13048
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13470
+#define _APS_NEXT_CONTROL_VALUE         13476
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

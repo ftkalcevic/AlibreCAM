@@ -72,6 +72,7 @@ namespace
         machine.maxSpindleRpm = 18000;
         machine.holderDiameter = 25;
         machine.holderDepth = 40;
+        machine.rapidRate = 8000;
         machine.arcs.zx = false;
         machine.arcs.tolerance = 0.02;
         Tool tool = Mill("t1", 1);
@@ -101,6 +102,7 @@ TEST_CASE("a machine saves and loads with its tools and their feeds")
     CHECK(loaded.machine.maxSpindleRpm == 18000);
     CHECK(loaded.machine.holderDiameter == 25);
     CHECK(loaded.machine.holderDepth == 40);
+    CHECK(loaded.machine.rapidRate == 8000);
     CHECK(loaded.machine.arcs.enabled);
     CHECK_FALSE(loaded.machine.arcs.zx);
     CHECK(loaded.machine.arcs.yz);
@@ -158,6 +160,7 @@ TEST_CASE("a version 1 machine, without travel or spindle speed, loads with the 
     CHECK(loaded.machine.maxSpindleRpm == defaults.maxSpindleRpm);
     CHECK(loaded.machine.holderDiameter == 20.0);
     CHECK(loaded.machine.holderDepth == 30.0);
+    CHECK(loaded.machine.rapidRate == 5000.0);
     CHECK(loaded.machine.arcs == ArcFitting());
 }
 

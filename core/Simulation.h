@@ -254,6 +254,7 @@ namespace camcore
         Vec3 from;
         Vec3 to;
         bool rapid = false;
+        double seconds = 0.0;       // how long it takes: at its feed, the rapid rate, or a dwell's time
         size_t operation = 0;       // which of the simulation's operations
         size_t toolpathMove = 0;    // which move of the operation's toolpath it comes from
     };
@@ -275,8 +276,10 @@ namespace camcore
     public:
         // The stock filled, and the operations' moves made ready. A triangle mesh
         // fills the box's cells inside it; none fills them all.
+        // Rapids take their length at the rapid rate (mm/min); dwells their own time.
         void Start(const StockBox& box, const std::vector<Vec3>& stockTriangles,
-                   const std::vector<SimOperation>& operations, const SimResolution& resolution = SimResolution());
+                   const std::vector<SimOperation>& operations, const SimResolution& resolution = SimResolution(),
+                   double rapidRate = 5000.0);
 
         VoxelStock& Stock() { return m_stock; }
         const VoxelStock& Stock() const { return m_stock; }
@@ -287,7 +290,13 @@ namespace camcore
         size_t Position() const { return m_position; }
         bool Finished() const { return m_position >= m_moves.size(); }
 
-        // Where the tool's tip is, its axis, and its shape, at the current position.
+        // Machining time: all of it, and up to where it's got to (part of a move
+        // counted), in seconds, from the feeds, the rapid rate and dwells.
+        double TotalSeconds() const { return m_moveStarts.empty() ? 0.0 : m_moveStarts.back(); }
+        double ElapsedSeconds() const;
+
+        // Where the tool's tip is (part way along a move Advance stopped in), its axis,
+        // and its shape, at the current position.
         Vec3 ToolTip() const;
         const SimOperation* CurrentOperation() const;
 
@@ -295,6 +304,11 @@ namespace camcore
         // stock or a move where the shank or holder touches it, which is then the
         // warning. Returns how many moves were done.
         size_t Step(size_t count);
+
+        // Cuts as far as this much machining time reaches, stopping part way along a
+        // move if that's where it ends, or at a warning as Step does. Returns how many
+        // moves were finished.
+        size_t Advance(double seconds);
 
         // Where the current operation's moves end (one past its last).
         size_t OperationEnd() const;
@@ -316,11 +330,18 @@ namespace camcore
         void ClearWarning() { m_warning = SimWarning::None; }
 
     private:
+        // Cuts one move's piece from a to b with the holder, shank and rapid checks,
+        // returning the warning (None for none).
+        SimWarning CutPiece(const SimMove& move, const Vec3& a, const Vec3& b);
+        Vec3 PointAlong(const SimMove& move, double seconds) const;
+
         VoxelStock m_stock;
         VoxelStock m_start;                     // the whole stock, to rewind to
         std::vector<SimOperation> m_operations;
         std::vector<SimMove> m_moves;
         size_t m_position = 0;
+        double m_into = 0.0;                    // seconds into the move at m_position
+        std::vector<double> m_moveStarts;       // each move's start in machining time, then the total
         SimWarning m_warning = SimWarning::None;
         size_t m_warningMove = 0;
     };

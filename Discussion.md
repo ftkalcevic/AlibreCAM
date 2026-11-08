@@ -8907,142 +8907,6 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 > 6. Close and reopen the job. The arcs should still be there.
 > 7. The help changed: check the Machine and Post sections.
 
-### 🧑 Frank · 13:54
-
-> Should the planes be XY YZ ZX ?
-
-### 🤖 Claude
-
-> Strictly, yes. In G-code the three planes are XY (G17), ZX (G18) and YZ (G19), each named so the first axis turned towards the second gives the plane's positive normal (+Z, +Y, +X). "XZ" is the common loose name, but ZX is the correct one: XZ would give a normal of −Y and arcs turning the other way.
->
-> The code already handles G18 as ZX; only the name says XZ. That plane works internally with Z across and X up (`ToPlane` maps it to (z, x, y)). Clockwise is measured looking from +Y, as G2 and G3 do in G18, and the post test checks a G18 arc comes out as `G2 … I5 K0`. So arcs come out turning the right way.
->
-> Renaming would just be labels. The Machine tab check box and the help would say ZX, and in the code `ArcPlane::XZ` would become `ZX`. The machine file key `xz` and the post section `[plane xz]` could change too. A machine file saved since this build already uses `xz`, so reading would accept both. Shall I make that change?
-
-### 🧑 Frank · 13:54
-
-> Please rename the labels
-
-### 🤖 Claude
-
-> All of these are about the arc plane, so a word-level rename is safe. The machine file will still read the old `xz` key, and posts will still accept an old `[plane xz]` section.
-
-> The rename is done. The spec in the Claude doc needs the same change:
-
-> The doc is at rev 214 now; someone else has edited it too. I'll bring `docs\SPEC.md`'s header up to date, then build and run the tests:
-
-> The planes are now named XY, ZX and YZ everywhere. Release builds cleanly and all tests pass, but it isn't installed and hasn't been tried in Alibre.
->
-> **What changed:**
-> - **Machine tab:** the check box reads ZX.
-> - **Help and spec:** both say ZX. The Claude doc is updated, and `docs\SPEC.md`'s header now says rev 214.
-> - **Posts:** the section is `[plane zx]`, and the LinuxCNC post uses it.
-> - **Code:** `ArcPlane::ZX`, `ArcFitting::zx` and `IDC_MACHINE_ARC_ZX`, plus the tests and `CLAUDE.md`.
->
-> **Older files still work:**
-> - A machine file saved with the `xz` key still loads.
-> - A post with an old `[plane xz]` section is still used for G18.
->
-> **The doc and `docs\SPEC.md` now differ:** someone else edited the Claude doc since my last change (revs 212 and 213). Only my edits went into `docs\SPEC.md`, so it's missing theirs.
->
-> **To test, after installing:**
-> 1. The Machine tab's Arcs row shows XY, ZX, YZ, and your earlier settings for that plane are kept.
-> 2. Untick ZX, then Generate and Post a Parallel Finishing with rows along X. There should be no G18 arcs.
-> 3. The help changed: check the Machine and Post sections.
-
-### 🧑 Frank · 13:58
-
-> I'll test later.
-
-### 🤖 Claude
-
-> Fine. When you're ready, close Alibre and say "Install it". The test list from my last message still applies.
-
----
-
-# Side conversation
-
-A forked copy of the session, kept apart from the main one.
-
-## 2026-11-04
-
-### 🧑 Frank · 15:23
-
-> is there a standard or preferred way to generate pseudo post code?  With macro place holders for plunge speed, spindle speed, etc?  Or do they just substitute numbers
-
-### 🤖 Claude
-
-> Yes, there is a standard, and the answer is real numbers. Placeholders like `{spindle}` belong in the post template, not in the intermediate file.
->
-> **The standard intermediate format is APT CL data**, "cutter location" data, standardised as ISO 3592 and ISO 4343. Most CAM systems produce something like it internally, then hand it to the post. It's a list of commands with concrete values, for example:
->
-> ```
-> LOADTL/3
-> SPINDL/RPM,18000,CLW
-> RAPID
-> GOTO/10.0,0.0,20.0
-> FEDRAT/MMPM,300
-> GOTO/10.0,0.0,-10.0
-> CYCLE/DRILL,10.0,MMPM,300,2.0
-> GOTO/30.0,5.0,0.0
-> CYCLE/OFF
-> ```
->
-> **Placeholders live in the post.** Posts in Fusion, Mastercam, SolidCAM and FreeCAD work the same way. The post receives each command, with its values as variables, and has a template or handler per command, for example `SPINDL` → `S{rpm} M3`. The post decides formatting, such as decimals and when to drop a value that hasn't changed. That matches the spec's style (`S{spindle} M3`, `G1 X{x} Y{y} Z{z} F{feed}`). So the split is a values-only intermediate file plus a template post. Your current pseudo code is already the first half, and an APT-style vocabulary would be the conventional way to name it.
->
-> **What the conventional approach does that ours doesn't yet:**
-> 1. **Canned cycles stay cycles.** A drill operation goes out as one cycle record per hole (depth, R plane, peck, dwell, feed), not expanded into moves. The post then chooses: LinuxCNC can emit `G81`/`G82`/`G83` with `G98`/`G99`, while a controller without cycles gets the moves expanded. Our generator expands drilling straight away, so the post can never use G83.
-> 2. **Moves say what they're for.** A plunge, a cut and a lead-in are tagged, not just "a feed at 300", so a post can handle each differently, for example a slower first plunge or arc lead-ins.
-> 3. **Modal values are separate statements.** Feed rate, spindle and tool are set once and stay in force, and moves carry only coordinates. That makes it easy for the post to drop repeated `F` words.
->
-> My recommendation is to keep concrete numbers in the intermediate file, switch our pseudo code to an APT-like command set, and make drilling a cycle record. The toolpath would then keep both the expanded moves, for drawing in the view, and the cycle parameters, for the post. That's worth settling before step 5, when the template post language is designed, because the template's placeholders come from whatever these records carry. I haven't changed any code here. This is a fork of the main session, so the change would be better made there.
-
-### 🧑 Frank · 18:23
-
-> how do i describe cnc climb milling of a part to ai? mixed is both, so we cut left to right, step, then right to left, step, and repeat.  How do I specify how climb milling engages the part
-
-### 🤖 Claude
-
-> Describe it geometrically, not by name. "Climb" and "conventional" get mixed up easily, while "which side of the tool the uncut material is on" can't be misread.
->
-> **The definition to give the AI**
->
-> Assume a clockwise spindle (M3) when viewed from above, looking down the tool axis:
->
-> - **Climb:** the uncut material is on the **right** of the tool's direction of travel. Each tooth enters at full chip thickness and leaves thin.
-> - **Conventional:** the uncut material is on the **left**.
->
-> The same thing in G-code terms: climb with M3 is the side cutter compensation G41 puts the tool on. For an outside profile, climb means going **clockwise** around the part. For a pocket wall or inside profile, it means going **anticlockwise**. If the spindle runs anticlockwise (M4), every rule flips.
->
-> **For facing with stepovers**
->
-> The engaged side is the side with stock still to be cut, which is the direction you're stepping towards. Suppose you step towards +Y. The uncut stock is then on the +Y side, so:
->
-> - **Climb, one way:** every pass runs **right to left (−X)**, which puts the uncut stock on the right. At the end of each pass the tool lifts, rapids back to the right-hand side, steps over and repeats.
-> - **Conventional, one way:** every pass runs left to right (+X).
-> - **Mixed (zigzag):** left to right, step, right to left, step. Passes alternate between conventional and climb, and the tool stays down between them.
->
-> So "climb" alone isn't enough to define a facing pattern. It only makes sense together with the step direction and the start corner.
->
-> **Template for describing it**
->
-> > Spindle turns clockwise viewed from above (M3). Climb milling means the uncut material is on the right side of the tool's direction of travel. Facing starts at the bottom-left corner of the area and steps over in +Y by 40% of the tool diameter. Cut direction: climb only. Each pass runs along X with the uncut material on the right, so passes go in −X. Between passes, retract to the clearance height, rapid back to the start side, plunge, and step over. Mixed means zigzag: alternate the X direction each pass and step over at cutting depth without retracting. Each pass overhangs the area by 50% of the tool diameter at both ends so the tool enters and leaves off the part.
->
-> **Things worth stating explicitly, because they change the result**
->
-> - Spindle direction.
-> - Pass direction (along X, Y or an angle) and step direction.
-> - Start corner.
-> - Stepover.
-> - How passes link: retract and rapid back, or stay down (zigzag).
-> - Overhang past the edges, so each pass enters off the part.
-> - Lead-in: straight, or an arc in the same rotational sense so the tool enters tangentially.
-> - Whether the final pass may be climb or conventional, if finish quality matters.
->
-> For AlibreCAM's Facing tab, those choices map onto a few fields: a cut direction of Climb / Conventional / Mixed, a pass angle, the start corner (the Features tab already has one), stepover as a percentage of the diameter, overhang, and the link type. Climb and Conventional would mean one-way passes, and Mixed would mean zigzag.
-
-## 2026-11-08
-
 ### 🧑 Frank · 13:56
 
 > Are there outstanding Arc and adpative changes
@@ -9185,3 +9049,341 @@ A forked copy of the session, kept apart from the main one.
 ### 🧑 Frank · 14:56
 
 > Install it
+
+### 🤖 Claude
+
+> It's installed. The installed DLL and help page match the new build, so start Alibre and it will load this version.
+>
+> To test:
+> 1. Generate an adaptive Pocketing. The rings round the helix should look round, with magenta arcs along them, and the log's `[generate] arcs:` line should show hundreds of arcs.
+> 2. Generate a Parallel Finishing at Angle of Cuts 0, keeping the 0.005 tolerance. The arcs line should show far fewer moves than last time.
+> 3. Simulate both. Nothing should look different in the cut.
+> 4. Post both with LinuxCNC. The files should be much smaller.
+> 5. The help changed: check the Machine tab's Arcs Tolerance entry.
+
+### 🧑 Frank · 15:22
+
+> Add a checkbox to the simulate dialog to play back at realtime speed.  That will simulate the machining at the defined feeds and speeds, so a long straight cut will take some time to appear, rather than the whole cut just appearing instantly.  There will also be a slider next to it to play back faster.
+
+### 🤖 Claude
+
+> First, the Simulation dialog's layout and how the simulation steps through moves today:
+
+> I have what I need. A few choices are yours:
+
+> Questions:
+> - Rapid moves have no feed in the toolpath. How fast should they play in real time?
+>   - Machine rapid rate (Recommended): A new 'Rapid rate' on the Machine tab (mm/min, default 5000), also usable later for machining-time estimates.
+>   - Fixed 5000 mm/min: No new setting; rapids play at a fixed 5000 mm/min.
+>   - Rapids instant: Rapids jump; only feed moves take time.
+> - How fast should the speed-up slider next to the Real time check box go?
+>   - 1x to 100x (Recommended): Logarithmic: 1x, 2x, 5x, 10x, 20x, 50x, 100x, shown beside it.
+>   - 1x to 20x: A smaller range with finer steps.
+>   - 1x to 1000x: For very long jobs.
+> - Should the dialog show machining time while playing?
+>   - Yes, elapsed / total (Recommended): The status line adds e.g. 'time 3:12 of 47:05' (feeds, rapids and dwells; no acceleration), shown whether or not Real time is ticked.
+>   - No: Just the move count, as now.
+
+### 🧑 Frank · 15:24
+
+> Answers:
+> - Rapid moves have no feed in the toolpath. How fast should they play in real time?
+>   **Machine rapid rate (Recommended)**
+> - How fast should the speed-up slider next to the Real time check box go?
+>   **0.1x to 10x.**
+> - Should the dialog show machining time while playing?
+>   **Yes, elapsed / total (Recommended)**
+
+### 🤖 Claude
+
+> Plan:
+>
+> # Real-time simulation playback
+>
+> ## Context
+>
+> Play currently cuts a number of whole moves each tick, so a long straight cut appears all at once. Frank wants a **Real time** check box in the Simulation dialog, with a **speed slider** beside it. Ticked, playback follows the toolpath's feeds:
+> - a long cut takes as long as it would on the machine (times the slider's speed);
+> - the tool travels along it while it plays.
+>
+> **Frank's choices:**
+> - Rapids play at a new machine **Rapid rate** (mm/min, default 5000).
+> - The slider runs **0.1× to 10×**.
+> - The status shows **machining time, elapsed of total**.
+>
+> ## Core (`core\Simulation.h/.cpp`)
+> - **Each move's time:** `SimMove` gains `seconds`, set in `Simulation::Start`:
+>   - a feed takes its length at its feed (arcs are already split into chords);
+>   - a rapid takes its length at the rapid rate;
+>   - a dwell becomes a move that goes nowhere, taking its own time. Dwells are skipped today.
+> - **Start** takes the rapid rate (a new argument, default 5000). Running totals of the move times give:
+>   - `TotalSeconds()`;
+>   - `ElapsedSeconds()`, which counts the part-done move.
+> - **Part-way through a move:** `m_into` (seconds into the current move, `m_position`).
+>   - `ToolTip()` comes from the move's start towards its end by that fraction, so the tool is drawn where it's got to.
+> - **New `Advance(double seconds)`:** cuts as far as that much machining time reaches.
+>   - Moves that finish are cut from where the last advance stopped to their end.
+>   - A move it stops part-way through is cut up to that point.
+>   - It stops at a warning as Step does. The holder, shank and rapid-into-stock checks apply to each piece.
+>   - **Implementation:** each piece's cut and checks come from today's `Step` body, moved into a helper, `CutPiece(move, operation, from, to)`, that both use.
+> - **Step, Rewind and SeekTo:**
+>   - Step finishes a part-done move from where it stopped;
+>   - Rewind and SeekTo clear `m_into`.
+>
+> ## Machine
+> - **`core\Machine`:** `Machine::rapidRate` (mm/min, default 5000, more than 0), saved as `rapidRate`. Older files read as 5000.
+> - **Machine tab (`IDD_MACHINE`):** a row beside Max spindle speed: "Rapid rate: [ ] mm/min" (`IDC_MACHINE_RAPID*`, IDs from 13470), added to `kNumberBoxes` with the same checks as the other fields.
+> - **`CCamTabCommand`:** passes `m_machine.rapidRate` to the simulation's `Start`, and to `RestartSimulation`.
+>
+> ## Simulation dialog (`IDD_SIMULATION`, `addon\SimulationDialog`)
+> - **The new row,** under the Speed row:
+>   - a **Real time** check box (`IDC_SIM_REALTIME`);
+>   - a slider (`IDC_SIM_REALTIME_SPEED`, logarithmic, 0.1× to 10×, starting at 1×);
+>   - its text (`IDC_SIM_REALTIME_TEXT`, e.g. "1×", "0.5×", "4.2×").
+>
+>   The controls below it move down 16 units, and the dialog grows by 16.
+> - **With Real time ticked:**
+>   - the "moves a step" Speed slider is greyed;
+>   - Play's timer calls `Advance(wall seconds since the last tick × speed)`, with each tick's wall time capped at 0.25 s so a pause doesn't jump.
+> - **Unchanged:** Step, To Op End, To End and the scrub bar work as now.
+> - **Status line:** adds the time, e.g. "Facing 1 — move 120 of 3,400 — time 3:12 of 47:05" (hours shown when needed), whether Real time is ticked or not. It's machining time from feeds, rapids and dwells, with no acceleration.
+> - **Remembered until Alibre closes:** Real time and its speed, as the other settings are.
+>
+> ## Tests (`tests\SimulationTests.cpp`)
+> - **Move times:** feeds (a 100 mm move at 600 mm/min is 10 s), rapids at the rate given, and a dwell's time counted.
+> - **Advancing:**
+>   - half a move's time leaves the tool halfway along, with that much cut;
+>   - advancing the rest gives exactly the same stock as one Step;
+>   - many small advances give the same stock as RunToEnd.
+> - **Warnings:** a rapid into stock found part-way through stops there.
+> - **Interrupted moves:** Step after a part-done move finishes it; Rewind clears it.
+> - **Machine file:** `rapidRate` round-trips, and an older file reads as 5000.
+>
+> ## Docs
+> - **Help:**
+>   - the Simulation section's Real time check box and its speed;
+>   - the time on the status line;
+>   - the Machine tab's Rapid rate.
+> - **The spec** (the Claude doc and `docs\SPEC.md`), **`CLAUDE.md`**, and `Discussion.md`.
+>
+> ## Verification
+> 1. Build Debug and Release, run `CamCoreTests.exe` in both, and install.
+> 2. **Frank:**
+>    - Simulate a job. The status shows the time.
+>    - Tick Real time at 1×. A long facing pass should take its real time, with the tool moving along it and the cut growing behind it.
+>    - Move the slider to 10× and 0.1×.
+>    - Untick it. Play goes back to moves per step.
+>    - Check that rapids move at the Rapid rate (set it on the Machine tab).
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Plan approved. Starting with the simulation core: move times, part-way progress and `Advance`.
+
+> The core and the rapid rate are done. Next, the dialog. I'll read its setup, timer and status code.
+
+> The layout came out as planned. One tidy-up (both branches of the speed text's format were the same), then build:
+
+### 🧑 Frank · 15:32
+
+> We need to change the name of the application; AlibreCAM makes it sound like it is made by Alibre.  The program is a CAM Addon for Alibre Design built by Claude Code AI.  Suggest some alternate names.  It should be a name that makes a fun acronym.
+
+### 🤖 Claude
+
+> Here are some names that make it clear this is an add-on for Alibre Design, not something from Alibre itself, each with an acronym:
+>
+> **CAM-themed**
+> - **CHISEL**: CAM Helper Inside Solid Engineering Layouts. Short, workshop-flavoured, and says "cutting".
+> - **SWARF**: Simple Workshop Add-in for Routing and Finishing. Swarf is the chips a cutter throws off, which machinists will get straight away.
+> - **FLUTE**: Fast Layout of Untold Toolpath Engineering. Named after the cutting edges on an end mill.
+> - **SPINDLE**: Simple Programs Into Numerically Driven Lathes and End mills.
+> - **CHIPS**: CAM Helper for Indexed Path Strategies.
+> - **GCODE-ish: G-WIZ**: G-code Wizard Inside the Zone.
+>
+> **Playful**
+> - **MILLIE**: Machining Instructions for Lovingly Laid-out Indexed Engraving. A friendly name for the add-on.
+> - **ROUTER-TOOT**: Really Obliging Utility That Eats Rough Toolpaths. Silly, but memorable.
+> - **CRUMBS**: CAM Routines Unashamedly Made By Silicon. A nod to it being built by AI, and crumbs are what's left after cutting.
+> - **BYTE-CUT**: Built Yourself Through Experimentation, Cutting Unusual Things.
+>
+> **Nods to Claude**
+> - **CLAUDE-CAM, or C-CAM**: Claude's Lightweight Add-in for Uniquely Designed Engineering. Makes the AI origin explicit.
+> - **CLAW**: CAM Layer for Alibre Workflows. A gripping tool, and "claw" also sounds like "Claude".
+>
+> **My picks:** **SWARF** or **CHISEL**. Both are short and unmistakably about machining, and neither suggests it's an Alibre product. Wording like "a CAM add-on for Alibre Design" in the description keeps the compatibility clear without using Alibre's name in the product name.
+>
+> Before choosing, check the name isn't already a trademark or an existing CAM product. **CHISEL** in particular is a common software name.
+>
+> Once you pick one, the rename touches the DLL and project names, the tab and dialog captions, the help page, `%APPDATA%`/`%LOCALAPPDATA%` folder names (existing machine files and logs would need moving), the installed add-on folder and the spec. I can plan that when you're ready.
+
+---
+
+# Side conversation
+
+A forked copy of the session, kept apart from the main one.
+
+## 2026-11-04
+
+### 🧑 Frank · 15:23
+
+> is there a standard or preferred way to generate pseudo post code?  With macro place holders for plunge speed, spindle speed, etc?  Or do they just substitute numbers
+
+### 🤖 Claude
+
+> Yes, there is a standard, and the answer is real numbers. Placeholders like `{spindle}` belong in the post template, not in the intermediate file.
+>
+> **The standard intermediate format is APT CL data**, "cutter location" data, standardised as ISO 3592 and ISO 4343. Most CAM systems produce something like it internally, then hand it to the post. It's a list of commands with concrete values, for example:
+>
+> ```
+> LOADTL/3
+> SPINDL/RPM,18000,CLW
+> RAPID
+> GOTO/10.0,0.0,20.0
+> FEDRAT/MMPM,300
+> GOTO/10.0,0.0,-10.0
+> CYCLE/DRILL,10.0,MMPM,300,2.0
+> GOTO/30.0,5.0,0.0
+> CYCLE/OFF
+> ```
+>
+> **Placeholders live in the post.** Posts in Fusion, Mastercam, SolidCAM and FreeCAD work the same way. The post receives each command, with its values as variables, and has a template or handler per command, for example `SPINDL` → `S{rpm} M3`. The post decides formatting, such as decimals and when to drop a value that hasn't changed. That matches the spec's style (`S{spindle} M3`, `G1 X{x} Y{y} Z{z} F{feed}`). So the split is a values-only intermediate file plus a template post. Your current pseudo code is already the first half, and an APT-style vocabulary would be the conventional way to name it.
+>
+> **What the conventional approach does that ours doesn't yet:**
+> 1. **Canned cycles stay cycles.** A drill operation goes out as one cycle record per hole (depth, R plane, peck, dwell, feed), not expanded into moves. The post then chooses: LinuxCNC can emit `G81`/`G82`/`G83` with `G98`/`G99`, while a controller without cycles gets the moves expanded. Our generator expands drilling straight away, so the post can never use G83.
+> 2. **Moves say what they're for.** A plunge, a cut and a lead-in are tagged, not just "a feed at 300", so a post can handle each differently, for example a slower first plunge or arc lead-ins.
+> 3. **Modal values are separate statements.** Feed rate, spindle and tool are set once and stay in force, and moves carry only coordinates. That makes it easy for the post to drop repeated `F` words.
+>
+> My recommendation is to keep concrete numbers in the intermediate file, switch our pseudo code to an APT-like command set, and make drilling a cycle record. The toolpath would then keep both the expanded moves, for drawing in the view, and the cycle parameters, for the post. That's worth settling before step 5, when the template post language is designed, because the template's placeholders come from whatever these records carry. I haven't changed any code here. This is a fork of the main session, so the change would be better made there.
+
+### 🧑 Frank · 18:23
+
+> how do i describe cnc climb milling of a part to ai? mixed is both, so we cut left to right, step, then right to left, step, and repeat.  How do I specify how climb milling engages the part
+
+### 🤖 Claude
+
+> Describe it geometrically, not by name. "Climb" and "conventional" get mixed up easily, while "which side of the tool the uncut material is on" can't be misread.
+>
+> **The definition to give the AI**
+>
+> Assume a clockwise spindle (M3) when viewed from above, looking down the tool axis:
+>
+> - **Climb:** the uncut material is on the **right** of the tool's direction of travel. Each tooth enters at full chip thickness and leaves thin.
+> - **Conventional:** the uncut material is on the **left**.
+>
+> The same thing in G-code terms: climb with M3 is the side cutter compensation G41 puts the tool on. For an outside profile, climb means going **clockwise** around the part. For a pocket wall or inside profile, it means going **anticlockwise**. If the spindle runs anticlockwise (M4), every rule flips.
+>
+> **For facing with stepovers**
+>
+> The engaged side is the side with stock still to be cut, which is the direction you're stepping towards. Suppose you step towards +Y. The uncut stock is then on the +Y side, so:
+>
+> - **Climb, one way:** every pass runs **right to left (−X)**, which puts the uncut stock on the right. At the end of each pass the tool lifts, rapids back to the right-hand side, steps over and repeats.
+> - **Conventional, one way:** every pass runs left to right (+X).
+> - **Mixed (zigzag):** left to right, step, right to left, step. Passes alternate between conventional and climb, and the tool stays down between them.
+>
+> So "climb" alone isn't enough to define a facing pattern. It only makes sense together with the step direction and the start corner.
+>
+> **Template for describing it**
+>
+> > Spindle turns clockwise viewed from above (M3). Climb milling means the uncut material is on the right side of the tool's direction of travel. Facing starts at the bottom-left corner of the area and steps over in +Y by 40% of the tool diameter. Cut direction: climb only. Each pass runs along X with the uncut material on the right, so passes go in −X. Between passes, retract to the clearance height, rapid back to the start side, plunge, and step over. Mixed means zigzag: alternate the X direction each pass and step over at cutting depth without retracting. Each pass overhangs the area by 50% of the tool diameter at both ends so the tool enters and leaves off the part.
+>
+> **Things worth stating explicitly, because they change the result**
+>
+> - Spindle direction.
+> - Pass direction (along X, Y or an angle) and step direction.
+> - Start corner.
+> - Stepover.
+> - How passes link: retract and rapid back, or stay down (zigzag).
+> - Overhang past the edges, so each pass enters off the part.
+> - Lead-in: straight, or an arc in the same rotational sense so the tool enters tangentially.
+> - Whether the final pass may be climb or conventional, if finish quality matters.
+>
+> For AlibreCAM's Facing tab, those choices map onto a few fields: a cut direction of Climb / Conventional / Mixed, a pass angle, the start corner (the Features tab already has one), stepover as a percentage of the diameter, overhang, and the link type. Climb and Conventional would mean one-way passes, and Mixed would mean zigzag.
+
+## 2026-11-08
+
+### 🧑 Frank · 13:54
+
+> Should the planes be XY YZ ZX ?
+
+### 🤖 Claude
+
+> Strictly, yes. In G-code the three planes are XY (G17), ZX (G18) and YZ (G19), each named so the first axis turned towards the second gives the plane's positive normal (+Z, +Y, +X). "XZ" is the common loose name, but ZX is the correct one: XZ would give a normal of −Y and arcs turning the other way.
+>
+> The code already handles G18 as ZX; only the name says XZ. That plane works internally with Z across and X up (`ToPlane` maps it to (z, x, y)). Clockwise is measured looking from +Y, as G2 and G3 do in G18, and the post test checks a G18 arc comes out as `G2 … I5 K0`. So arcs come out turning the right way.
+>
+> Renaming would just be labels. The Machine tab check box and the help would say ZX, and in the code `ArcPlane::XZ` would become `ZX`. The machine file key `xz` and the post section `[plane xz]` could change too. A machine file saved since this build already uses `xz`, so reading would accept both. Shall I make that change?
+
+### 🧑 Frank · 13:54
+
+> Please rename the labels
+
+### 🤖 Claude
+
+> All of these are about the arc plane, so a word-level rename is safe. The machine file will still read the old `xz` key, and posts will still accept an old `[plane xz]` section.
+
+> The rename is done. The spec in the Claude doc needs the same change:
+
+> The doc is at rev 214 now; someone else has edited it too. I'll bring `docs\SPEC.md`'s header up to date, then build and run the tests:
+
+> The planes are now named XY, ZX and YZ everywhere. Release builds cleanly and all tests pass, but it isn't installed and hasn't been tried in Alibre.
+>
+> **What changed:**
+> - **Machine tab:** the check box reads ZX.
+> - **Help and spec:** both say ZX. The Claude doc is updated, and `docs\SPEC.md`'s header now says rev 214.
+> - **Posts:** the section is `[plane zx]`, and the LinuxCNC post uses it.
+> - **Code:** `ArcPlane::ZX`, `ArcFitting::zx` and `IDC_MACHINE_ARC_ZX`, plus the tests and `CLAUDE.md`.
+>
+> **Older files still work:**
+> - A machine file saved with the `xz` key still loads.
+> - A post with an old `[plane xz]` section is still used for G18.
+>
+> **The doc and `docs\SPEC.md` now differ:** someone else edited the Claude doc since my last change (revs 212 and 213). Only my edits went into `docs\SPEC.md`, so it's missing theirs.
+>
+> **To test, after installing:**
+> 1. The Machine tab's Arcs row shows XY, ZX, YZ, and your earlier settings for that plane are kept.
+> 2. Untick ZX, then Generate and Post a Parallel Finishing with rows along X. There should be no G18 arcs.
+> 3. The help changed: check the Machine and Post sections.
+
+### 🧑 Frank · 13:58
+
+> I'll test later.
+
+### 🤖 Claude
+
+> Fine. When you're ready, close Alibre and say "Install it". The test list from my last message still applies.
+
+> Now tests for the simulation's time and part-way moves, plus the machine file:
+
+> The first move of each operation (the rapid to its start) becomes a zero-length simulation move, so every index is one more than my tests assumed. That's existing behaviour, so I'll fix the tests:
+
+> All 320 tests pass. Next, the docs:
+
+> Next, the Claude doc, after the Arc fitting entry:
+
+> All 320 tests pass in Debug as well. Installing:
+
+> Real-time playback is built and installed. All 320 tests pass in Debug and Release, and the installed DLL and help page match the build; it hasn't been tried in Alibre yet.
+>
+> **What's new**
+> - **Simulation dialog:** a **Real time** check box under the Speed row, with a slider from 0.1× through 1× (the middle) to 10×, and its value shown beside it. Both are remembered until Alibre closes. While Real time is ticked, the "moves a step" slider is greyed.
+> - **Playback:** each move takes its length at its feed, rapids at the machine's Rapid rate, and dwells their own time. The tool moves along a long cut, with the cut growing behind it. Pausing stops part way along a move, and Play carries on from there.
+> - **Unchanged:** Step, To Op End, To End and the scrub bar work as before. Step finishes a move that was paused part way.
+> - **Status line:** shows machining time, e.g. "move 120 of 3,400 — time 3:12 of 47:05", whether or not Real time is ticked. It doesn't allow for acceleration, so real machining will take a bit longer.
+> - **Machine tab:** a **Rapid rate** box beside Max spindle speed (mm/min, default 5000, saved in the machine file).
+> - **Checks while playing:** the holder, shank and rapid-into-stock checks also apply part way along a move, so a rapid that reaches the stock stops there.
+>
+> The help page (Simulation and Machine), the spec (both copies at rev 216) and `CLAUDE.md` are updated.
+>
+> **To test:**
+> 1. Open the Machine dialog and check the Rapid rate box shows 5000. Change it, and check it's kept when you reopen the dialog.
+> 2. Simulate a job. The status line should show the time, e.g. "time 0:00 of 12:34".
+> 3. Tick Real time at 1×. A long facing pass should take its real time, with the tool travelling along it.
+> 4. Try 10× and 0.1×, and Pause in the middle of a move, then Play again.
+> 5. Untick Real time. Play should go back to moves per step.
+> 6. Step, To Op End, To End and the scrub bar should still behave as before, including straight after pausing part way.
+> 7. The help changed: check the Simulation and Machine sections.
+
+### 🧑 Frank · 15:50
+
+> The realtime slider should be disabled if the realtime checkbox is not checked
