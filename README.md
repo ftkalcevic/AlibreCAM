@@ -1,10 +1,10 @@
 # CAMForAlibre — Alibre Design add-on (C++/MFC)
 
 This is an add-on for Alibre Design to provide basic CAM and GCode generation.  It was
-**ALL** generated using Claude Code, with requirements and testing provided by Humans.
+**ALL** generated using Claude Code, with requirements and testing provided by humans.
 
 This has had very little real life testing - my CNC router is broken at the moment. 
-Once I got started I started pushing the Claude Code abilities to wsee what it could do.
+Once I got started I started pushing the Claude Code abilities to see what it could do.
 
 This was built against Alibre Design v27.
 
