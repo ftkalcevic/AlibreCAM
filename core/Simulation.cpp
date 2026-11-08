@@ -649,6 +649,18 @@ namespace camcore
 
         long long removed = 0;
         const Vec3 lower = stock.Lower();
+
+        // How far the stock's box reaches up the tool's axis: only the part of the
+        // tool below that can cut, so a V or chamfer mill skimming the top only
+        // sweeps its narrow tip, not its full width.
+        double stockTop = -1e300;
+        for (int corner = 0; corner < 8; ++corner)
+        {
+            const Vec3 c{ lower.x + ((corner & 1) ? stock.SizeX() * cell : 0.0),
+                          lower.y + ((corner & 2) ? stock.SizeY() * cell : 0.0),
+                          lower.z + ((corner & 4) ? stock.SizeZ() * cell : 0.0) };
+            stockTop = (std::max)(stockTop, Dot(c, w));
+        }
         for (int s = 0; s < steps; ++s)
         {
             const Vec3 a = from + d * (static_cast<double>(s) / steps);
@@ -674,7 +686,12 @@ namespace camcore
                 lo = { (std::min)(lo.x, p.x), (std::min)(lo.y, p.y), (std::min)(lo.z, p.z) };
                 hi = { (std::max)(hi.x, p.x), (std::max)(hi.y, p.y), (std::max)(hi.z, p.z) };
             }
-            const double r = profile.radius;
+            // The widest the tool is anywhere the stock can be, a cell to spare.
+            const double reachUp = stockTop - tipLow;
+            if (reachUp < 0.0)
+                continue;       // the tip is above all of the stock
+            const double widest = profile.RadiusAt((std::min)(reachUp, profile.length));
+            const double r = (widest >= 0.0) ? (std::min)(profile.radius, widest + cell) : profile.radius;
             const int i0 = (std::max)(0, static_cast<int>(std::floor((lo.x - r - lower.x) / cell)));
             const int j0 = (std::max)(0, static_cast<int>(std::floor((lo.y - r - lower.y) / cell)));
             const int k0 = (std::max)(0, static_cast<int>(std::floor((lo.z - r - lower.z) / cell)));

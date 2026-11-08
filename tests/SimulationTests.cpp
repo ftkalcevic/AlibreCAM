@@ -819,3 +819,72 @@ TEST_CASE("a rapid into stock found part way along stops there")
     CHECK(simulation.Position() == 1);
     CHECK(simulation.WarningMove() == 1);
 }
+
+namespace
+{
+    ToolProfile VBit(double diameter, double angle)
+    {
+        Tool tool;
+        tool.type = ToolType::VMill;
+        tool.diameter = diameter;
+        tool.includedAngle = angle;
+        tool.fluteLength = 10;
+        tool.overallLength = 40;
+        return ProfileOf(tool);
+    }
+}
+
+TEST_CASE("a V bit skimming the top cuts exactly the cells inside its cone")
+{
+    // A 6 mm 90 degree V bit 0.3 deep along X across a 30 x 10 x 5 block.
+    const double cell = 0.1;
+    VoxelStock stock;
+    stock.Reset({ { 0, 0, 0 }, { 30, 10, 5 } }, cell, true);
+    stock.FillAll();
+    const long long before = stock.Count();
+    const ToolProfile profile = VBit(6.0, 90.0);
+    const Vec3 from{ 5, 5, 4.7 }, to{ 25, 5, 4.7 };
+    const long long removed = CutMove(stock, profile, from, to, { 0, 0, 1 });
+
+    // Every cell, by brute force: inside if its centre is above the tip and within
+    // the cone's radius at its height of the move's line.
+    long long expected = 0;
+    for (int k = 0; k < stock.SizeZ(); ++k)
+    {
+        for (int j = 0; j < stock.SizeY(); ++j)
+        {
+            for (int i = 0; i < stock.SizeX(); ++i)
+            {
+                const Vec3 c = stock.Centre(i, j, k);
+                const double h = c.z - from.z;
+                if (h < 0.0)
+                    continue;
+                const double x = (std::max)(from.x, (std::min)(to.x, c.x));
+                const double d = std::hypot(c.x - x, c.y - from.y);
+                if (d <= profile.RadiusAt(h) + 1e-9)
+                    ++expected;
+            }
+        }
+    }
+    CHECK(removed == expected);
+    CHECK(before - stock.Count() == expected);
+    CHECK(expected > 0);
+}
+
+TEST_CASE("V bit engraving timing" * doctest::skip())
+{
+    // A 6 mm V bit 0.1 deep, zigzagging over a 136 x 150 x 6 stock at 0.05 mm.
+    VoxelStock stock;
+    stock.Reset({ { 0, 0, 0 }, { 136, 150, 6 } }, 0.05, true);
+    stock.FillAll();
+    const ToolProfile profile = VBit(6.0, 90.0);
+    const auto start = std::chrono::steady_clock::now();
+    long long removed = 0;
+    for (int row = 0; row < 20; ++row)
+    {
+        const double y = 10.0 + row * 6.0;
+        removed += CutMove(stock, profile, { 5, y, 5.9 }, { 130, y, 5.9 }, { 0, 0, 1 });
+    }
+    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    std::printf("V bit engraving: 20 rows of 125 mm, %lld cells, %.3f s\n", removed, seconds);
+}

@@ -9513,3 +9513,87 @@ A forked copy of the session, kept apart from the main one.
 ### 🧑 Frank · 16:18
 
 > Rename successful
+
+### 🤖 Claude
+
+> Glad the rename went through. I fixed the path in `CLAUDE.md`: the repository folder line now reads `D:\Projects\alibre\AlibreCAM` again. A hidden control character had replaced `\a`.
+>
+> The rename's own changes are uncommitted, for you to commit. From now on I'll build with `CAMForAlibre.sln`.
+
+### 🧑 Frank · 16:20
+
+> The engrave operation doesn't seem to be optimal.  The example in "Profile Ass.cam" shows a couple of thousand points for a simple outline.
+
+### 🤖 Claude
+
+> First, the job file:
+
+> The saved Engrave 1 has only 131 moves (98 feeds, 21 arcs), so either the job wasn't saved after the Generate you're looking at, or the points are somewhere else. I'll check the log.
+
+> The latest Engrave 1 Generate in the log made 174 moves, which became 131 with 13 arcs, so the stored toolpath isn't thousands of points. I'll see whether the points come from posting.
+
+> Questions:
+> - Where did you see the couple of thousand points for Engrave 1? (The saved toolpath and the log show 131 moves: 98 straight, 21 arcs, 12 rapids.)
+>   - Simulation's move count: The status line's 'move n of N'. The simulation splits each arc into many short chords (within half a cell, 0.025 mm at fine resolution), so N counts chords, not toolpath moves.
+>   - Posted G-code: Lines in a posted .ngc file (none has been posted since 6 November, so this would be a file posted elsewhere or not logged).
+>   - In the view: What's drawn in Alibre's view looks like many points (arcs are drawn as 5 degree segments).
+
+### 🧑 Frank · 16:26
+
+> Answers:
+> - Where did you see the couple of thousand points for Engrave 1? (The saved toolpath and the log show 131 moves: 98 straight, 21 arcs, 12 rapids.)
+>   **Sorry, counted wrong.  It isn't the count, it is the simulation speed.  Both Engrave and Chamfer simulate very slowly.  Is that that shape of the tool, a v mill?**
+
+### 🤖 Claude
+
+> Yes, it's the V-mill's shape, and the same goes for the chamfer mill.
+>
+> For each small step of a move, the simulation checks every column of cells within the tool's **full** radius. For a 6 mm V-bit that's about 11,000 columns per step. A flat mill clears those columns on its first pass, so later passes skip them almost at once. A V-bit engraving 0.1 mm deep only touches the stock within a few tenths of a millimetre of its tip. The rest of the cone stays above the surface, so those columns keep their material, and every step works through thousands of them, cell by cell, to find nothing to cut.
+>
+> **The fix:** limit each step to the tool's radius at the height where it actually meets the stock's top.
+> - **V-bit, 0.1 mm deep:** about 0.1 mm instead of 3 mm, so the work per step should drop by several hundred times.
+> - **Flat or ball mill cutting deep:** stays at the full radius, so nothing changes there.
+> - **Result:** the same cells get cut, because columns outside that radius can't be reached.
+>
+> The change is in one function, `SweepTool` in `core\Simulation.cpp`, which also speeds up the holder and shank checks. I'd add a test that compares the cut against the current method, and a timing test for a V-bit engraving.
+
+### 🧑 Frank · 16:29
+
+> Yes, fix it
+
+### 🤖 Claude
+
+> The sweep is now limited to where the tool can reach. Next, a test against a brute-force count of the cells inside the swept V, plus a timing test:
+
+> Before: 1.657 s. After: 0.031 s, about 53 times faster. The fix is restored. The solution is now `CAMForAlibre.sln`, so the full builds use that:
+
+> Everything passes. Recording the change in `CLAUDE.md` (the help doesn't change, since behaviour is the same), then the Debug build and install:
+
+> It's fixed. For each step, the simulation now only looks at columns within the tool's width at the stock's top, not its full radius. All tests pass in Debug and Release. It isn't installed yet, because the administrator prompt was cancelled.
+>
+> - **Speed:** a test engraving 20 rows of 125 mm with a 6 mm, 90° V-bit, 0.1 mm deep on a 136 × 150 mm stock at 0.05 mm cells took 1.66 s before and takes 0.03 s now, about 53 times faster. Chamfering with shallow contact gains the same way.
+> - **Same result:** a new test compares the V-bit's cut with a brute-force check of every cell in the stock, and they match exactly.
+> - **Deep cuts:** a flat or ball mill cutting deep still sweeps its full width, so it's no faster or slower than before.
+> - **Help:** unchanged, since the behaviour is the same. `CLAUDE.md` notes the change.
+>
+> Builds now use `CAMForAlibre.sln`, and the add-on installs to `C:\ProgramData\Alibre AddOns\CAMForAlibre\`.
+>
+> To test, after installing:
+> 1. Simulate "Profile Ass" and play through Engrave 1 and the Chamfer. They should run about as fast as the flat-mill operations.
+> 2. Check the engraved and chamfered grooves look the same as before.
+
+### 🧑 Frank · 16:43
+
+> Install it
+
+### 🤖 Claude
+
+> It's installed. The installed `CAMForAlibre.dll` matches the new build, so start Alibre and it will load this version.
+>
+> To test:
+> 1. Simulate "Profile Ass" and play through Engrave 1 and the Chamfer. They should run about as fast as the flat-mill operations.
+> 2. Check the engraved and chamfered grooves look the same as before.
+
+### 🧑 Frank · 16:45
+
+> Tests passed
