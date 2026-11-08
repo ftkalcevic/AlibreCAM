@@ -9217,6 +9217,27 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 >
 > Once you pick one, the rename touches the DLL and project names, the tab and dialog captions, the help page, `%APPDATA%`/`%LOCALAPPDATA%` folder names (existing machine files and logs would need moving), the installed add-on folder and the spec. I can plan that when you're ready.
 
+### 🧑 Frank · 15:54
+
+> Rename the project to CAMForAlibre (CAM for Alibre Design)
+
+### 🤖 Claude
+
+> Renaming touches most of the project, and another session is editing these files right now (the real-time simulation work). A few decisions first:
+
+> Questions:
+> - How far should the rename go?
+>   - Everything user-visible + build (Recommended): DLL CAMForAlibre.dll, .sln/.vcxproj names, add-on registration and installed folder, tab/dialog captions, help, posts, docs, log/settings folders. Code namespaces (camcore) and the repo folder D:\Projects\alibre\AlibreCAM stay.
+>   - User-visible only: Captions, help, docs and installed folder; keep internal file/project names AlibreCAM.*
+>   - Everything incl. repo folder: Also rename the repository folder (breaks open sessions and paths in CLAUDE.md).
+> - Existing data in %APPDATA%\AlibreCAM (machines, materials, posts, settings) and %LOCALAPPDATA%\AlibreCAM (log): what happens?
+>   - Move it on first run (Recommended): If the new CAMForAlibre folder doesn't exist but the old one does, copy it across once and log it.
+>   - Keep using old folders: Only the product name changes; data stays under AlibreCAM.
+>   - Start fresh: New folders; you copy anything you want by hand.
+> - Another session is mid-way through the real-time simulation change, editing the same files. When should the rename run?
+>   - After it finishes (Recommended): Plan now, run the rename once that session's work is done (and ideally committed), to avoid clashing edits.
+>   - Now: Start the rename now in this session.
+
 ---
 
 # Side conversation
@@ -9387,3 +9408,17 @@ A forked copy of the session, kept apart from the main one.
 ### 🧑 Frank · 15:50
 
 > The realtime slider should be disabled if the realtime checkbox is not checked
+
+### 🤖 Claude
+
+> The real-time speed slider and its text beside it are now greyed unless Real time is ticked. The moves-a-step Speed slider still works the other way round: greyed while Real time is ticked. It's built and installed, but I haven't seen it in Alibre.
+>
+> The help's entry for the slider now says it's greyed unless Real time is ticked.
+>
+> To test:
+> 1. Open the Simulation dialog with Real time unticked. Its slider and the "× real time" text should be grey, and Speed active.
+> 2. Tick Real time. They should swap.
+
+### 🧑 Frank · 15:56
+
+> Changes tested successfully
