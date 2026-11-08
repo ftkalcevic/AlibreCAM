@@ -258,6 +258,75 @@ TEST_CASE("a rapid through stock stops with a warning")
     CHECK(simulation.WarningMove() == 1);
 }
 
+TEST_CASE("the shank and holder touching stock stop with a warning")
+{
+    // Feeding 12 deep into stock 10 tall: the 4 mm flutes are under the top, the
+    // shank above them is in the stock.
+    const std::vector<ToolpathMove> moves = {
+        Move(MoveKind::Rapid, { 5, 10, 15 }), Move(MoveKind::Feed, { 5, 10, -2 }),
+        Move(MoveKind::Feed, { 15, 10, -2 }),
+    };
+    Tool tool;
+    tool.diameter = 4.0;
+    tool.fluteLength = 4.0;
+    tool.overallLength = 30.0;
+    SimOperation operation = Operation(Flat(4), moves);
+    operation.profile = ProfileOf(tool);
+    operation.shank = ShankOf(tool);
+    operation.holder = HolderOf(tool, 20.0, 30.0);
+    CHECK(operation.shank.start == 4.0);
+    CHECK(operation.shank.length == 26.0);
+    CHECK(operation.holder.start == 30.0);
+    CHECK(operation.holder.radius == 10.0);
+
+    Simulation simulation;
+    simulation.Start({ { 0, 0, 0 }, { 20, 20, 10 } }, {}, { operation }, SimResolution{ true, 0.5 });
+    CHECK(simulation.RunToEnd() == 2);
+    CHECK(simulation.Warning() == SimWarning::ShankHitsStock);
+    CHECK(simulation.WarningMove() == 1);
+    // It carries on from there when asked.
+    simulation.ClearWarning();
+    CHECK(simulation.RunToEnd() == 1);
+    CHECK(simulation.Finished());
+
+    // A short tool: the holder reaches the stock first.
+    tool.overallLength = 8.0;
+    operation.profile = ProfileOf(tool);
+    operation.shank = ShankOf(tool);
+    operation.holder = HolderOf(tool, 20.0, 30.0);
+    simulation.Start({ { 0, 0, 0 }, { 20, 20, 10 } }, {}, { operation }, SimResolution{ true, 0.5 });
+    simulation.RunToEnd();
+    CHECK(simulation.Warning() == SimWarning::HolderHitsStock);
+
+    // Cutting within the flutes is fine.
+    const std::vector<ToolpathMove> shallow = {
+        Move(MoveKind::Rapid, { 5, 10, 15 }), Move(MoveKind::Feed, { 5, 10, 7 }),
+        Move(MoveKind::Feed, { 15, 10, 7 }), Move(MoveKind::Rapid, { 15, 10, 50 }),
+    };
+    tool.overallLength = 30.0;
+    SimOperation fine = Operation(Flat(4), shallow);
+    fine.profile = ProfileOf(tool);
+    fine.shank = ShankOf(tool);
+    fine.holder = HolderOf(tool, 20.0, 30.0);
+    simulation.Start({ { 0, 0, 0 }, { 20, 20, 10 } }, {}, { fine }, SimResolution{ true, 0.5 });
+    simulation.RunToEnd();
+    CHECK(simulation.Finished());
+    CHECK_FALSE(simulation.HasWarning());
+}
+
+TEST_CASE("counting a move leaves the stock as it was")
+{
+    Simulation simulation;
+    simulation.Start({ { 0, 0, 0 }, { 20, 20, 10 } }, {}, {}, SimResolution{ true, 0.5 });
+    const long long whole = simulation.Stock().Count();
+    ToolProfile profile = Flat(4);
+    CHECK(CountMove(simulation.Stock(), profile, { 5, 10, 5 }, { 15, 10, 5 }, { 0, 0, 1 }) == 1);
+    const long long all = CountMove(simulation.Stock(), profile, { 5, 10, 5 }, { 15, 10, 5 }, { 0, 0, 1 }, false);
+    CHECK(simulation.Stock().Count() == whole);
+    CHECK(CutMove(simulation.Stock(), profile, { 5, 10, 5 }, { 15, 10, 5 }, { 0, 0, 1 }) == all);
+    CHECK(CountMove(simulation.Stock(), profile, { 5, 10, 20 }, { 15, 10, 20 }, { 0, 0, 1 }) == 0);
+}
+
 TEST_CASE("arcs become chords, and operations run in their own frames")
 {
     ToolpathMove arc = Move(MoveKind::Feed, { 15, 10, 8 });

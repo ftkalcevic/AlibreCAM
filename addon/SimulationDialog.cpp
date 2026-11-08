@@ -15,6 +15,9 @@ namespace
 {
     const UINT_PTR kPlayTimer = 1;
     const UINT kPlayMilliseconds = 50;
+    const UINT_PTR kRunTimer = 2;           // To Op End and To End, a tenth of a second of moves a tick
+    const UINT kRunMilliseconds = 1;
+    const ULONGLONG kRunSliceMilliseconds = 100;
     const int kSpeedSteps = 100;            // the speed slider's range, 0 to this
     const double kMostMovesPerTick = 500.0;
 
@@ -145,6 +148,14 @@ void CSimulationDlg::Stop()
     if (m_playing)
         KillTimer(kPlayTimer);
     m_playing = false;
+    if (m_running)
+    {
+        // Stopped part way: the view catches up with where it got to.
+        KillTimer(kRunTimer);
+        m_running = false;
+        if (m_pTab != nullptr)
+            m_pTab->OnSimulationChanged();
+    }
     SetDlgItemText(IDC_SIM_PLAY, L"Play");
 }
 
@@ -182,7 +193,12 @@ void CSimulationDlg::ShowState()
     if (simulation.HasWarning())
     {
         const camcore::SimMove& move = simulation.Moves()[simulation.WarningMove()];
-        warning = L"Rapid into stock in " + FromUtf8(simulation.Operations()[move.operation].name) +
+        const wchar_t* what = L"Rapid into stock";
+        if (simulation.Warning() == camcore::SimWarning::HolderHitsStock)
+            what = L"The tool holder hits the stock";
+        else if (simulation.Warning() == camcore::SimWarning::ShankHitsStock)
+            what = L"The tool's shank hits the stock";
+        warning = std::wstring(what) + L" in " + FromUtf8(simulation.Operations()[move.operation].name) +
                   L", toolpath move " + std::to_wstring(move.toolpathMove + 1) + L".";
     }
     SetDlgItemText(IDC_SIM_WARNING, warning.c_str());
@@ -191,7 +207,7 @@ void CSimulationDlg::ShowState()
     GetDlgItem(IDC_SIM_STEP)->EnableWindow(more);
     GetDlgItem(IDC_SIM_OPERATION_END)->EnableWindow(more);
     GetDlgItem(IDC_SIM_END)->EnableWindow(more);
-    GetDlgItem(IDC_SIM_PLAY)->EnableWindow(more || m_playing);
+    GetDlgItem(IDC_SIM_PLAY)->EnableWindow(more || m_playing || m_running);
 }
 
 void CSimulationDlg::OnShowChanged()
@@ -279,10 +295,8 @@ void CSimulationDlg::OnOperationEnd()
     Stop();
     if (m_pTab == nullptr)
         return;
-    CWaitCursor wait;
     m_pTab->GetSimulation().ClearWarning();
-    m_pTab->GetSimulation().RunToOperationEnd();
-    Changed();
+    RunTo(m_pTab->GetSimulation().OperationEnd());
 }
 
 void CSimulationDlg::OnEnd()
@@ -290,15 +304,50 @@ void CSimulationDlg::OnEnd()
     Stop();
     if (m_pTab == nullptr)
         return;
-    CWaitCursor wait;
     m_pTab->GetSimulation().ClearWarning();
-    m_pTab->GetSimulation().RunToEnd();
-    Changed();
+    RunTo(m_pTab->GetSimulation().Moves().size());
+}
+
+void CSimulationDlg::RunTo(size_t end)
+{
+    // On a timer, so the dialog's buttons still work: Play becomes Pause. The view
+    // is redrawn when it gets there or is stopped; the slider shows where it is.
+    if (m_pTab == nullptr || m_pTab->GetSimulation().Position() >= end)
+        return;
+    m_runEnd = end;
+    m_running = true;
+    SetDlgItemText(IDC_SIM_PLAY, L"Pause");
+    ShowState();
+    SetTimer(kRunTimer, kRunMilliseconds, nullptr);
+}
+
+void CSimulationDlg::RunTick()
+{
+    if (m_pTab == nullptr)
+    {
+        Stop();
+        return;
+    }
+    camcore::Simulation& simulation = m_pTab->GetSimulation();
+    const ULONGLONG start = GetTickCount64();
+    while (simulation.Position() < m_runEnd && !simulation.HasWarning() &&
+           GetTickCount64() - start < kRunSliceMilliseconds)
+    {
+        if (simulation.Step(1) == 0)
+            break;
+    }
+    if (simulation.Position() >= m_runEnd || simulation.HasWarning() || simulation.Finished())
+    {
+        Stop();             // redraws the view
+        ShowState();
+        return;
+    }
+    ShowState();
 }
 
 void CSimulationDlg::OnPlay()
 {
-    if (m_playing)
+    if (m_playing || m_running)
     {
         Stop();
         ShowState();
@@ -314,6 +363,11 @@ void CSimulationDlg::OnPlay()
 
 void CSimulationDlg::OnTimer(UINT_PTR id)
 {
+    if (id == kRunTimer)
+    {
+        RunTick();
+        return;
+    }
     if (id != kPlayTimer)
     {
         CDialog::OnTimer(id);

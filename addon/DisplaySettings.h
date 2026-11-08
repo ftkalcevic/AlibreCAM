@@ -52,6 +52,7 @@ const float kFeatureHighlightLineWeight = 3.0f;
 const DisplayColour kSimStockColour = { 120, 160, 200, 255 };
 const DisplayColour kSimToolColour = { 230, 190, 0, 255 };
 const float kSimToolLineWeight = 1.5f;
+const DisplayColour kSimHolderColour = { 150, 150, 160, 255 };     // the tool holder, grey
 const DisplayColour kSimWarningColour = { 230, 0, 0, 255 };
 
 // Comparing with the parts: the parts' cells, stock left that should have been cut,

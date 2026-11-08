@@ -617,8 +617,13 @@ namespace camcore
         return profile;
     }
 
-    long long CutMove(VoxelStock& stock, const ToolProfile& profile, const Vec3& from, const Vec3& to,
-                      const Vec3& axis, bool generalOnly)
+    namespace
+    {
+        // CutMove's sweep. Cutting, it clears the cells; counting, it only counts
+        // them, stopping at the first if asked.
+        template <bool kCut>
+        long long SweepTool(VoxelStock& stock, const ToolProfile& profile, const Vec3& from, const Vec3& to,
+                            const Vec3& axis, bool generalOnly, bool stopAtFirst)
     {
         Vec3 w;
         if (!Normalise(axis, w) || stock.SizeX() == 0)
@@ -749,7 +754,14 @@ namespace camcore
                                 continue;
                         }
                         for (int q = kA / VoxelStock::kWord; q <= kB / VoxelStock::kWord; ++q)
-                            stepRemoved += stock.ClearMask(i, j, q, VoxelStock::SpanMask(q, kA, kB));
+                        {
+                            if (kCut)
+                                stepRemoved += stock.ClearMask(i, j, q, VoxelStock::SpanMask(q, kA, kB));
+                            else
+                                stepRemoved += CountBits(stock.Word(i, j, q) & VoxelStock::SpanMask(q, kA, kB));
+                        }
+                        if (!kCut && stopAtFirst && stepRemoved > 0)
+                            return 1;
                         continue;
                     }
 
@@ -768,18 +780,69 @@ namespace camcore
                                 clear |= std::uint64_t(1) << bit;
                         }
                         if (clear != 0)
-                            stepRemoved += stock.ClearMask(i, j, q, clear);
+                        {
+                            if (!kCut)
+                            {
+                                if (stopAtFirst)
+                                    return 1;
+                                stepRemoved += CountBits(clear);
+                            }
+                            else
+                            {
+                                stepRemoved += stock.ClearMask(i, j, q, clear);
+                            }
+                        }
                     }
                 }
             }
             if (stepRemoved > 0)
             {
-                stock.MarkDirtyBox(i0, j0, k0, i1, j1, k1);
+                if (kCut)
+                    stock.MarkDirtyBox(i0, j0, k0, i1, j1, k1);
                 removed += stepRemoved;
             }
         }
-        stock.Settle();
+        if (kCut)
+            stock.Settle();
         return removed;
+    }
+    }
+
+    long long CutMove(VoxelStock& stock, const ToolProfile& profile, const Vec3& from, const Vec3& to,
+                      const Vec3& axis, bool generalOnly)
+    {
+        return SweepTool<true>(stock, profile, from, to, axis, generalOnly, false);
+    }
+
+    long long CountMove(const VoxelStock& stock, const ToolProfile& profile, const Vec3& from, const Vec3& to,
+                        const Vec3& axis, bool stopAtFirst)
+    {
+        // Counting only reads the stock.
+        return SweepTool<false>(const_cast<VoxelStock&>(stock), profile, from, to, axis, false, stopAtFirst);
+    }
+
+    SimCylinder ShankOf(const Tool& tool)
+    {
+        SimCylinder shank;
+        if (tool.fluteLength > 0.0 && tool.overallLength > tool.fluteLength && tool.diameter > 0.0)
+        {
+            shank.start = tool.fluteLength;
+            shank.radius = tool.diameter / 2.0;
+            shank.length = tool.overallLength - tool.fluteLength;
+        }
+        return shank;
+    }
+
+    SimCylinder HolderOf(const Tool& tool, double holderDiameter, double holderDepth)
+    {
+        SimCylinder holder;
+        if (tool.overallLength > 0.0 && holderDiameter > 0.0 && holderDepth > 0.0)
+        {
+            holder.start = tool.overallLength;
+            holder.radius = holderDiameter / 2.0;
+            holder.length = holderDepth;
+        }
+        return holder;
     }
 
     /////////////////////////////////////////////////////////////////////////
@@ -1187,7 +1250,7 @@ namespace camcore
         m_operations = operations;
         m_moves.clear();
         m_position = 0;
-        m_warning = false;
+        m_warning = SimWarning::None;
         // Each operation's moves in assembly mm. Arcs become chords within half a
         // cell, and dwells go nowhere.
         const double tolerance = m_stock.Cell() / 2.0;
@@ -1272,12 +1335,35 @@ namespace camcore
         {
             const SimMove& move = m_moves[m_position];
             const SimOperation& operation = m_operations[move.operation];
+
+            // The holder and the shank above the flutes mustn't touch the stock as
+            // it is before the move (the flutes cut below them).
+            SimWarning warning = SimWarning::None;
+            const auto touches = [&](const SimCylinder& cylinder) {
+                if (!cylinder.Present())
+                    return false;
+                Vec3 w;
+                if (!Normalise(operation.frame.zAxis, w))
+                    return false;
+                ToolProfile plain;
+                plain.type = ToolType::FlatEndMill;
+                plain.radius = cylinder.radius;
+                plain.length = cylinder.length;
+                return CountMove(m_stock, plain, move.from + w * cylinder.start, move.to + w * cylinder.start, w) > 0;
+            };
+            if (touches(operation.holder))
+                warning = SimWarning::HolderHitsStock;
+            else if (touches(operation.shank))
+                warning = SimWarning::ShankHitsStock;
+
             const long long removed = CutMove(m_stock, operation.profile, move.from, move.to, operation.frame.zAxis);
+            if (warning == SimWarning::None && move.rapid && removed > 0)
+                warning = SimWarning::RapidIntoStock;
             ++m_position;
             ++done;
-            if (move.rapid && removed > 0)
+            if (warning != SimWarning::None)
             {
-                m_warning = true;
+                m_warning = warning;
                 m_warningMove = m_position - 1;
                 break;
             }
@@ -1285,15 +1371,20 @@ namespace camcore
         return done;
     }
 
-    size_t Simulation::RunToOperationEnd()
+    size_t Simulation::OperationEnd() const
     {
         if (Finished())
-            return 0;
+            return m_moves.size();
         const size_t operation = m_moves[m_position].operation;
         size_t end = m_position;
         while (end < m_moves.size() && m_moves[end].operation == operation)
             ++end;
-        return Step(end - m_position);
+        return end;
+    }
+
+    size_t Simulation::RunToOperationEnd()
+    {
+        return Finished() ? 0 : Step(OperationEnd() - m_position);
     }
 
     void Simulation::Rewind()
@@ -1301,7 +1392,7 @@ namespace camcore
         m_stock = m_start;
         m_stock.MarkAllDirty();
         m_position = 0;
-        m_warning = false;
+        m_warning = SimWarning::None;
     }
 
     void Simulation::SeekTo(size_t position)

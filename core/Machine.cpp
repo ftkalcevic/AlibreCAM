@@ -72,6 +72,8 @@ namespace camcore
             problems.push_back("Each axis's travel must be more than 0.");
         if (!(machine.maxSpindleRpm > 0.0))
             problems.push_back("The spindle's maximum speed must be more than 0.");
+        if (!(machine.holderDiameter > 0.0) || !(machine.holderDepth > 0.0))
+            problems.push_back("The tool holder's diameter and depth must be more than 0.");
         for (const std::string& problem : ValidateLibrary(machine.tools))
             problems.push_back(problem);
         return problems;
@@ -128,6 +130,12 @@ namespace camcore
             const auto spindle = root.find("maxSpindleRpm");
             if (spindle != root.end())
                 result.machine.maxSpindleRpm = spindle->get<double>();
+            const auto holder = root.find("toolHolder");
+            if (holder != root.end())
+            {
+                result.machine.holderDiameter = holder->at("diameter").get<double>();
+                result.machine.holderDepth = holder->at("depth").get<double>();
+            }
 
             for (const json& item : root.at("tools"))
                 result.machine.tools.tools.push_back(ToolFromJson(item));
@@ -171,6 +179,7 @@ namespace camcore
                 { "rotaryAxis", RotaryAxisName(machine.rotary) },
                 { "travel", json::array({ machine.travelX, machine.travelY, machine.travelZ }) },
                 { "maxSpindleRpm", machine.maxSpindleRpm },
+                { "toolHolder", { { "diameter", machine.holderDiameter }, { "depth", machine.holderDepth } } },
                 { "tools", tools }
             };
             text = root.dump(2) + "\n";

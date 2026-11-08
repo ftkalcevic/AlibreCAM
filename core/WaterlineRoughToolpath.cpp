@@ -1086,7 +1086,9 @@ namespace camcore
             const double z = levels[region.level];
             const double above = (region.parent >= 0) ? levels[regions[static_cast<size_t>(region.parent)].level]
                                                       : (region.level > 0 ? levels[region.level - 1] : w.top);
-            const double enter = (std::min)(above + 1.0, w.clearance);
+            // At rapid to the approach distance above the level above (the top of the
+            // material still to cut here), then at the plunge feed.
+            const double enter = (std::min)(above + settings.approachDistance, w.clearance);
             const std::vector<float>& field = freeFields[region.level];
 
             // A move stays down if it's short and stays where the tool may be.

@@ -93,7 +93,33 @@ namespace
         }
     }
 
-    // The tool as lines: its outline up four sides, and rings round it.
+    // A plain cylinder round the axis as lines: four sides and a ring at each end.
+    void DrawCylinder(IADAddOnCanvasDisplay* pCanvas, __int64 segment, const Vec3& base, const Vec3& w, const Vec3& u,
+                      const Vec3& v, double radius, double length, double unit)
+    {
+        for (int side = 0; side < 4; ++side)
+        {
+            const double angle = side * 3.14159265358979323846 / 2.0;
+            const Vec3 out = (u * std::cos(angle) + v * std::sin(angle)) * radius;
+            std::vector<float> points;
+            AddPoint(points, base + out, unit);
+            AddPoint(points, base + w * length + out, unit);
+            DrawPolyline(pCanvas, segment, points);
+        }
+        for (double h : { 0.0, length })
+        {
+            std::vector<float> ring;
+            for (int i = 0; i <= 24; ++i)
+            {
+                const double angle = i * 2.0 * 3.14159265358979323846 / 24;
+                AddPoint(ring, base + w * h + (u * std::cos(angle) + v * std::sin(angle)) * radius, unit);
+            }
+            DrawPolyline(pCanvas, segment, ring);
+        }
+    }
+
+    // The tool as lines: its outline up four sides, and rings round it, then the
+    // holder above it.
     void DrawTool(IADAddOnCanvasDisplay* pCanvas, const CamScene& scene, double unit)
     {
         Vec3 w;
@@ -105,8 +131,8 @@ namespace
         const Vec3 v = camcore::Cross(w, u);
 
         const camcore::ToolProfile& profile = scene.simProfile;
-        const double top = (std::min)(profile.length, 4.0 * profile.radius + 10.0);
-        const int samples = 12;
+        const double top = profile.length;      // the whole tool, up to the holder
+        const int samples = 24;
         const __int64 segment = AddSegment(pCanvas, L"Simulated tool", kSimToolColour, kSimToolLineWeight, true);
         for (int side = 0; side < 4; ++side)
         {
@@ -133,6 +159,14 @@ namespace
                 AddPoint(ring, scene.simTip + w * h + (u * std::cos(angle) + v * std::sin(angle)) * r, unit);
             }
             DrawPolyline(pCanvas, segment, ring);
+        }
+
+        if (scene.simHolder.Present())
+        {
+            const __int64 holder = AddSegment(pCanvas, L"Simulated tool holder", kSimHolderColour, kSimToolLineWeight,
+                                              true);
+            DrawCylinder(pCanvas, holder, scene.simTip + w * scene.simHolder.start, w, u, v, scene.simHolder.radius,
+                         scene.simHolder.length, unit);
         }
     }
 

@@ -78,8 +78,10 @@ namespace camcore
         // Waterline Finishing only: more levels where the laps would be further
         // apart across than the stepover (the slope shallow); off, the stepdown only.
         bool optimiseStepover = false;
-        // Waterline and Parallel Finishing: entering a cut, the tool comes down at
-        // rapid to this far above where the cut starts, then at the plunge feed.
+        // Entering a cut, the tool comes down at rapid to this far above where the
+        // cut starts (Waterline and Parallel Finishing) or above the level above
+        // (Waterline Roughing, as the material between is still to cut), then at
+        // the plunge feed.
         double approachDistance = 2.0;
     };
 

@@ -56,7 +56,10 @@ namespace
                                         IDC_MACHINE_TRAVEL_LABEL, IDC_MACHINE_TRAVEL_X_LABEL, IDC_MACHINE_TRAVEL_X,
                                         IDC_MACHINE_TRAVEL_Y_LABEL, IDC_MACHINE_TRAVEL_Y, IDC_MACHINE_TRAVEL_Z_LABEL,
                                         IDC_MACHINE_TRAVEL_Z, IDC_MACHINE_SPINDLE_LABEL, IDC_MACHINE_SPINDLE,
-                                        IDC_MACHINE_SPINDLE_UNIT };
+                                        IDC_MACHINE_SPINDLE_UNIT, IDC_MACHINE_HOLDER_LABEL,
+                                        IDC_MACHINE_HOLDER_DIA_LABEL, IDC_MACHINE_HOLDER_DIA,
+                                        IDC_MACHINE_HOLDER_DEPTH_LABEL, IDC_MACHINE_HOLDER_DEPTH,
+                                        IDC_MACHINE_HOLDER_UNIT };
 
     // The machine tab's number boxes, and what each is called in a message.
     struct NumberBox
@@ -70,6 +73,8 @@ namespace
         { IDC_MACHINE_TRAVEL_Y, L"The Y travel", &Machine::travelY },
         { IDC_MACHINE_TRAVEL_Z, L"The Z travel", &Machine::travelZ },
         { IDC_MACHINE_SPINDLE, L"The maximum spindle speed", &Machine::maxSpindleRpm },
+        { IDC_MACHINE_HOLDER_DIA, L"The tool holder diameter", &Machine::holderDiameter },
+        { IDC_MACHINE_HOLDER_DEPTH, L"The tool holder depth", &Machine::holderDepth },
     };
     const int kToolsTabControls[] = { IDC_LIB_LIST, IDC_LIB_ADD, IDC_LIB_EDIT, IDC_LIB_COPY, IDC_LIB_DELETE,
                                       IDC_LIB_IMPORT, IDC_LIB_EXPORT };
@@ -151,6 +156,8 @@ BEGIN_MESSAGE_MAP(CMachineDlg, CDialog)
     ON_EN_KILLFOCUS(IDC_MACHINE_TRAVEL_Y, &CMachineDlg::OnMachineFieldChanged)
     ON_EN_KILLFOCUS(IDC_MACHINE_TRAVEL_Z, &CMachineDlg::OnMachineFieldChanged)
     ON_EN_KILLFOCUS(IDC_MACHINE_SPINDLE, &CMachineDlg::OnMachineFieldChanged)
+    ON_EN_KILLFOCUS(IDC_MACHINE_HOLDER_DIA, &CMachineDlg::OnMachineFieldChanged)
+    ON_EN_KILLFOCUS(IDC_MACHINE_HOLDER_DEPTH, &CMachineDlg::OnMachineFieldChanged)
     ON_CBN_SELCHANGE(IDC_MACHINE_AXES, &CMachineDlg::OnMachineFieldChanged)
     ON_CBN_SELCHANGE(IDC_MACHINE_ROTARY, &CMachineDlg::OnMachineFieldChanged)
     ON_BN_CLICKED(IDC_LIB_ADD, &CMachineDlg::OnAddTool)
@@ -353,7 +360,7 @@ bool CMachineDlg::ApplyMachineFields()
         changed.rotary = kRotaryAxes[rotary];
     UpdateButtons();
 
-    // The travel and spindle speed, each a number more than 0. A bad one goes back to what was saved.
+    // The travel, spindle speed and tool holder, each a number more than 0. A bad one goes back to what was saved.
     for (const NumberBox& box : kNumberBoxes)
     {
         CString text;
@@ -373,7 +380,8 @@ bool CMachineDlg::ApplyMachineFields()
 
     if (changed.name == m_machine.name && changed.axes == m_machine.axes && changed.rotary == m_machine.rotary &&
         changed.travelX == m_machine.travelX && changed.travelY == m_machine.travelY &&
-        changed.travelZ == m_machine.travelZ && changed.maxSpindleRpm == m_machine.maxSpindleRpm)
+        changed.travelZ == m_machine.travelZ && changed.maxSpindleRpm == m_machine.maxSpindleRpm &&
+        changed.holderDiameter == m_machine.holderDiameter && changed.holderDepth == m_machine.holderDepth)
         return true;
     if (changed.name.empty())
     {

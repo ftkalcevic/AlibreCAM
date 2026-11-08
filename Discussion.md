@@ -8058,6 +8058,290 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Install it
 
+### 🤖 Claude
+
+> It's installed, and the add-on and help match the Release build. Start Alibre, then:
+> - **Waterline Finishing:** check that its tab shows Overtravel and Approach Distance under Stock to Leave.
+> - **Parallel Finishing:** generate it, and each row should rapid down to 2 mm above where it starts, rather than plunge from the stock's top.
+
+### 🧑 Frank · 09:19
+
+> Some more tweaks - when simulating, and we click "To End", or "To Op End", update the slider position so we get feedback that the computer is doing something.
+> Add a chuck diameter setting to the machine settings.  Use this, plus the tool stickout to check for collisions.  If a collision is detected, or a rapid into stock, stop simulating, show the error, but allow the user to continue using the buttons.
+> I just had a crash - in rough 3.cam, I reordered the operations - I dragged "Parallel Finishing 1" (suspended), to past "Waterline Finishing 1".  This happens every time if I open the file fresh, and do the drag.
+
+### 🤖 Claude
+
+> Three things here. The crash comes first. I'll start by looking at the log from the crash, and at the drag code in the core.
+
+> The log stops at 09:18:19, straight after opening `Rough 3`, so the crash itself left no trace. I'll read the code that does the move.
+
+> The core move looks right, so the crash is probably in the add-on, in something left holding the old positions after the move. Next, everything the tab window keeps by step position:
+
+> The drop handling looks safe, so the crash must be in what runs after the move. Windows records the module and offset of an application crash, so I'll check the event log.
+
+> Exception code `0xe0434352` is an unhandled **.NET** exception, so it was thrown in Alibre's own managed code, not in AlibreCAM's C++. The .NET Runtime log usually records its message and stack:
+
+> .NET kept the fault address: `_ip = 0x7ffc55d85cf7`. I'll look up which module and function that is, with AlibreCAM's symbols loaded.
+
+> Questions:
+> - Tools don't have a stickout yet (only flute length and overall length). Where should the stickout come from?
+>   - New tool field (Recommended): A Stickout field on each tool (in the Tool dialog): the length from the tip to the chuck's face. Tools without one use their overall length.
+>   - Use overall length: No new field: the chuck's face is at the tool's overall length above its tip.
+> - What should count as a collision in the simulation?
+>   - Chuck and shank (Recommended): The chuck (a cylinder of the chuck diameter from the stickout upwards) touching stock, and also the tool's shank above its flutes touching stock, as only the flutes cut.
+>   - Chuck only: Only the chuck touching stock counts. The whole tool below the chuck may cut.
+> - How tall is the chuck for the check?
+>   - All the way up (Recommended): The chuck is treated as going up from the stickout without limit, so anything above the chuck's face within its diameter is a collision.
+>   - A chuck length setting: Add a Chuck Length to the machine too; only that height above the stickout counts.
+
+### 🧑 Frank · 09:28
+
+> Answers:
+> - Tools don't have a stickout yet (only flute length and overall length). Where should the stickout come from?
+>   **User overall length.  Change the name of**
+> - What should count as a collision in the simulation?
+>   **Chuck and shank (Recommended)**
+> - How tall is the chuck for the check?
+>   **All the way up (Recommended)**
+
+### 🤖 Claude
+
+> One of those answers conflicts with another. You chose "all the way up" for the chuck's height, but also asked for a Tool Holder Depth (30 mm) that makes a cylinder.
+
+> Questions:
+> - With the holder a cylinder (Tool Holder Diameter 20 by Tool Holder Depth 30, from the tool's overall length up), what should the collision check use?
+>   - The holder's cylinder (Recommended): Only the 20 x 30 cylinder (and the shank above the flutes) is checked against the stock, the same shape that's drawn. Nothing above the holder is checked.
+>   - Holder, then all the way up: The holder's diameter is checked from the overall length up without limit; the 30 deep cylinder is only what's drawn.
+
+### 🧑 Frank · 09:28
+
+> Answers:
+> - With the holder a cylinder (Tool Holder Diameter 20 by Tool Holder Depth 30, from the tool's overall length up), what should the collision check use?
+>   **The holder's cylinder (Recommended)**
+
+### 🤖 Claude
+
+> It builds cleanly. Before asking you to reproduce the crash, one more place to read: the selection-changing handler, which runs when a drag starts.
+
+> Nothing there either. Rather than guess further, I'll install the build with the crash catcher, so you can reproduce the crash. Meanwhile I'll carry on with the simulation changes.
+
+> It's installed. Later builds will overwrite the symbols, so I'll keep a copy of this exact DLL and PDB to decode the crash stack against:
+
+> Now the simulation work. First, how the Simulation dialog runs To End and To Op End, its slider, and how it handles the existing rapid warning:
+
+> Next, the machine file reading and writing, and the Machine dialog's machine tab:
+
+> Only one call to `FindStep` survives before `FromUtf8`; the compiler inlined the others. I'll read the instructions between `EndDrag` and `FromUtf8` to see which step it actually looks up.
+
+> Object files are all newer than the header, so it isn't a stale build. Next I'll check whether some core header compiles differently in the add-on (a `#if` that depends on defines).
+
+> Rebuilding Release from clean in the background while I start the simulation work.
+
+> Drag-crash fix is in and Release is rebuilding. Now adding the holder and shank collision sweep to the simulator core.
+
+> The clean rebuild fixed it: `FindStep` now uses the right step size (0x938) and reads `children` at +0x920. Next, the holder settings on the machine.
+
+> Now wiring the shank and holder into the simulation's operations, plus the dialog's slider and messages.
+
+> Collision core and holder drawing are done. Now the dialog: To End and To Op End run in chunks and update the slider, and each kind of warning gets its own message.
+
+> You've hit your 5-hour limit · resets 10:30am (Australia/Sydney)
+
+### 🧑 Frank · 10:31
+
+> I hit my usage limit while you were working, but it has reset now. Please continue from where you left off.
+
+### 🤖 Claude
+
+> Picking up where I stopped: next are the collision tests, then the builds.
+
+> Line endings are clean. Building Debug and running the tests:
+
+> All 298 test cases pass in Debug. Next, a save and load test for the holder fields:
+
+> Now Release, from clean (with full LTCG), then the tests:
+
+> Release passes too, including the 4 new machine checks. Next, updating the help page:
+
+> Next, the spec, both the Claude doc and `docs\SPEC.md`:
+
+> The Claude doc is now at rev 206. Applying the same edits to `docs\SPEC.md`, and updating `CLAUDE.md`:
+
+> The text came out right despite the warning. Installing now:
+
+> The install's administrator prompt was cancelled, so nothing was installed. Last step this turn: rebuilding `Discussion.md`.
+
+> The drag crash is fixed, and the holder settings, collision stops and moving slider are built. None of it is installed yet: the install script's administrator prompt was cancelled. All 298 test cases pass in Debug and Release, but none of the Alibre side has been run.
+>
+> **The drag crash**
+> - **Cause:** the Release build was stale, not a bug in the drag code.
+>   - Adding `approachDistance` made each operation's stored data 24 bytes bigger.
+>   - The Release link was incremental (`/LTCG:incremental`), and it kept old code for the mouse-up handler.
+>   - That code still used the old size, so it read the second step 24 bytes off and found an empty operation list.
+>   - The same incremental state is very likely behind the linker's internal errors we kept hitting.
+> - **Fix:**
+>   - Release now does a full link (add-on and tests), rebuilt from clean. I checked the new code in the debugger and it now uses the right size.
+>   - `MoveStep` also refuses and logs a drag from a step it can't find.
+> - **Side effect:** the build you had installed may have misbehaved in other places for the same reason. Anything odd you've seen since the Approach Distance change is worth checking again.
+>
+> **Simulation**
+> - **Slider:** To Op End and To End now update the slider and the move count every tenth of a second while they run.
+> - **Tool holder:** the Machine tab has a "Tool holder: Diameter / Depth (mm)" row, 20 and 30 by default. It's saved in the machine file, and older files read as the defaults.
+> - **Drawing:** the simulated tool is drawn at its whole overall length, with the holder above it as a grey cylinder.
+> - **Collision checks:** before each move, the simulator checks these against the stock:
+>   - the holder cylinder (from the overall length up);
+>   - the shank (the tool's diameter, from the flute length up to the overall length);
+>   - a rapid that cuts stock.
+> - **On a hit:** it stops after that move and shows one of:
+>   - "Rapid into stock";
+>   - "The tool's shank hits the stock";
+>   - "The tool holder hits the stock".
+>
+>   Play, Step and the other buttons carry on from there.
+> - **Skipped tools:** a tool with no flute length, or flutes as long as the tool, gets no shank check.
+>
+> The help page, the spec (the Claude doc is now at rev 206, and `docs\SPEC.md` matches) and `CLAUDE.md` are updated.
+>
+> **To test, after installing (close Alibre first):**
+> 1. Open `Rough 3.cam` fresh and drag Parallel Finishing 1 past Waterline Finishing 1. It should move without crashing.
+> 2. Machine dialog: the Tool holder row shows 20 and 30. Change them, close and reopen the dialog, and check they were kept.
+> 3. Simulate and click To End. The slider and move count should advance while it works.
+> 4. Check the grey holder is drawn above the full-length yellow tool.
+> 5. Use a toolpath that cuts deeper than the flute length, or set a short overall length. It should stop with the shank or holder warning, and the buttons should carry on.
+> 6. The help changed: check the Simulation and Machine sections.
+
+### 🧑 Frank · 10:45
+
+> Install it
+
+### 🤖 Claude
+
+> It's installed. The installed DLL and help page match the new build, so start Alibre and it will load this version.
+>
+> To test:
+> 1. Open `Rough 3.cam` fresh and drag Parallel Finishing 1 past Waterline Finishing 1. It should move without crashing.
+> 2. Machine dialog: the Tool holder row shows 20 and 30. Change them, close and reopen the dialog, and check they were kept.
+> 3. Simulate and click To End. The slider and move count should move along while it works.
+> 4. Check the grey holder is drawn above the full-length yellow tool.
+> 5. Use a toolpath that cuts deeper than the flute length, or set a short overall length. It should stop with the shank or holder warning, and the buttons should carry on.
+> 6. The help changed: check the Simulation and Machine sections.
+>
+> If it crashes again, the crash catcher writes `[crash]` lines to the log and saves `crash.dmp` beside it, so I can find where.
+
+### 🧑 Frank · 10:53
+
+> It didn't crash!  Next, when simulating, and we click "To End", or "To Op End", allow the simulation to stop.  Use the play button - change that from play to stop when running.
+
+### 🤖 Claude
+
+> Now updating the help for the new behaviour, then building:
+
+> Both configurations build cleanly. Next, the spec and `CLAUDE.md`:
+
+> Installing:
+
+> To End and To Op End can now be stopped. It's built in Debug and Release, but not installed: the install's administrator prompt was cancelled.
+>
+> **What changed:**
+> - **The cause:** before, these two buttons ran in one blocking loop, so the dialog couldn't take a click until they finished.
+> - **Runs on a timer now:** they work in slices of about a tenth of a second, the same way Play does. Between slices the slider and move count update and the dialog handles clicks.
+> - **Play becomes Stop:** while a run is going, the Play button reads **Stop**. Clicking it stops where it's got to and redraws the view there.
+> - **Other buttons stop it too:** Step, Rewind, the scrub bar and the rest stop the run first, then do their own thing.
+> - **When the view updates:** the 3D view is redrawn when the run reaches its end, hits a warning or is stopped, not during the run. That keeps the run fast.
+>
+> The help page, the spec (both copies now at rev 207) and `CLAUDE.md` are updated.
+>
+> **To test, after installing:**
+> 1. Simulate, then click To End. The button should change to Stop and the slider should move.
+> 2. Click Stop part way through. It should stop there, the view should show the stock at that point, and the button should go back to Play.
+> 3. Click To Op End and let it finish. It should end at the end of the operation, with the view redrawn and the button back to Play.
+> 4. During a run, click Step or Rewind. The run should stop and that button should still work.
+> 5. A run that hits a rapid or a collision should stop with the warning.
+> 6. The help changed: check Play, To Op End and To End in the Simulation section.
+
+### 🧑 Frank · 11:09
+
+> Install it
+
+### 🤖 Claude
+
+> It's installed. The installed DLL and help page match the new build, so start Alibre and it will load this version.
+>
+> To test:
+> 1. Simulate, then click To End. The button should change to Stop and the slider should move.
+> 2. Click Stop part way through. It should stop there, the view should show the stock at that point, and the button should go back to Play.
+> 3. Click To Op End and let it finish. It should end at the end of the operation, with the view redrawn and the button back to Play.
+> 4. During a run, click Step or Rewind. The run should stop and that button should still work.
+> 5. A run that hits a rapid or a collision should stop with the warning.
+> 6. The help changed: check Play, To Op End and To End in the Simulation section.
+
+### 🧑 Frank · 11:14
+
+> Add approach distance to waterline roughing.
+
+### 🤖 Claude
+
+> Next, the Claude doc spec, then the builds and tests:
+
+> All 299 test cases pass in Debug and Release, including the new approach test. Installing now:
+
+> Waterline Roughing now has Approach Distance, under Linear Extension on its tab. All 299 tests pass in Debug and Release, and it's installed; it hasn't been tried in Alibre yet.
+>
+> **What it does:** coming down into a cut, the tool rapids to the Approach Distance above the level above, then goes at the plunge feed. For the first level, that's the stock's top. Before, it was always 1 mm at the plunge feed.
+>
+> **One difference from the finishing operations (my choice, so say if you'd rather have another):** in finishing, the distance is measured from where the cut starts. In roughing, the material between the level above and this one hasn't been cut yet. Measured from the cut's start, any stepdown over the approach distance would rapid into stock. So roughing measures from the level above.
+>
+> **Existing jobs:** Waterline Roughing operations without the setting now read as 2 mm instead of the old 1 mm.
+>
+> The help page, the spec (both copies now at rev 208) and `CLAUDE.md` are updated. There's a new test that checks the rapid stops at the approach distance above the level above, never lower.
+>
+> To test:
+> 1. Open a Waterline Roughing operation and check Approach Distance shows 2, under Linear Extension.
+> 2. Generate. Each level should come down at rapid to 2 mm above the level before (the first to 2 mm above the stock's top), then at the plunge feed.
+> 3. Set it to 0 and to 5, then Generate again. Check the rapids end at that height, and that a bad value such as -1 is refused.
+> 4. Simulate. There should be no "Rapid into stock" warnings from the entries.
+> 5. The help changed: check the Waterline Roughing tab section.
+
+### 🧑 Frank · 11:29
+
+> When running the simulation to end or end of op, the play button should become "Pause", not "Stop"
+
+### 🤖 Claude
+
+> The label, help, spec and `CLAUDE.md` all say Pause now. Building and installing:
+
+> While To End or To Op End is running, the Play button now reads **Pause**, the same as when playing. Clicking it stops the run where it's got to. The Release build is done, but it isn't installed because Alibre is running.
+>
+> The help page, the spec (both copies now at rev 209) and `CLAUDE.md` all say Pause now.
+>
+> To test, after closing Alibre and installing:
+> 1. Simulate, then click To End. The button should read Pause.
+> 2. Click Pause part way through. It should stop there, with the view updated, and the button should go back to Play.
+> 3. The help changed: check Play, To Op End and To End in the Simulation section.
+
+### 🧑 Frank · 11:36
+
+> The waterline roughing seems to slow down and do a finishing pass, or clean up pass.  It shouldn't do this when roughing.
+
+### 🤖 Claude
+
+> I'll start with the log and the job's settings to see which pattern this roughing uses and what it generated.
+
+> Waterline Roughing 2 uses Part Offset with 0 stock to leave and a 2 mm stepdown, and has 19,673 moves. I'll look at the move lengths and feeds per loop, to find what looks like a slow finishing pass.
+
+> Questions:
+> - Waterline Roughing's last loop on each level runs right round the part (at the Stock to Leave), made of hundreds of tiny jagged moves. What should roughing do there?
+>   - Keep it, but smooth (Recommended): Keep the loop round the part so the stock left is even, but make it a smooth loop of longer moves (simplified to about 0.02 mm), so it runs at full speed instead of crawling.
+>   - Leave it out: No loop round the part: only the regular offsets a stepover apart. Faster, but the stock left on the walls varies by up to a stepover, so finishing gets uneven cuts.
+>   - Option on the tab: A check box (e.g. 'Final pass round parts'), with the loop smoothed when it's on.
+
+### 🧑 Frank · 11:40
+
+> Answers:
+> - Waterline Roughing's last loop on each level runs right round the part (at the Stock to Leave), made of hundreds of tiny jagged moves. What should roughing do there?
+>   **No Change.  Leave it as is.**
+
 ---
 
 # Side conversation

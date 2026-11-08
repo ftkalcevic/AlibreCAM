@@ -541,3 +541,39 @@ TEST_CASE("waterline timing on a 150 x 150 x 30 stock" * doctest::skip())
             << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms");
 }
 
+
+TEST_CASE("waterline roughing comes down at rapid to the approach distance above the level above")
+{
+    for (double approach : { 2.0, 3.5 })
+    {
+        SequenceStep step = WaterlineStep(0.5, 2.0);
+        step.waterlineRoughing.approachDistance = approach;
+        const Tool tool = Mill(6);
+        const ToolpathResult result = GenerateWaterlineRoughToolpath(Input(step, tool));
+        REQUIRE(result.ok);
+        const std::vector<ToolpathMove>& moves = result.toolpath.moves;
+        REQUIRE(moves.size() > 3);
+
+        // The first cut: clearance, then at rapid down to the stock's top plus the
+        // approach distance, then the plunge feed to the first level.
+        size_t plunge = 0;
+        while (plunge < moves.size() && moves[plunge].kind != MoveKind::Feed)
+            ++plunge;
+        REQUIRE(plunge >= 1);
+        REQUIRE(plunge < moves.size());
+        CHECK(moves[plunge - 1].kind == MoveKind::Rapid);
+        CHECK(moves[plunge - 1].to.z == doctest::Approx(10.0 + approach));
+        CHECK(moves[plunge].feed == doctest::Approx(150.0));
+        CHECK(moves[plunge].to.z < 10.0);
+
+        // No rapid ever ends below the level above the one it enters: every rapid
+        // straight down that's followed by a plunge stops at least the approach
+        // distance over the plunge's level less one step.
+        for (size_t m = 1; m < moves.size(); ++m)
+        {
+            if (moves[m].kind == MoveKind::Feed && moves[m].feed == doctest::Approx(150.0) &&
+                moves[m - 1].kind == MoveKind::Rapid && moves[m - 1].to.z < 20.0 - 1e-9)
+                CHECK(moves[m - 1].to.z >= moves[m].to.z + approach - 1e-6);
+        }
+    }
+}

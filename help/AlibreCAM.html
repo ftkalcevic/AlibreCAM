@@ -216,7 +216,7 @@
 
 <section id="simulation">
 <h2>Simulation</h2>
-<p>Plays the generated toolpaths against the stock in Alibre's view, cutting it a move at a time. The stock is a grid of small cubes (cells) over its box, shown shaded in place of its outline; a cell is cut away when its centre falls inside the tool. Each tool cuts with its own shape: flat, ball, corner radius, V, chamfer, taper and drill ends (a thread mill as a plain cylinder). The tool is drawn in yellow where it is. Operations run in the sequence's order, each in its own Set Origin's direction, so tilted origins cut along their tool axis. The holder isn't modelled, and nothing is checked against the parts yet. Open it with Simulate on the CAM tab's right-click menus; it needs a stock, and operations with no toolpath, origin or tool are left out (the dialog says which).</p>
+<p>Plays the generated toolpaths against the stock in Alibre's view, cutting it a move at a time. The stock is a grid of small cubes (cells) over its box, shown shaded in place of its outline; a cell is cut away when its centre falls inside the tool. Each tool cuts with its own shape: flat, ball, corner radius, V, chamfer, taper and drill ends (a thread mill as a plain cylinder). The tool is drawn in yellow where it is, its whole length, with the machine's tool holder above it in grey. Operations run in the sequence's order, each in its own Set Origin's direction, so tilted origins cut along their tool axis. The shank (the tool above its flutes, up to its overall length) and the tool holder (a cylinder of the machine's Tool Holder Diameter and Depth, from the tool's overall length up) are checked against the stock: either touching it stops the simulation with a warning. Nothing is checked against the parts yet. Open it with Simulate on the CAM tab's right-click menus; it needs a stock, and operations with no toolpath, origin or tool are left out (the dialog says which).</p>
 <dl>
   <dt>Position</dt>
   <dd>The operation being cut, and the move of all the moves. Arcs are split into short straight moves.</dd>
@@ -227,11 +227,11 @@
   <dt>Step</dt>
   <dd>Cuts one move.</dd>
   <dt>Play / Pause</dt>
-  <dd>Cuts moves continuously at the speed set, redrawing as it goes, until the end or a warning.</dd>
+  <dd>Cuts moves continuously at the speed set, redrawing as it goes, until the end or a warning. While it plays, or while To Op End or To End runs, the button is Pause: click it to stop where it's got to.</dd>
   <dt>To Op End</dt>
-  <dd>Cuts to the end of the current operation.</dd>
+  <dd>Cuts to the end of the current operation as fast as it can, moving the scrub bar as it goes; the view is redrawn when it gets there. It stops at a warning, or when you click Pause (the Play button) or any other button.</dd>
   <dt>To End</dt>
-  <dd>Cuts everything that's left.</dd>
+  <dd>Cuts everything that's left as fast as it can, moving the scrub bar as it goes; the view is redrawn when it gets there. It stops at a warning, or when you click Pause (the Play button) or any other button.</dd>
   <dt>Speed</dt>
   <dd>How many moves are cut at each step while playing, from 1 to 500.</dd>
   <dt>Auto divide voxels</dt>
@@ -239,7 +239,13 @@
   <dt>Resolution</dt>
   <dd>Only while Auto divide voxels is off. From Fine (small cells: sharper, slower, more memory) to Coarse (large cells: blockier, faster). The choices depend on the stock's size, with Medium in the middle as the start. Letting go at a new stop starts the stock again and cuts back to the same move. Remembered until Alibre closes.</dd>
   <dt>Warning</dt>
-  <dd>A rapid move that would cut stock stops the simulation and is drawn in thick red, naming the operation and its toolpath move. Play, Step or the other buttons carry on from there.</dd>
+  <dd>The simulation stops after a move that does one of these, which is drawn in thick red, and the warning names the operation and its toolpath move:
+    <ul>
+      <li><strong>Rapid into stock</strong>: a rapid move cut stock.</li>
+      <li><strong>The tool's shank hits the stock</strong>: the tool above its flute length touched stock. A tool with no flute length, or flutes as long as the tool, isn't checked.</li>
+      <li><strong>The tool holder hits the stock</strong>: the holder touched stock.</li>
+    </ul>
+    Play, Step or the other buttons carry on from there.</dd>
   <dt>Show</dt>
   <dd>What's drawn in the view. Each is remembered until Alibre closes.
     <ul>
@@ -346,6 +352,8 @@
   <dd>How far the machine can move along each axis, in millimetres. Each must be more than 0. <span class="tbc">Not used for checking toolpaths yet.</span></dd>
   <dt>Max spindle speed</dt>
   <dd>The spindle's top speed, in RPM. It must be more than 0. <span class="tbc">Not used for checking speeds yet.</span></dd>
+  <dt>Tool holder Diameter, Depth</dt>
+  <dd>The tool holder (collet nut or chuck) as a plain cylinder, in millimetres: its diameter, and how far it reaches up from the tool's overall length. The simulation draws it and stops if it touches the stock. Each must be more than 0; 20 and 30 by default.</dd>
   <dt>Close</dt>
   <dd>Closes the dialog. Everything is already saved.</dd>
 </dl>
@@ -795,12 +803,14 @@
 <section id="tab-waterline-roughing">
 <h2>Waterline Roughing tab</h2>
 <p>Waterline Roughing roughs out a 3D shape in horizontal slices, from the top of the cut down to its bottom (see its <a href="#tab-waterline-levels">Cut Levels</a> tab). Its tabs are Features, Tool, Feeds &amp; Speeds, Clearance, Cut Levels and this one.</p>
-<p>The area comes from the Features tab as for Plunge Roughing: picked faces and closed loops of edges (and the stock box's footprint if ticked) seen from above and merged. At each level the tool's centre may go anywhere in the area that's at least the tool's radius plus the Stock to Leave from any part that comes within the Stock to Leave of the level, so the parts stand as islands with the Stock to Leave on their tops and sides. Where no part is beyond the area's edge, the tool's centre goes right up to the edge (and past it by the Linear Extension). A level is entered at the plunge feed from 1 mm above the level before (the first from 1 mm above the top). The tool stays down from one pass to the next when the move is short and stays in the cleared area, and otherwise lifts to the clearance plane, which must be at least 1 mm above the top. The tool's true shape is used (a ball mill's ball, a corner radius, a V's point), so a curved or sloping part is roughed as closely as the tool can reach. Everything is worked out on a fine grid, so the passes are accurate to a fraction of a millimetre.</p>
+<p>The area comes from the Features tab as for Plunge Roughing: picked faces and closed loops of edges (and the stock box's footprint if ticked) seen from above and merged. At each level the tool's centre may go anywhere in the area that's at least the tool's radius plus the Stock to Leave from any part that comes within the Stock to Leave of the level, so the parts stand as islands with the Stock to Leave on their tops and sides. Where no part is beyond the area's edge, the tool's centre goes right up to the edge (and past it by the Linear Extension). A level is entered at rapid to the Approach Distance above the level before (the first above the top), then at the plunge feed. The tool stays down from one pass to the next when the move is short and stays in the cleared area, and otherwise lifts to the clearance plane, which must be at least 1 mm above the top. The tool's true shape is used (a ball mill's ball, a corner radius, a V's point), so a curved or sloping part is roughed as closely as the tool can reach. Everything is worked out on a fine grid, so the passes are accurate to a fraction of a millimetre.</p>
 <dl>
   <dt>Stock to Leave</dt>
   <dd>Material left covering the parts, on their tops and their sides: the tool's bottom stays this far above them, and its side this far from them. It also raises each flat face's level by this much. 0 or more.</dd>
   <dt>Linear Extension</dt>
   <dd>How far past the area's edge the tool's centre travels where the edge is open (no part beyond it), for every pattern, so the edge is cut cleanly. Parts still keep the tool its radius plus the Stock to Leave away. 0 (the default) stops the centre on the edge.</dd>
+  <dt>Approach Distance</dt>
+  <dd>Coming down to start a cut, the tool moves at rapid to this far above the level above (the top of the material still to cut at this level; the stock's top for the first level), then at the plunge feed the rest of the way. 2 mm by default; 0 or more. Waterline Roughing measures it from the level above rather than the cut's start, because the material between the two levels hasn't been cut yet.</dd>
   <dt>Cut Pattern: Part Offset</dt>
   <dd>Loops round the parts at each level, the first the Stock to Leave off them, each further one a stepover further out, cut off at the area's edge. Where a level has no part in it, Stock Offset is used.</dd>
   <dt>Cut Pattern: Stock Offset</dt>

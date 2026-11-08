@@ -145,7 +145,7 @@ namespace camcore
     {
         ToolType type = ToolType::FlatEndMill;
         double radius = 1.0;
-        double length = 50.0;       // above this the tool isn't modelled (the holder isn't yet)
+        double length = 50.0;       // above this the tool isn't modelled (the holder is SimOperation's)
         double cornerRadius = 0.0;
         double tipRadius = 0.0;
         double slope = 0.0;         // tan of the half angle for V, chamfer and taper mills and drills
@@ -170,6 +170,39 @@ namespace camcore
     // forces the cell by cell way, for tests.
     long long CutMove(VoxelStock& stock, const ToolProfile& profile, const Vec3& from, const Vec3& to, const Vec3& axis,
                       bool generalOnly = false);
+
+    // How many filled cells the tool would sweep through in that move, without
+    // cutting them; with stopAtFirst, 1 as soon as one is found.
+    long long CountMove(const VoxelStock& stock, const ToolProfile& profile, const Vec3& from, const Vec3& to,
+                        const Vec3& axis, bool stopAtFirst = true);
+
+    // A plain cylinder round the tool's axis that mustn't touch the stock: the
+    // shank above the flutes, or the tool holder. It starts `start` above the
+    // tool's tip and is `length` long; a length of 0 or less is none.
+    struct SimCylinder
+    {
+        double start = 0.0;
+        double radius = 0.0;
+        double length = 0.0;
+
+        bool Present() const { return length > 0.0 && radius > 0.0; }
+    };
+
+    // The shank (the tool's diameter from its flute length up to its overall
+    // length) and the holder (from the overall length up), from a tool in mm and
+    // the machine's holder size. A tool with no flute length, or flutes as long
+    // as the tool, has no shank to check.
+    SimCylinder ShankOf(const Tool& tool);
+    SimCylinder HolderOf(const Tool& tool, double holderDiameter, double holderDepth);
+
+    // What stopped the simulation.
+    enum class SimWarning
+    {
+        None,
+        RapidIntoStock,     // a rapid move cut stock
+        ShankHitsStock,     // the shank above the flutes touched stock
+        HolderHitsStock,    // the tool holder touched stock
+    };
 
     // A chunk's surface (32 x 32 cells across, one word tall): the faces between filled and empty cells, merged into
     // rectangles where they lie flat together, as triangles. Vertices and normals
@@ -232,6 +265,8 @@ namespace camcore
         ToolProfile profile;
         Frame frame;
         Toolpath toolpath;
+        SimCylinder shank;      // checked for touching stock, if present
+        SimCylinder holder;
     };
 
     // Steps through the operations' moves, cutting the stock.
@@ -256,9 +291,13 @@ namespace camcore
         Vec3 ToolTip() const;
         const SimOperation* CurrentOperation() const;
 
-        // Cuts up to count moves. Stops early at a rapid that cuts stock, which is
-        // then the warning. Returns how many moves were done.
+        // Cuts up to count moves. Stops early, after the move, at a rapid that cuts
+        // stock or a move where the shank or holder touches it, which is then the
+        // warning. Returns how many moves were done.
         size_t Step(size_t count);
+
+        // Where the current operation's moves end (one past its last).
+        size_t OperationEnd() const;
 
         // To the end of the current operation, or of everything.
         size_t RunToOperationEnd();
@@ -270,10 +309,11 @@ namespace camcore
         // To a position, by rewinding and cutting up to it.
         void SeekTo(size_t position);
 
-        // A rapid move that cut stock, and stopped stepping.
-        bool HasWarning() const { return m_warning; }
+        // A rapid move that cut stock, or a collision, and stopped stepping.
+        bool HasWarning() const { return m_warning != SimWarning::None; }
+        SimWarning Warning() const { return m_warning; }
         size_t WarningMove() const { return m_warningMove; }
-        void ClearWarning() { m_warning = false; }
+        void ClearWarning() { m_warning = SimWarning::None; }
 
     private:
         VoxelStock m_stock;
@@ -281,7 +321,7 @@ namespace camcore
         std::vector<SimOperation> m_operations;
         std::vector<SimMove> m_moves;
         size_t m_position = 0;
-        bool m_warning = false;
+        SimWarning m_warning = SimWarning::None;
         size_t m_warningMove = 0;
     };
 }

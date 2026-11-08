@@ -6,6 +6,7 @@
 #include "stdafx.h"
 #include "AlibreCAM.h"
 #include "AddOnInterface.h"
+#include "CrashCatcher.h"
 #include "Log.h"
 
 #ifdef _DEBUG
@@ -40,6 +41,7 @@ void AddOnLoad(HWND windowHandle, void* pAutomationHook, void* /*reserved*/)
     theApp.m_hAlibreWnd = windowHandle;
 
     LogInit();
+    InstallCrashCatcher();
 
     if (pAutomationHook == nullptr)
     {
@@ -94,6 +96,7 @@ void AddOnUnload(HWND /*windowHandle*/, BOOL /*forceUnload*/, BOOL* cancel,
         theApp.m_pAddOn = nullptr;
     }
     theApp.m_pRoot = nullptr;
+    RemoveCrashCatcher();
 }
 
 IUnknown* GetAddOnInterface()

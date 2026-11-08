@@ -1440,7 +1440,10 @@ void CCamTabCommand::SimulateOperations(std::vector<StepRef> refs)
         }
         camcore::SimOperation operation;
         operation.name = pStep->name;
-        operation.profile = camcore::ProfileOf(camcore::ToolInMillimetres(*pTool));
+        const camcore::Tool tool = camcore::ToolInMillimetres(*pTool);
+        operation.profile = camcore::ProfileOf(tool);
+        operation.shank = camcore::ShankOf(tool);
+        operation.holder = camcore::HolderOf(tool, m_machine.holderDiameter, m_machine.holderDepth);
         operation.frame = frame.frame;
         operation.toolpath = pStep->toolpath;
         operations.push_back(std::move(operation));
@@ -1648,6 +1651,7 @@ void CCamTabCommand::UpdateSimulationScene()
         m_scene.simTip = m_simulation.ToolTip();
         m_scene.simAxis = pOperation->frame.zAxis;
         m_scene.simProfile = pOperation->profile;
+        m_scene.simHolder = pOperation->holder;
     }
     m_scene.simWarning = m_simulation.HasWarning();
     if (m_scene.simWarning)
@@ -2551,10 +2555,15 @@ bool CCamTabCommand::CanMoveStep(const StepRef& from, const StepRef& target, Dro
 
 void CCamTabCommand::MoveStep(const StepRef& from, const StepRef& target, DropSide side)
 {
-    if (!CanDrag(from) || FindStep(target) == nullptr)
+    const camcore::SequenceStep* pFrom = CanDrag(from) ? FindStep(from) : nullptr;
+    if (pFrom == nullptr || FindStep(target) == nullptr)
+    {
+        Log(L"[sequence] drag from %Iu.%Id to %Iu.%Id ignored: no such step", from.step,
+            static_cast<ptrdiff_t>(from.child), target.step, static_cast<ptrdiff_t>(target.child));
         return;
+    }
 
-    const std::wstring name = FromUtf8(FindStep(from)->name);
+    const std::wstring name = FromUtf8(pFrom->name);
     StepRef moved;
     if (!ApplyMove(m_job, from, target, side, moved))
         return;

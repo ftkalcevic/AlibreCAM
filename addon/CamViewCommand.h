@@ -63,6 +63,7 @@ struct CamScene
     camcore::Vec3 simTip;
     camcore::Vec3 simAxis{ 0.0, 0.0, 1.0 };
     camcore::ToolProfile simProfile;
+    camcore::SimCylinder simHolder;                     // drawn if present
     bool simWarning = false;
     camcore::Vec3 simWarningFrom;
     camcore::Vec3 simWarningTo;

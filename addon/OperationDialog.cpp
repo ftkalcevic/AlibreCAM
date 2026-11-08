@@ -2038,6 +2038,7 @@ void CWaterlineRoughingPage::Load(const SequenceStep& step)
     const WaterlineRoughingSettings& w = step.waterlineRoughing;
     SetNumber(IDC_WATERLINE_STOCK, w.stockToLeave);
     SetNumber(IDC_WATERLINE_EXTENSION, w.extension);
+    SetNumber(IDC_WL_APPROACH, w.approachDistance);
     CheckRadioButton(IDC_WL_PART_OFFSET, IDC_WL_LINEAR,
                      w.pattern == WaterlinePattern::PartOffset ? IDC_WL_PART_OFFSET
                      : w.pattern == WaterlinePattern::Linear   ? IDC_WL_LINEAR
@@ -2066,6 +2067,7 @@ bool CWaterlineRoughingPage::Save(SequenceStep& step, std::wstring& problems)
     std::wstring found;
     ReadNumber(IDC_WATERLINE_STOCK, L"The stock to leave", w.stockToLeave, found);
     ReadNumber(IDC_WATERLINE_EXTENSION, L"The linear extension", w.extension, found);
+    ReadNumber(IDC_WL_APPROACH, L"The approach distance", w.approachDistance, found);
     w.pattern = IsDlgButtonChecked(IDC_WL_PART_OFFSET) == BST_CHECKED ? WaterlinePattern::PartOffset
                 : IsDlgButtonChecked(IDC_WL_LINEAR) == BST_CHECKED    ? WaterlinePattern::Linear
                                                                       : WaterlinePattern::StockOffset;
@@ -2104,6 +2106,7 @@ bool CWaterlineRoughingPage::Save(SequenceStep& step, std::wstring& problems)
     WaterlineRoughingSettings& saved = step.waterlineRoughing;
     saved.stockToLeave = w.stockToLeave;
     saved.extension = w.extension;
+    saved.approachDistance = w.approachDistance;
     saved.pattern = w.pattern;
     saved.direction = w.direction;
     saved.start = w.start;

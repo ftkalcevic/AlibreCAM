@@ -52,6 +52,8 @@ private:
     void Stop();
     void Changed();             // the stock and the tool moved: redraw and show where it is
     void ShowState();
+    void RunTo(size_t end);     // starts running to that position on the run timer
+    void RunTick();             // runs on for a tenth of a second
     size_t MovesPerTick() const;
     void Finish();
     void ShowResolution();      // greys the slider while Auto divide is on
@@ -64,6 +66,8 @@ private:
     std::vector<double> m_stops;
     int m_appliedStop = -1;
     bool m_playing;
+    bool m_running = false;     // To Op End or To End is running
+    size_t m_runEnd = 0;        // where it's running to
     std::wstring m_note;
     std::wstring m_saved;       // what the last Save STL did
 };

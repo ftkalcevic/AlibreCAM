@@ -97,6 +97,9 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <!-- Full link-time code generation: the incremental kind kept old code for a
+           function after a core struct grew (the drag crash), and crashed the linker. -->
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
     <ResourceCompile>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -118,6 +121,7 @@
     <ClCompile Include="Help.cpp" />
     <ClCompile Include="StockDialog.cpp" />
     <ClCompile Include="MachineDialog.cpp" />
+    <ClCompile Include="CrashCatcher.cpp" />
     <ClCompile Include="ProgressDialog.cpp" />
     <ClCompile Include="SimulationDialog.cpp" />
     <ClCompile Include="ToolDialogs.cpp" />
@@ -143,6 +147,7 @@
     <ClInclude Include="Help.h" />
     <ClInclude Include="StockDialog.h" />
     <ClInclude Include="MachineDialog.h" />
+    <ClInclude Include="CrashCatcher.h" />
     <ClInclude Include="ProgressDialog.h" />
     <ClInclude Include="SimulationDialog.h" />
     <ClInclude Include="ToolDialogs.h" />

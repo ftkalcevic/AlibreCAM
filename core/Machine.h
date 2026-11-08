@@ -43,6 +43,12 @@ namespace camcore
 
         double maxSpindleRpm = 24000.0;
 
+        // The tool holder, as a cylinder from the tool's overall length up, in mm.
+        // The simulation draws it and stops if it touches the stock. Files without
+        // them have these defaults.
+        double holderDiameter = 20.0;
+        double holderDepth = 30.0;
+
         ToolLibrary tools;
     };
 
