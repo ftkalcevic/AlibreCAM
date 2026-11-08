@@ -1912,7 +1912,8 @@ void CCamTabCommand::Post(const StepRef& scope)
         char date[16];
         std::snprintf(date, sizeof(date), "%04u-%02u-%02u", now.wYear, now.wMonth, now.wDay);
         const camcore::PostOutput posted =
-            camcore::WriteScriptedPost(read.script, m_job.assembly.name, workZero.frame, entries, date);
+            camcore::WriteScriptedPost(read.script, m_job.assembly.name, workZero.frame, entries, date,
+                                       m_machine.arcs);
         if (!posted.ok)
         {
             ShowError(FromUtf8(posted.problem));
@@ -1934,6 +1935,20 @@ void CCamTabCommand::Post(const StepRef& scope)
 }
 
 bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& problem)
+{
+    if (!GenerateOperationMoves(target, problem))
+        return false;
+
+    // Arcs fitted to the straight moves, in the planes the machine allows.
+    camcore::SequenceStep& operation = m_job.sequence[target.step].children[target.child];
+    const camcore::ArcFitCounts counts = camcore::FitArcs(operation.toolpath, m_machine.arcs);
+    if (counts.arcsMade > 0)
+        Log(L"[generate] arcs: %zu straight moves into %zu arcs, %zu moves to %zu", counts.linesReplaced,
+            counts.arcsMade, counts.movesBefore, counts.movesAfter);
+    return true;
+}
+
+bool CCamTabCommand::GenerateOperationMoves(const StepRef& target, std::string& problem)
 {
     camcore::SequenceStep& operation = m_job.sequence[target.step].children[target.child];
     if (operation.type != camcore::StepType::Drill && operation.type != camcore::StepType::Facing &&

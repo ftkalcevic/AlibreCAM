@@ -6,6 +6,7 @@
 #include <cmath>
 #include <filesystem>
 
+#include "ArcFit.h"
 #include "CamJob.h"
 #include "DropCutter.h"
 #include "SurfaceGeometry.h"
@@ -667,4 +668,25 @@ TEST_CASE("the approach distance defaults to 2 mm")
     SequenceStep fresh;
     CHECK(fresh.parallelFinishing.approachDistance == 2.0);
     CHECK(fresh.waterlineFinishing.approachDistance == 2.0);
+}
+
+TEST_CASE("arc fitting survey of parallel finishing" * doctest::skip())
+{
+    for (double angle : { 0.0, 90.0, 30.0 })
+    {
+        SequenceStep step = ParallelStep();
+        step.parallelFinishing.cutAngle = angle;
+        const Tool tool = Ball(6);
+        const ToolpathResult result = GenerateParallelFinishToolpath(Input(step, tool));
+        REQUIRE(result.ok);
+        for (double tolerance : { 0.002, 0.005, 0.01, 0.02, 0.05 })
+        {
+            Toolpath fitted = result.toolpath;
+            ArcFitting fitting;
+            fitting.tolerance = tolerance;
+            const ArcFitCounts counts = FitArcs(fitted, fitting);
+            std::printf("angle %.0f tolerance %.3f: %zu moves to %zu, %zu arcs from %zu lines\n", angle, tolerance,
+                        counts.movesBefore, counts.movesAfter, counts.arcsMade, counts.linesReplaced);
+        }
+    }
 }

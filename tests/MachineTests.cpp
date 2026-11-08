@@ -72,6 +72,8 @@ namespace
         machine.maxSpindleRpm = 18000;
         machine.holderDiameter = 25;
         machine.holderDepth = 40;
+        machine.arcs.zx = false;
+        machine.arcs.tolerance = 0.02;
         Tool tool = Mill("t1", 1);
         tool.feeds.push_back(Row("alu", 16000, 800));
         tool.feeds.push_back(Row("mdf", 18000, 2500));
@@ -99,6 +101,10 @@ TEST_CASE("a machine saves and loads with its tools and their feeds")
     CHECK(loaded.machine.maxSpindleRpm == 18000);
     CHECK(loaded.machine.holderDiameter == 25);
     CHECK(loaded.machine.holderDepth == 40);
+    CHECK(loaded.machine.arcs.enabled);
+    CHECK_FALSE(loaded.machine.arcs.zx);
+    CHECK(loaded.machine.arcs.yz);
+    CHECK(loaded.machine.arcs.tolerance == 0.02);
     REQUIRE(loaded.machine.tools.tools.size() == 1);
     const Tool& tool = loaded.machine.tools.tools[0];
     REQUIRE(tool.feeds.size() == 2);
@@ -152,6 +158,7 @@ TEST_CASE("a version 1 machine, without travel or spindle speed, loads with the 
     CHECK(loaded.machine.maxSpindleRpm == defaults.maxSpindleRpm);
     CHECK(loaded.machine.holderDiameter == 20.0);
     CHECK(loaded.machine.holderDepth == 30.0);
+    CHECK(loaded.machine.arcs == ArcFitting());
 }
 
 TEST_CASE("damaged, newer and missing machine files")

@@ -29,7 +29,8 @@ namespace camcore
 {
     // The newest .cam format this build can read and the one it writes.
     // Version 2 added Set Origin steps and groups to the sequence.
-    constexpr int kCamFormatVersion = 12;
+    // Version 13 added arc moves in the ZX and YZ planes.
+    constexpr int kCamFormatVersion = 13;
 
     // Which assembly a job belongs to. The GUID comes from the assembly file,
     // and is empty if it couldn't be read.

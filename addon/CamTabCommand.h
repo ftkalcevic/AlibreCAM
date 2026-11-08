@@ -225,6 +225,7 @@ private:
     bool PrepareSelection(const SelectionFilter& wanted);     // false if the view couldn't start
     bool IsPicking() const;
     bool GenerateOperation(const StepRef& target, std::string& problem);
+    bool GenerateOperationMoves(const StepRef& target, std::string& problem);   // before arcs are fitted
     void GenerateTargets(const std::vector<StepRef>& targets);
     bool IsChosen(size_t step, size_t child) const;   // in the tree's chosen set, or the open dialog's
     bool ApplyOperationStep(camcore::SequenceStep step);

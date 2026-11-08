@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "ArcFit.h"
 #include "CamJob.h"     // LoadStatus, SaveResult
 #include "ToolLibrary.h"
 
@@ -48,6 +49,10 @@ namespace camcore
         // them have these defaults.
         double holderDiameter = 20.0;
         double holderDepth = 30.0;
+
+        // Arcs fitted to the toolpaths when they're generated (FitArcs), and which the
+        // posts may write as arcs. Files without them have these defaults.
+        ArcFitting arcs;
 
         ToolLibrary tools;
     };

@@ -102,12 +102,20 @@ namespace camcore
                 }
 
                 // An arc is a CIRCLE/ of its centre, axis and radius, then the GOTO/
-                // to its end. The axis is the tool axis anticlockwise, reversed clockwise.
+                // to its end. The axis is its plane's normal (the tool axis for XY)
+                // anticlockwise, reversed clockwise.
                 if (move.kind == MoveKind::Feed && move.arc && haveFrom)
                 {
                     const Vec3 centre = WorldToFrame(workZero, FramePointToWorld(entry.frame, move.centre));
-                    const Vec3 turn = move.clockwise ? axis * -1.0 : axis;
-                    const double radius = std::hypot(from.x - move.centre.x, from.y - move.centre.y);
+                    const Vec3 local = (move.plane == ArcPlane::XY)   ? entry.frame.zAxis
+                                       : (move.plane == ArcPlane::ZX) ? entry.frame.yAxis
+                                                                      : entry.frame.xAxis;
+                    const Vec3 normal = DirectionInFrame(workZero, local);
+                    const Vec3 turn = move.clockwise ? normal * -1.0 : normal;
+                    double fu, fv, fw, cu, cv, cw;
+                    ToPlane(move.plane, from, fu, fv, fw);
+                    ToPlane(move.plane, move.centre, cu, cv, cw);
+                    const double radius = std::hypot(fu - cu, fv - cv);
                     line("CIRCLE/" + Number(centre.x) + "," + Number(centre.y) + "," + Number(centre.z) + "," +
                          Number(turn.x) + "," + Number(turn.y) + "," + Number(turn.z) + "," + Number(radius));
                 }

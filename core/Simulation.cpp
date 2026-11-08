@@ -1270,30 +1270,15 @@ namespace camcore
                 std::vector<Vec3> points{ previous };
                 if (move.arc)
                 {
-                    const Vec3 c = move.centre;
-                    const double r = std::hypot(previous.x - c.x, previous.y - c.y);
-                    double a0 = std::atan2(previous.y - c.y, previous.x - c.x);
-                    double a1 = std::atan2(move.to.y - c.y, move.to.x - c.x);
-                    double sweep = a1 - a0;
-                    if (move.clockwise)
-                    {
-                        while (sweep > 0.0)
-                            sweep -= 2.0 * kPi;
-                    }
-                    else
-                    {
-                        while (sweep < 0.0)
-                            sweep += 2.0 * kPi;
-                    }
+                    // Chords within the tolerance, in the arc's own plane.
+                    double fu, fv, fw, cu, cv, cw;
+                    ToPlane(move.plane, previous, fu, fv, fw);
+                    ToPlane(move.plane, move.centre, cu, cv, cw);
+                    const double r = std::hypot(fu - cu, fv - cv);
                     const double step = (r > tolerance) ? 2.0 * std::acos(1.0 - tolerance / r) : kPi / 4.0;
-                    const int count = (std::max)(1, static_cast<int>(std::ceil(std::fabs(sweep) / step)));
-                    for (int i = 1; i < count; ++i)
-                    {
-                        const double t = static_cast<double>(i) / count;
-                        const double angle = a0 + sweep * t;
-                        points.push_back({ c.x + r * std::cos(angle), c.y + r * std::sin(angle),
-                                           previous.z + (move.to.z - previous.z) * t });
-                    }
+                    std::vector<Vec3> along = ArcMovePoints(previous, move, step);
+                    along.pop_back();   // the end is added below
+                    points.insert(points.end(), along.begin(), along.end());
                 }
                 points.push_back(move.to);
 

@@ -16,7 +16,8 @@ namespace camcore
     namespace
     {
         const std::set<std::string> kSections = { "program start", "tool change", "operation start", "rapid",
-                                                  "feed", "arc cw", "arc ccw", "dwell", "operation end",
+                                                  "feed", "arc cw", "arc ccw", "dwell", "plane xy", "plane zx", "plane yz", "plane xz",
+                                                  "operation end",
                                                   "program end" };
 
         const std::set<std::string> kWords = { "X", "Y", "Z", "I", "J", "K", "F" };
@@ -316,8 +317,14 @@ namespace camcore
     }
 
     PostOutput WriteScriptedPost(const PostScript& script, const std::string& jobName, const Frame& workZero,
-                                 const std::vector<PostOperation>& operations, const std::string& date)
+                                 const std::vector<PostOperation>& operations, const std::string& date,
+                                 const ArcFitting& arcs)
     {
+        const auto has = [&](const char* name) { return script.sections.count(name) != 0; };
+        const bool arcSections = has("arc cw") && has("arc ccw");
+        const char* zxSection = has("plane zx") ? "plane zx" : "plane xz";    // [plane xz] before it was renamed
+        const bool planeSections = has("plane xy") && has(zxSection) && has("plane yz");
+        ArcPlane currentPlane = ArcPlane::XY;       // program start sets G17
         PostOutput output;
 
         // A 3 axis machine can only cut along the work zero's Z.
@@ -373,7 +380,9 @@ namespace camcore
             // Every point from the work zero.
             auto place = [&](const Vec3& local) { return WorldToFrame(workZero, FramePointToWorld(entry.frame, local)); };
             Vec3 at;
+            Vec3 atLocal;       // the same, in the operation's frame
             bool haveAt = false;
+            const Vec3 zero = place({ 0.0, 0.0, 0.0 });
             for (const ToolpathMove& move : operation.toolpath.moves)
             {
                 writer.words.clear();
@@ -396,12 +405,80 @@ namespace camcore
                 }
                 else if (move.arc && haveAt)
                 {
-                    const Vec3 centre = place(move.centre);
-                    writer.words["I"] = centre.x - at.x;
-                    writer.words["J"] = centre.y - at.y;
-                    writer.words["K"] = 0.0;
-                    writer.words["F"] = move.feed;
-                    writer.Section(move.clockwise ? "arc cw" : "arc ccw");
+                    // The arc's plane, seen from the work zero: its normal along Z, Y or X.
+                    const Vec3 local = (move.plane == ArcPlane::XY)   ? Vec3{ 0.0, 0.0, 1.0 }
+                                       : (move.plane == ArcPlane::ZX) ? Vec3{ 0.0, 1.0, 0.0 }
+                                                                      : Vec3{ 1.0, 0.0, 0.0 };
+                    const Vec3 normal = place(local) - zero;
+                    ArcPlane plane = ArcPlane::XY;
+                    double along = 0.0;
+                    bool lined = false;
+                    if (std::fabs(normal.z) > 1.0 - 1e-9)
+                    {
+                        plane = ArcPlane::XY;
+                        along = normal.z;
+                        lined = true;
+                    }
+                    else if (std::fabs(normal.y) > 1.0 - 1e-9)
+                    {
+                        plane = ArcPlane::ZX;
+                        along = normal.y;
+                        lined = true;
+                    }
+                    else if (std::fabs(normal.x) > 1.0 - 1e-9)
+                    {
+                        plane = ArcPlane::YZ;
+                        along = normal.x;
+                        lined = true;
+                    }
+                    const bool asArc = lined && arcSections && arcs.Allows(plane) &&
+                                       (plane == ArcPlane::XY || planeSections);
+                    if (asArc)
+                    {
+                        if (plane != currentPlane && planeSections)
+                        {
+                            writer.words.clear();
+                            writer.Section(plane == ArcPlane::XY ? "plane xy" : plane == ArcPlane::ZX ? zxSection
+                                                                                                       : "plane yz");
+                            currentPlane = plane;
+                        }
+                        writer.words.clear();
+                        writer.words["X"] = to.x;
+                        writer.words["Y"] = to.y;
+                        writer.words["Z"] = to.z;
+                        const Vec3 centre = place(move.centre);
+                        if (plane != ArcPlane::YZ)
+                            writer.words["I"] = centre.x - at.x;
+                        if (plane != ArcPlane::ZX)
+                            writer.words["J"] = centre.y - at.y;
+                        if (plane != ArcPlane::XY)
+                            writer.words["K"] = centre.z - at.z;
+                        writer.words["F"] = move.feed;
+                        // Seen from the other side, it turns the other way.
+                        const bool clockwise = (along > 0.0) ? move.clockwise : !move.clockwise;
+                        writer.Section(clockwise ? "arc cw" : "arc ccw");
+                    }
+                    else
+                    {
+                        // Straight moves within the tolerance.
+                        double fu, fv, fw, cu, cv, cw;
+                        ToPlane(move.plane, atLocal, fu, fv, fw);
+                        ToPlane(move.plane, move.centre, cu, cv, cw);
+                        const double radius = std::hypot(fu - cu, fv - cv);
+                        const double tolerance = (std::max)(1e-4, arcs.tolerance);
+                        const double step = (radius > tolerance) ? 2.0 * std::acos(1.0 - tolerance / radius)
+                                                                 : 3.14159265358979323846 / 4.0;
+                        for (const Vec3& point : ArcMovePoints(atLocal, move, step))
+                        {
+                            const Vec3 p = place(point);
+                            writer.words.clear();
+                            writer.words["X"] = p.x;
+                            writer.words["Y"] = p.y;
+                            writer.words["Z"] = p.z;
+                            writer.words["F"] = move.feed;
+                            writer.Section("feed", true);
+                        }
+                    }
                 }
                 else
                 {
@@ -409,6 +486,7 @@ namespace camcore
                     writer.Section("feed", true);
                 }
                 at = to;
+                atLocal = move.to;
                 haveAt = true;
             }
 

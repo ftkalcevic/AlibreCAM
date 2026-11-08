@@ -8630,6 +8630,307 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Install it
 
+### 🤖 Claude
+
+> It's installed. The installed DLL and help page match the new build, so start Alibre and it will load this version.
+>
+> To test:
+> 1. On a Pocketing operation, tick Use Adaptive Clearing. The cut type, start and angle should grey out and the helix and ramp boxes should enable. Set the stepover to about 15%, then Generate. You should see a helix, then rings spiralling out, then one lap round the wall.
+> 2. Simulate it. There should be no rapid-into-stock or collision warnings, and the cut should look even.
+> 3. On a Facing operation with Overtravel at 100%, tick it and Generate. It should start outside the boundary, with no helix.
+> 4. On Waterline Roughing, tick it, use a Linear Extension of a few mm, and Generate. Each level should be cleared round the parts, starting outside the stock. Then Simulate.
+> 5. Close and reopen the job. The check box and both values should be kept, and older jobs should open with it off.
+> 6. Check the bigger operation dialog looks right on every tab.
+> 7. The help changed: check the Facing, Pocketing and Waterline Roughing tab sections.
+>
+> If anything looks wrong, set `ALIBRECAM_ADAPTIVE_DEBUG=1` before starting Alibre and it will print each phase of the clearing. Or just tell me which job and operation, and I'll start from the log.
+
+### 🧑 Frank · 13:08
+
+> Next I'd like to do arc fitting.  Is that a machine, or post option, or selected in the operation?
+
+### 🤖 Claude
+
+> Before answering I'll check how posts handle arcs today.
+
+> Questions:
+> - Where should arc fitting be turned on and its tolerance set? (Arcs the operations already make exactly, such as helixes and radial leads, are kept as arcs either way.)
+>   - In the post file (Recommended): Fitted while posting. The .post file says whether the controller takes arcs and the tolerance (e.g. 'arc fitting = yes', 'arc tolerance = 0.005', planes, max radius). Every operation benefits; toolpaths, drawing and simulation unchanged.
+>   - Post dialog field: Fitted while posting, but the tolerance (and on/off) is a field in the Post dialog, remembered between posts; the post file only says whether arcs are allowed.
+>   - Per operation: A smoothing/arc tolerance on each operation; arcs are fitted when generating, so the drawn and simulated toolpath has the arcs too.
+> - Which planes should arcs be fitted in?
+>   - XY, XZ and YZ (Recommended): G17 for level moves (2½D, waterline laps), plus G18/G19 for vertical ones such as Parallel Finishing rows along X or Y. The post file can turn XZ/YZ off for controllers that don't do them well.
+>   - XY only: Only level arcs (G17). Simplest; Parallel Finishing stays as straight segments.
+> - What should the default tolerance be (how far the arc may stray from the original points)?
+>   - 0.005 mm (Recommended): Tighter than the 0.01 mm the toolpaths are already simplified to, so fitting doesn't add visible error.
+>   - 0.01 mm: Same as the simplification; more and longer arcs, slightly more deviation (up to ~0.02 combined).
+>   - 0.002 mm: Very tight; fewer arcs fit, files shrink less.
+
+### 🧑 Frank · 13:13
+
+> Answers:
+> - Where should arc fitting be turned on and its tolerance set? (Arcs the operations already make exactly, such as helixes and radial leads, are kept as arcs either way.)
+>   **Make arc fitting a machine setting.  Arcs should be fit when generating the toolpath.  Arcs should be displayed as arcs in the toolpath.  It will apply to all operations.**
+> - Which planes should arcs be fitted in?
+>   **Make it a machine setting - check box to support arcs, then checkboxes to support each of the 3 planes.**
+> - What should the default tolerance be (how far the arc may stray from the original points)?
+>   **Make it configurable in the machine settings. Default 0.005mm**
+
+### 🤖 Claude
+
+> Clear: a machine setting, fitted when generating, and drawn as arcs. That means arcs in XZ and YZ have to work everywhere arcs are used today. I'll find everything that reads arc moves.
+
+> Plan:
+>
+> # Next: adaptive clearing, then ramp/helix entry, then slope limits
+>
+> ## Context
+>
+> At a checkpoint, Frank asked what AlibreCAM is missing against other hobby CAM. The target is intermediate home users on light, home-built 3 to 5 axis machines.
+>
+> I compared it with Fusion (Personal), Estlcam, Vectric, Carbide Create, MeshCAM and FreeCAD Path. The biggest gaps for light machines:
+> - **Adaptive (constant-engagement) clearing:** full flute depth at a low, steady load.
+> - **Ramp or helix entry:** Waterline Roughing plunges straight down today.
+> - **Steep and shallow limits:** so the two finishing operations can be combined for an even finish.
+>
+> **Frank's choices:**
+> - **Order:** adaptive first, then ramp/helix, then slope limits. Each is installed for him to test before the next.
+> - **Adaptive:** not a new operation, but a **"Use Adaptive Clearing" check box** on every operation that clears horizontally.
+> - **Ramp/helix:** Waterline Roughing gets Entry: Plunge, Ramp along path or Helix. Helix falls back to Ramp, then to Plunge, where there's no room. Pocketing's Entry/Exit tab gains Helix.
+> - **Slope limits:** a Slope group with From and To angles (0 to 90° from horizontal) on Waterline Finishing and on Parallel Finishing.
+> - **Add to `TODO.md`:**
+>   - rest machining;
+>   - more posts (GRBL, Mach3/4, UCCNC, Masso) and arc fitting;
+>   - undo, inch units, and clamps as keep-out.
+>
+> ---
+>
+> ## Phase 1: Use Adaptive Clearing
+>
+> ### Where it appears
+> A **Use Adaptive Clearing** check box on three tabs:
+> - **Pocketing:** each closed pocket at each cut level.
+> - **Facing:** each area at each level.
+> - **Waterline Roughing:** each level's free region, so it works in 3D.
+>
+> Ticked:
+> - **Pattern controls greyed:** the tab's own cut pattern and type (Offset, Linear, Spiral, start point, angle, Mixed) are greyed.
+> - **Optimal load:** it's the **tab's stepover**, so no new field. The help suggests 10–25% for adaptive.
+> - **Direction:** Climb or Conventional. Mixed counts as Climb.
+> - **Two new fields for the entry:**
+>   - **Helix Diameter**, % of the tool, default 80;
+>   - **Ramp Angle**, degrees, default 2.
+>
+>   They live in a shared `RampEntry` struct, which Phase 2 reuses.
+>
+> Saved as `adaptive`, plus `rampEntry`, in each operation's settings. A missing field reads as off. The `.cam` format stays 12, as an older add-on just ignores the fields.
+>
+> ### Core: `core\AdaptiveClearing.h/.cpp` (new, no Alibre code)
+> - **Inputs:**
+>   - **Grid (`AdaptiveGrid`):** origin, cell size and nx × ny, with masks:
+>     - `free`: where the tool's centre may go;
+>     - `material`: what's still to cut. This is only material the tool can reach, so the band of stock to leave on the walls never counts;
+>     - `cleared`: air at the start, such as outside the stock.
+>   - **Settings:** tool radius, optimal load (mm), climb, helix radius, ramp angle, and the level Z with the "above" Z to ramp from.
+> - **Output:** a list of cuts. Each is a polyline in XY at the level Z, with how it's entered (from outside, a helix at a centre, or a straight plunge into cleared space) and whether the link to it stays down. A link stays down when a path through cleared, free cells exists; it's found by a breadth-first search and shortened to a few straight lines.
+> - **Algorithm** (grid-based, like FreeCAD's Adaptive):
+>   1. **Start.** If no cleared cell touches the material, a helix is placed at the free cell furthest from the free edge (a distance transform, `SquaredDistanceTransform` from `core\PlungeRoughToolpath`). It clears the helix circle plus the tool. With too little room, the smallest helix that fits is used; failing that, a plunge.
+>   2. **Each pass** starts at the free point on the cleared edge nearest the tool that touches the material. It walks in short steps (about a tenth of the tool's radius). At each step the turn angle is bisected so that the newly removed area (material cells under the tool's disc that aren't cleared yet) ≈ optimal load × step. Climb keeps the material on the right. Cleared cells are marked along the way. The pass ends when no angle removes enough, or the next step would leave the free region.
+>   3. **Repeat** until no reachable material is left. Scraps under a small area are ignored.
+>   4. **Tidy up:** simplify to 0.01 mm. Positions are continuous, not snapped to the grid, so the paths are smooth.
+> - **Grid size:** about a fortieth of the tool's diameter, as the waterline code uses.
+> - **Speed:** counts done over the crescent between consecutive discs. Progress goes through a callback, for the Generating window.
+>
+> ### Each operation builds the masks, then writes the cuts with its usual writer
+> - **Waterline Roughing** (`GenerateWaterlineRoughToolpath`, `core\WaterlineRoughToolpath.cpp`):
+>   - per level and region: `free` from the existing free region; `material` from the stock's footprint; `cleared` outside the stock, inside the area grown by the Linear Extension;
+>   - written with `MoveWriter`, with the Approach Distance and the helix at the engage feed.
+> - **Pocketing** (`GeneratePocketToolpath`, `core\ProfileToolpath.cpp`):
+>   - each loop is rasterised with the existing point-in-path tests in `core\Boundary`;
+>   - `free` is the loop inset by the tool's radius plus the stock to leave;
+>   - nothing starts cleared, so it always helixes in;
+>   - its levels come from `CutLevelHeights`.
+> - **Facing** (`GenerateFacingToolpath`, `core\FacingToolpath.cpp`):
+>   - the area's boundary is the material;
+>   - `free` is the area grown by its overtravel;
+>   - outside the boundary starts cleared, so it enters from outside.
+>
+> ### Add-on
+> - **The three tab templates:** a check box, the two new fields, and IDs from 13456 (next control 13456).
+> - **The three page classes** (`addon\OperationDialog.cpp`): `Load`, `Save` and `UpdateFields` (which greys the pattern controls).
+> - **Bulk editing** picks up the new controls through `Snapshot` without further work.
+>
+> ### Tests (`tests\AdaptiveClearingTests.cpp`, new)
+> 1. **Full clearing of a square pocket:** simulated with `core\Simulation` (`VoxelStock`, `CutMove`), every reachable cell is cut and no free-boundary rule is broken.
+> 2. **Engagement:** the material removed per unit length, measured in the simulation step by step, stays at most about 1.5 × the optimal load, except on the helix.
+> 3. **Islands:** a pocket with an island; the tool's centre never enters the island's keep-out.
+> 4. **Facing from outside:** no helix; the first cut starts outside the stock.
+> 5. **Waterline:** one level of the existing block test with the box ticked; the area is cleared and the part isn't gouged.
+> 6. **Saving:** `adaptive` and `rampEntry` round-trip, and are off when missing.
+> 7. **Timing (skipped):** a 150 × 150 pocket with a 6 mm tool.
+>
+> ### Docs
+> - **Help:** the three tabs (the check box, the two fields, which controls grey out, and advice on the optimal load).
+> - **The spec:** both copies.
+> - **`CLAUDE.md`**, then **`TODO.md`** (Frank's three additions) and `Discussion.md`.
+>
+> ---
+>
+> ## Phase 2: Ramp/helix entry (after Phase 1 is tested)
+> - **Waterline Roughing:**
+>   - **The field:** Entry is Plunge, Ramp or Helix (default Helix), with the shared `RampEntry` from Phase 1.
+>   - **Each piece's entry:** a helix at its start if the free field there ≥ the helix radius. Otherwise a ramp along the piece itself: round and round on a loop, back and forth on an open piece. Otherwise a plunge.
+>   - **Where the ramp starts:** at the level above (the material's top), at the engage feed, after the Approach Distance rapid.
+> - **Pocketing:** Entry/Exit gets a Helix mode beside Along Path, using `HolePocketToolpath`'s helix code.
+> - **Tests:** no feed move goes down steeper than the ramp angle except the fallback plunge, and the helix stays inside the free region.
+>
+> ## Phase 3: Slope limits (after Phase 2)
+> - **Settings:** the Slope group, From and To, in `WaterlineRoughingSettings`, used by both finishing operations. Defaults 0 and 90 (no limit).
+> - **How the slope is found:** from the gradient of the tool's tip-height grid (`PartHeightField::TipHeights`). That's the angle of the contact normal for a ball.
+> - **Waterline Finishing:** laps are split where their slope falls outside the range.
+> - **Parallel Finishing:** rows are trimmed the same way.
+> - **Tests:** on the half sphere, Waterline 45–90 and Parallel 0–45 together cover it, with no lap below 45° and no row above.
+>
+> ## Verification (each phase)
+> 1. Build Debug and Release, and run `CamCoreTests.exe` with the new tests.
+> 2. Install, and update the help, spec, `CLAUDE.md` and `Discussion.md`.
+> 3. Frank gets a numbered test list in Alibre. For Phase 1:
+>    - tick Use Adaptive Clearing on a pocket, a facing area and a Waterline Roughing operation;
+>    - Generate, then Simulate. Look for steady, curving passes, a helix into closed pockets, and no rapid-into-stock or holder warnings.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Plan approved. Starting with arc moves gaining a plane, and one shared helper for their points.
+
+> One fix: the "whole turn" adjustment at the end of `ArcMoveSweep` is wrong for an arc ending just short of a full turn, so it comes out. Then the simulation uses the shared helper:
+
+> The simulation now uses the shared helper. Next, saving: an 11th number for the plane when it isn't XY, and format version 13.
+
+> I'll rewrite `Furthest` more simply before building: grow by doubling, then a binary search.
+
+> Next, the arc-fit tests:
+
+> The arc-fit core passes all its tests. Next, the machine setting: the core first, then the Machine tab. I'll look at how the dialog fills and enables its fields.
+
+> The machine setting is in. I'll tidy the include order, then add the machine-file round trip to the existing test.
+
+> Next, the posts. I'll look at how the scripted post handles words and section names.
+
+> All 313 tests pass. Next, the post tests; I'll look at how the existing ones set up an operation.
+
+> The same `\n` trap in the test strings. Fixing them:
+
+> It passes, including the direction flip when an origin is turned about Z. Next, I'll remove a leftover from the test, then hook fitting into Generate and pass the machine's settings to Post.
+
+> Generate sets the toolpath on many return paths, so the caller is the better place for one hook. Finding it:
+
+> All 314 tests pass. One more test from the plan: fitting a real generated toolpath (the adaptive pocket). It should come out shorter and stay within the tolerance of the original moves.
+
+> Next, the spec in the Claude doc, after the Adaptive clearing entry:
+
+> Both spec copies are at rev 211. Full builds and tests:
+
+> The administrator prompt was cancelled, so it isn't installed. I'll wait for the Debug tests to finish.
+
+> Still running. I'll wait for the notification.
+
+> Arc fitting is built. All 315 tests pass in Release; the Debug run is still going, and I'll report if it shows anything. It isn't installed, because the administrator prompt was cancelled.
+>
+> **Your question, answered:** CAM systems split it. Whether arcs can be used, and in which planes, depends on the controller, so it usually sits with the post or machine; some also set a tolerance per operation. As you chose, here it's a **machine setting** applied at **Generate** to every operation.
+>
+> **What's built**
+> - **Machine tab:** an Arcs row with Fit arcs, XY, XZ and YZ check boxes, and Tolerance (default 0.005 mm). The planes and tolerance are greyed when Fit arcs is off. The settings are saved in the machine file, and older machine files load with everything on.
+> - **Generate:** runs of three or more straight moves that lie flat in an allowed plane and follow a circle within the tolerance become arcs, of at most a half turn each. The log says how many moves became arcs.
+> - **Arcs in any plane:** arc moves now carry a plane (XY, XZ or YZ). They're drawn as arcs in magenta, simulated and saved with their plane. The `.cam` format is now version 13, so older add-ons refuse new files instead of misreading them.
+> - **Post:**
+>   - each arc goes out in the work zero's G17, G18 or G19, with the plane written only when it changes and only the plane's two centre offsets (I J, I K or J K);
+>   - an arc whose plane is turned off, or doesn't line up with the work zero (a Set Origin turned 30° about Z, say), is written as straight moves within the tolerance;
+>   - the LinuxCNC post now has G17/G18/G19 sections and K.
+>
+> **What it achieves.** On a half-sphere with Parallel Finishing rows along X or Y:
+>
+> | Tolerance | Moves (from 2,178) |
+> |---|---|
+> | 0.005 mm | 1,552 |
+> | 0.01 mm | 597 |
+> | 0.02 mm | 381 |
+>
+> - **Why 0.005 fits less:** the operations already simplify their toolpaths to about 0.01 mm before fitting, so a 0.005 tolerance can't replace many of those segments.
+> - **Rows at an angle:** rows that aren't along X or Y lie in no machine plane and stay straight.
+> - **Adaptive fronts:** these fit hardly any arcs, because the way they're worked out leaves them slightly faceted rather than truly round.
+>
+> Both of these are in `TODO.md`: fitting before the simplification, and smoother adaptive fronts. Meanwhile, setting the tolerance to 0.01 gives much more reduction.
+>
+> The help page (Machine and Post sections), the spec (both copies at rev 211), `CLAUDE.md` and `TODO.md` are updated.
+>
+> **To test, after installing:**
+> 1. Open the Machine dialog. Check the Arcs row: ticking Fit arcs off should grey the planes and tolerance, and the settings should be kept when you reopen it.
+> 2. Generate a Parallel Finishing with Angle of Cuts 0 or 90. The rows should show as magenta arcs, and the log should have an `[generate] arcs:` line. Try 0.01 to see the difference.
+> 3. Simulate it. The cut should look the same as before.
+> 4. Post with LinuxCNC. Look for `G18` or `G19` before the arcs, G2/G3 lines with I K or J K, and a smaller file. If you can, run it in LinuxCNC or its simulator to confirm the arc directions.
+> 5. Untick XZ and YZ, then Generate and Post again. Those arcs should be gone and posted as G1 lines.
+> 6. Close and reopen the job. The arcs should still be there.
+> 7. The help changed: check the Machine and Post sections.
+
+### 🧑 Frank · 13:40
+
+> <task-notification>
+> <task-id>bo5k8zr21</task-id>
+> <tool-use-id>toolu_01BKZqzfM6qTAJm3wkgKLhWV</tool-use-id>
+> <output-file>C:\Users\FRANKT~1\AppData\Local\Temp\claude\af67b47206b29857\3929cb7f-8be9-474a-b824-50f2445f44e3\tasks\bo5k8zr21.output</output-file>
+> <status>completed</status>
+> <summary>Background command "cd /d/Projects/alibre/AlibreCAM; timeout 1500 bin/x64/Debug/CamCoreTests.exe 2&gt;&amp;1 | tail -3" completed (exit code 0)</summary>
+> </task-notification>
+
+### 🤖 Claude
+
+> All 315 tests also pass in the Debug build, so both builds are clean. Arc fitting is ready to install once Alibre is closed.
+
+### 🧑 Frank · 13:47
+
+> Install it
+
+### 🤖 Claude
+
+> It's installed. The DLL, help page and updated LinuxCNC post all match the new build, so start Alibre and it will load this version.
+>
+> If you've copied the LinuxCNC post to `%APPDATA%\AlibreCAM\posts\` to customise it, that copy replaces the installed one. Add the `[plane xy]`, `[plane xz]` and `[plane yz]` sections and `{ K}` to it as well. Without them, XZ and YZ arcs are posted as straight lines.
+>
+> To test:
+> 1. Open the Machine dialog. Check the Arcs row: ticking Fit arcs off should grey the planes and tolerance, and the settings should be kept when you reopen it.
+> 2. Generate a Parallel Finishing with Angle of Cuts 0 or 90. The rows should show as magenta arcs, and the log should have an `[generate] arcs:` line. Try 0.01 to see the difference.
+> 3. Simulate it. The cut should look the same as before.
+> 4. Post with LinuxCNC. Look for `G18` or `G19` before the arcs, G2/G3 lines with I K or J K, and a smaller file. If you can, run it in LinuxCNC or its simulator to confirm the arc directions.
+> 5. Untick XZ and YZ, then Generate and Post again. Those arcs should be gone and posted as G1 lines.
+> 6. Close and reopen the job. The arcs should still be there.
+> 7. The help changed: check the Machine and Post sections.
+
+### 🧑 Frank · 13:54
+
+> Should the planes be XY YZ ZX ?
+
+### 🤖 Claude
+
+> Strictly, yes. In G-code the three planes are XY (G17), ZX (G18) and YZ (G19), each named so the first axis turned towards the second gives the plane's positive normal (+Z, +Y, +X). "XZ" is the common loose name, but ZX is the correct one: XZ would give a normal of −Y and arcs turning the other way.
+>
+> The code already handles G18 as ZX; only the name says XZ. That plane works internally with Z across and X up (`ToPlane` maps it to (z, x, y)). Clockwise is measured looking from +Y, as G2 and G3 do in G18, and the post test checks a G18 arc comes out as `G2 … I5 K0`. So arcs come out turning the right way.
+>
+> Renaming would just be labels. The Machine tab check box and the help would say ZX, and in the code `ArcPlane::XZ` would become `ZX`. The machine file key `xz` and the post section `[plane xz]` could change too. A machine file saved since this build already uses `xz`, so reading would accept both. Shall I make that change?
+
+### 🧑 Frank · 13:54
+
+> Please rename the labels
+
+### 🤖 Claude
+
+> All of these are about the arc plane, so a word-level rename is safe. The machine file will still read the old `xz` key, and posts will still accept an old `[plane xz]` section.
+
+> The rename is done. The spec in the Claude doc needs the same change:
+
+> The doc is at rev 214 now; someone else has edited it too. I'll bring `docs\SPEC.md`'s header up to date, then build and run the tests:
+
 ---
 
 # Side conversation
@@ -8712,3 +9013,32 @@ A forked copy of the session, kept apart from the main one.
 > - Whether the final pass may be climb or conventional, if finish quality matters.
 >
 > For AlibreCAM's Facing tab, those choices map onto a few fields: a cut direction of Climb / Conventional / Mixed, a pass angle, the start corner (the Features tab already has one), stepover as a percentage of the diameter, overhang, and the link type. Climb and Conventional would mean one-way passes, and Mixed would mean zigzag.
+
+## 2026-11-08
+
+### 🧑 Frank · 13:56
+
+> Are there outstanding Arc and adpative changes
+
+### 🤖 Claude
+
+> Yes. Here's what's outstanding on both, from the work so far and `TODO.md`. Neither has been tried in Alibre yet.
+>
+> **Adaptive clearing**
+> 1. **Faceted fronts.** The distance is worked out with 16-direction steps, so the fronts are slightly polygonal rather than round. That makes passes a little uneven and is why they fit almost no arcs: 1,727 moves only drop to 1,624 even at 0.02 mm. A smoother distance (fast marching) would fix both.
+> 2. **2 mm approach fixed in code** for Pocketing and Facing, which have no approach setting of their own. Waterline Roughing uses its Approach Distance.
+> 3. **Pocketing ignores islands.** That was already true of all its patterns, but an island in a pocket gets cut through.
+> 4. **Phase 2 and Phase 3 of the agreed plan:** ramp/helix entry for the ordinary Waterline Roughing patterns (plus Helix on Pocketing's Entry/Exit tab), then steep/shallow slope limits on the finishing operations.
+>
+> **Arc fitting**
+> 5. **Fitting happens after simplification.** The generators simplify to 0.01 mm first, so your 0.005 tolerance can only replace about a third of Parallel Finishing's moves (2,178 to 1,552), against three quarters at 0.01. Fitting before simplifying (on the dense points) would let 0.005 work properly.
+> 6. **Rows at an angle never fit.** Parallel Finishing rows not at 0° or 90° lie in no machine plane, so they stay as lines. That's inherent to G17/G18/G19.
+> 7. **Helixes made of straight moves aren't fitted.** Only flat runs are, so something like a ramp spiral made of lines stays as lines.
+> 8. **No regeneration when the machine changes.** Changing the arc settings doesn't touch existing toolpaths until the next Generate, because out-of-date marking isn't built yet.
+
+> Questions:
+> - Which of these outstanding adaptive and arc items should I plan next? (Phase 2 ramp/helix entry and Phase 3 slope limits are already agreed for later.)
+>   - Smoother adaptive fronts: Item 1: fast-marching distance so fronts are round. More even passes, and adaptive toolpaths then fit arcs.
+>   - Fit arcs before simplifying: Item 5: fit on the dense points inside the generators, so a 0.005 tolerance gives much shorter files.
+>   - Approach for Pocketing/Facing: Item 2: replace the fixed 2 mm with a setting (e.g. on the Adaptive Clearing group).
+>   - Pocketing islands: Item 3: leave islands inside pockets standing (adaptive and the ordinary patterns).

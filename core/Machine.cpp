@@ -74,6 +74,8 @@ namespace camcore
             problems.push_back("The spindle's maximum speed must be more than 0.");
         if (!(machine.holderDiameter > 0.0) || !(machine.holderDepth > 0.0))
             problems.push_back("The tool holder's diameter and depth must be more than 0.");
+        for (const std::string& problem : ValidateArcFitting(machine.arcs))
+            problems.push_back(problem);
         for (const std::string& problem : ValidateLibrary(machine.tools))
             problems.push_back(problem);
         return problems;
@@ -136,6 +138,16 @@ namespace camcore
                 result.machine.holderDiameter = holder->at("diameter").get<double>();
                 result.machine.holderDepth = holder->at("depth").get<double>();
             }
+            const auto arcs = root.find("arcs");
+            if (arcs != root.end())
+            {
+                ArcFitting& fitting = result.machine.arcs;
+                fitting.enabled = arcs->value("enabled", fitting.enabled);
+                fitting.xy = arcs->value("xy", fitting.xy);
+                fitting.zx = arcs->value("zx", arcs->value("xz", fitting.zx));    // "xz" before it was renamed
+                fitting.yz = arcs->value("yz", fitting.yz);
+                fitting.tolerance = arcs->value("tolerance", fitting.tolerance);
+            }
 
             for (const json& item : root.at("tools"))
                 result.machine.tools.tools.push_back(ToolFromJson(item));
@@ -180,6 +192,12 @@ namespace camcore
                 { "travel", json::array({ machine.travelX, machine.travelY, machine.travelZ }) },
                 { "maxSpindleRpm", machine.maxSpindleRpm },
                 { "toolHolder", { { "diameter", machine.holderDiameter }, { "depth", machine.holderDepth } } },
+                { "arcs",
+                  { { "enabled", machine.arcs.enabled },
+                    { "xy", machine.arcs.xy },
+                    { "zx", machine.arcs.zx },
+                    { "yz", machine.arcs.yz },
+                    { "tolerance", machine.arcs.tolerance } } },
                 { "tools", tools }
             };
             text = root.dump(2) + "\n";

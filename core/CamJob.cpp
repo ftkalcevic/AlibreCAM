@@ -429,7 +429,8 @@ namespace camcore
         }
 
         // Each move is [kind, x, y, z, feed, seconds], kind 0 rapid, 1 feed, 2 dwell.
-        // An arc feed is kind 3, followed by its centre's x, y, z and 1 if clockwise.
+        // An arc feed is kind 3, followed by its centre's x, y, z and 1 if clockwise,
+        // then its plane (1 ZX, 2 YZ) when it isn't XY.
         json WriteToolpath(const Toolpath& toolpath)
         {
             json moves = json::array();
@@ -437,9 +438,11 @@ namespace camcore
             {
                 if (move.kind == MoveKind::Feed && move.arc)
                 {
-                    moves.push_back(json::array({ 3, move.to.x, move.to.y, move.to.z, move.feed, move.seconds,
-                                                  move.centre.x, move.centre.y, move.centre.z,
-                                                  move.clockwise ? 1 : 0 }));
+                    json entry = json::array({ 3, move.to.x, move.to.y, move.to.z, move.feed, move.seconds,
+                                               move.centre.x, move.centre.y, move.centre.z, move.clockwise ? 1 : 0 });
+                    if (move.plane != ArcPlane::XY)
+                        entry.push_back(move.plane == ArcPlane::ZX ? 1 : 2);
+                    moves.push_back(entry);
                     continue;
                 }
                 const int kind = (move.kind == MoveKind::Feed) ? 1 : (move.kind == MoveKind::Dwell) ? 2 : 0;
@@ -469,7 +472,8 @@ namespace camcore
                 }
 
                 const int kind = entry[0].get<int>();
-                if (kind < 0 || kind > 3 || entry.size() != (kind == 3 ? 10u : 6u))
+                if (kind < 0 || kind > 3 ||
+                    (kind == 3 ? (entry.size() != 10u && entry.size() != 11u) : entry.size() != 6u))
                     return false;
 
                 ToolpathMove move;
@@ -482,6 +486,13 @@ namespace camcore
                     move.arc = true;
                     move.centre = { entry[6].get<double>(), entry[7].get<double>(), entry[8].get<double>() };
                     move.clockwise = entry[9].get<double>() != 0.0;
+                    if (entry.size() == 11u)
+                    {
+                        const int plane = entry[10].get<int>();
+                        if (plane < 0 || plane > 2)
+                            return false;
+                        move.plane = (plane == 1) ? ArcPlane::ZX : (plane == 2) ? ArcPlane::YZ : ArcPlane::XY;
+                    }
                 }
                 toolpath.moves.push_back(move);
             }

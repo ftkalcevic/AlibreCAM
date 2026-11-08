@@ -59,7 +59,10 @@ namespace
                                         IDC_MACHINE_SPINDLE_UNIT, IDC_MACHINE_HOLDER_LABEL,
                                         IDC_MACHINE_HOLDER_DIA_LABEL, IDC_MACHINE_HOLDER_DIA,
                                         IDC_MACHINE_HOLDER_DEPTH_LABEL, IDC_MACHINE_HOLDER_DEPTH,
-                                        IDC_MACHINE_HOLDER_UNIT };
+                                        IDC_MACHINE_HOLDER_UNIT, IDC_MACHINE_ARCS_LABEL, IDC_MACHINE_ARCS,
+                                        IDC_MACHINE_ARC_XY, IDC_MACHINE_ARC_ZX, IDC_MACHINE_ARC_YZ,
+                                        IDC_MACHINE_ARC_TOL_LABEL, IDC_MACHINE_ARC_TOL, IDC_MACHINE_ARC_TOL_UNIT };
+    const int kArcPlaneBoxes[] = { IDC_MACHINE_ARC_XY, IDC_MACHINE_ARC_ZX, IDC_MACHINE_ARC_YZ };
 
     // The machine tab's number boxes, and what each is called in a message.
     struct NumberBox
@@ -158,6 +161,11 @@ BEGIN_MESSAGE_MAP(CMachineDlg, CDialog)
     ON_EN_KILLFOCUS(IDC_MACHINE_SPINDLE, &CMachineDlg::OnMachineFieldChanged)
     ON_EN_KILLFOCUS(IDC_MACHINE_HOLDER_DIA, &CMachineDlg::OnMachineFieldChanged)
     ON_EN_KILLFOCUS(IDC_MACHINE_HOLDER_DEPTH, &CMachineDlg::OnMachineFieldChanged)
+    ON_EN_KILLFOCUS(IDC_MACHINE_ARC_TOL, &CMachineDlg::OnMachineFieldChanged)
+    ON_BN_CLICKED(IDC_MACHINE_ARCS, &CMachineDlg::OnMachineFieldChanged)
+    ON_BN_CLICKED(IDC_MACHINE_ARC_XY, &CMachineDlg::OnMachineFieldChanged)
+    ON_BN_CLICKED(IDC_MACHINE_ARC_ZX, &CMachineDlg::OnMachineFieldChanged)
+    ON_BN_CLICKED(IDC_MACHINE_ARC_YZ, &CMachineDlg::OnMachineFieldChanged)
     ON_CBN_SELCHANGE(IDC_MACHINE_AXES, &CMachineDlg::OnMachineFieldChanged)
     ON_CBN_SELCHANGE(IDC_MACHINE_ROTARY, &CMachineDlg::OnMachineFieldChanged)
     ON_BN_CLICKED(IDC_LIB_ADD, &CMachineDlg::OnAddTool)
@@ -280,6 +288,11 @@ void CMachineDlg::ShowMachine()
     m_axes.SetCurSel(m_machine.axes == 4 ? 1 : 0);
     for (const NumberBox& box : kNumberBoxes)
         SetDlgItemText(box.id, m_canEdit ? FormatNumber(m_machine.*box.field).c_str() : L"");
+    CheckDlgButton(IDC_MACHINE_ARCS, m_machine.arcs.enabled ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(IDC_MACHINE_ARC_XY, m_machine.arcs.xy ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(IDC_MACHINE_ARC_ZX, m_machine.arcs.zx ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(IDC_MACHINE_ARC_YZ, m_machine.arcs.yz ? BST_CHECKED : BST_UNCHECKED);
+    SetDlgItemText(IDC_MACHINE_ARC_TOL, m_canEdit ? FormatNumber(m_machine.arcs.tolerance).c_str() : L"");
     for (int i = 0; i < 4; ++i)
     {
         if (kRotaryAxes[i] == m_machine.rotary)
@@ -320,6 +333,12 @@ void CMachineDlg::UpdateButtons()
     for (const NumberBox& box : kNumberBoxes)
         GetDlgItem(box.id)->EnableWindow(edit);
     GetDlgItem(IDC_MACHINE_ROTARY)->EnableWindow((m_canEdit && m_axes.GetCurSel() == 1) ? TRUE : FALSE);
+    // The planes and tolerance only with arcs on.
+    GetDlgItem(IDC_MACHINE_ARCS)->EnableWindow(edit);
+    const BOOL arcs = (m_canEdit && IsDlgButtonChecked(IDC_MACHINE_ARCS) == BST_CHECKED) ? TRUE : FALSE;
+    for (int id : kArcPlaneBoxes)
+        GetDlgItem(id)->EnableWindow(arcs);
+    GetDlgItem(IDC_MACHINE_ARC_TOL)->EnableWindow(arcs);
     GetDlgItem(IDC_LIB_ADD)->EnableWindow(edit);
     GetDlgItem(IDC_LIB_IMPORT)->EnableWindow(edit);
     GetDlgItem(IDC_LIB_EXPORT)->EnableWindow((m_canEdit && !m_machine.tools.tools.empty()) ? TRUE : FALSE);
@@ -378,10 +397,32 @@ bool CMachineDlg::ApplyMachineFields()
         changed.*box.field = value;
     }
 
+    // Arcs: the check boxes, and the tolerance more than 0 and at most 1 mm.
+    changed.arcs.enabled = IsDlgButtonChecked(IDC_MACHINE_ARCS) == BST_CHECKED;
+    changed.arcs.xy = IsDlgButtonChecked(IDC_MACHINE_ARC_XY) == BST_CHECKED;
+    changed.arcs.zx = IsDlgButtonChecked(IDC_MACHINE_ARC_ZX) == BST_CHECKED;
+    changed.arcs.yz = IsDlgButtonChecked(IDC_MACHINE_ARC_YZ) == BST_CHECKED;
+    {
+        CString text;
+        GetDlgItemText(IDC_MACHINE_ARC_TOL, text);
+        text.Trim();
+        wchar_t* pEnd = nullptr;
+        const double value = wcstod(text, &pEnd);
+        if (text.IsEmpty() || pEnd == nullptr || *pEnd != L'\0' || !(value > 0.0 && value <= 1.0))
+        {
+            MessageBox(L"The arc tolerance must be a number more than 0 and at most 1 mm.", L"AlibreCAM",
+                       MB_OK | MB_ICONWARNING);
+            SetDlgItemText(IDC_MACHINE_ARC_TOL, FormatNumber(m_machine.arcs.tolerance).c_str());
+            return false;
+        }
+        changed.arcs.tolerance = value;
+    }
+
     if (changed.name == m_machine.name && changed.axes == m_machine.axes && changed.rotary == m_machine.rotary &&
         changed.travelX == m_machine.travelX && changed.travelY == m_machine.travelY &&
         changed.travelZ == m_machine.travelZ && changed.maxSpindleRpm == m_machine.maxSpindleRpm &&
-        changed.holderDiameter == m_machine.holderDiameter && changed.holderDepth == m_machine.holderDepth)
+        changed.holderDiameter == m_machine.holderDiameter && changed.holderDepth == m_machine.holderDepth &&
+        changed.arcs == m_machine.arcs)
         return true;
     if (changed.name.empty())
     {

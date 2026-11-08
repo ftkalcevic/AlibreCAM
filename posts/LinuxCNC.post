@@ -41,12 +41,23 @@ G0{ X}{ Y}{ Z}
 [feed]
 G1{ X}{ Y}{ Z}{ F}
 
-; I and J are the arc's centre from where it starts. Z changing makes a helix.
+; I, J and K are the arc's centre from where it starts: I J in XY, I K in ZX,
+; J K in YZ. Z changing in XY makes a helix.
 [arc cw]
-G2{ X}{ Y}{ Z}{ I}{ J}{ F}
+G2{ X}{ Y}{ Z}{ I}{ J}{ K}{ F}
 
 [arc ccw]
-G3{ X}{ Y}{ Z}{ I}{ J}{ F}
+G3{ X}{ Y}{ Z}{ I}{ J}{ K}{ F}
+
+; The arc plane, written before an arc in a different plane from the last.
+[plane xy]
+G17
+
+[plane zx]
+G18
+
+[plane yz]
+G19
 
 [dwell]
 G4 P{SECONDS}

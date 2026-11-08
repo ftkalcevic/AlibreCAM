@@ -19,6 +19,19 @@ namespace camcore
         Dwell       // stays put for `seconds`
     };
 
+    // The plane an arc move turns in.
+    enum class ArcPlane
+    {
+        XY,     // seen from +Z: G17
+        ZX,     // seen from +Y, Z across and X up: G18
+        YZ      // seen from +X, Y across and Z up: G19
+    };
+
+    // A point in a plane's own axes: u across, v up, w along its normal, so that
+    // anticlockwise seen from the normal is the angle atan2(v, u) growing.
+    void ToPlane(ArcPlane plane, const Vec3& point, double& u, double& v, double& w);
+    Vec3 FromPlane(ArcPlane plane, double u, double v, double w);
+
     struct ToolpathMove
     {
         MoveKind kind = MoveKind::Rapid;
@@ -26,11 +39,14 @@ namespace camcore
         double feed = 0.0;      // feeds only
         double seconds = 0.0;   // dwells only
 
-        // A feed can go round an arc in the frame's XY, about centre, instead of
-        // straight. Z changes evenly along it, so it can be a helix.
+        // A feed can go round an arc about centre instead of straight, in the
+        // frame's XY plane (Z may change evenly along it, a helix), or flat in its
+        // ZX or YZ plane. Clockwise is seen from the plane's normal (+Z, +Y or +X),
+        // as G2 and G3 are.
         bool arc = false;
         Vec3 centre;
-        bool clockwise = false; // seen from the frame's +Z
+        bool clockwise = false;
+        ArcPlane plane = ArcPlane::XY;
     };
 
     // The first move's end is where the operation starts.
@@ -42,6 +58,14 @@ namespace camcore
     // The points a move passes through after from, up to and including its end:
     // just the end for a straight move, or its arc sampled for drawing.
     std::vector<Vec3> MovePoints(const Vec3& from, const ToolpathMove& move);
+
+    // An arc move's turn from `from`, in radians: positive anticlockwise seen from
+    // its plane's normal, negative clockwise, a whole turn when it ends where it starts.
+    double ArcMoveSweep(const Vec3& from, const ToolpathMove& move);
+
+    // An arc move's points after from, up to and including its end, no more than
+    // `step` radians apart (along the helix for an XY arc that changes Z).
+    std::vector<Vec3> ArcMovePoints(const Vec3& from, const ToolpathMove& move, double step);
 
     // What a toolpath calculation gives back.
     struct ToolpathResult
