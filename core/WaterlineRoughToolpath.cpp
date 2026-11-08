@@ -930,6 +930,7 @@ namespace camcore
                     adaptive.optimalLoad = pitch;
                     adaptive.climb = settings.direction != CutDirection::Conventional;
                     adaptive.ramp = settings.rampEntry;
+                    adaptive.simplify = input.simplifyTolerance;
                     regions[static_cast<size_t>(base + c)].adaptive = AdaptiveClear(std::move(grid), adaptive).cuts;
                 }
                 previousLabels = labels;
@@ -2463,7 +2464,7 @@ namespace camcore
             heights.Height(x, y, totals, true, height);
             return height;
         };
-        const double tolerance = (std::min)(w.cell / 4.0, 0.01);
+        const double tolerance = (std::min)(w.cell / 4.0, input.simplifyTolerance);
         const auto inArea = [&](double x, double y) {
             size_t q = 0;
             return w.CellAt({ x, y, 0.0 }, q) && w.inArea[q] != 0;

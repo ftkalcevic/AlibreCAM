@@ -355,6 +355,7 @@ namespace camcore
                 adaptive.optimalLoad = step;
                 adaptive.climb = facing.direction != CutDirection::Conventional;
                 adaptive.ramp = facing.rampEntry;
+                adaptive.simplify = input.simplifyTolerance;
                 adaptiveCuts[a] = AdaptiveClear(
                     AdaptiveGridFromOutlines({ *area.pBoundary }, cell, -overtravel, adaptive.toolRadius), adaptive).cuts;
             }

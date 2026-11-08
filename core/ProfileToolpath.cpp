@@ -1701,6 +1701,7 @@ namespace camcore
                 adaptive.climb = settings.direction != CutDirection::Conventional;
                 adaptive.ramp = settings.rampEntry;
                 adaptive.wallLaps = false;
+                adaptive.simplify = input.simplifyTolerance;
                 pocket.adaptive =
                     AdaptiveClear(AdaptiveGridFromOutlines({ outline }, cell, wall, adaptive.toolRadius), adaptive).cuts;
                 pocket.pieces = OffsetPieces({ rings.front() }, true,

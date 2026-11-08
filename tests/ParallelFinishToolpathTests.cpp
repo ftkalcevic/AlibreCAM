@@ -677,14 +677,21 @@ TEST_CASE("arc fitting survey of parallel finishing" * doctest::skip())
         SequenceStep step = ParallelStep();
         step.parallelFinishing.cutAngle = angle;
         const Tool tool = Ball(6);
-        const ToolpathResult result = GenerateParallelFinishToolpath(Input(step, tool));
+        const ToolpathResult simplified = GenerateParallelFinishToolpath(Input(step, tool));
+        WaterlineRoughToolpathInput dense = Input(step, tool);
+        dense.simplifyTolerance = 0.001;
+        const ToolpathResult result = GenerateParallelFinishToolpath(dense);
         REQUIRE(result.ok);
+        std::printf("angle %.0f: %zu moves simplified as before, %zu dense\n", angle, simplified.toolpath.moves.size(),
+                    result.toolpath.moves.size());
         for (double tolerance : { 0.002, 0.005, 0.01, 0.02, 0.05 })
         {
             Toolpath fitted = result.toolpath;
             ArcFitting fitting;
             fitting.tolerance = tolerance;
-            const ArcFitCounts counts = FitArcs(fitted, fitting);
+            ArcFitCounts counts = FitArcs(fitted, fitting);
+            SimplifyStraightRuns(fitted, 0.01);
+            counts.movesAfter = fitted.moves.size();
             std::printf("angle %.0f tolerance %.3f: %zu moves to %zu, %zu arcs from %zu lines\n", angle, tolerance,
                         counts.movesBefore, counts.movesAfter, counts.arcsMade, counts.linesReplaced);
         }

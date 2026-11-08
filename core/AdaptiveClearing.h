@@ -43,6 +43,7 @@ namespace camcore
         bool climb = true;              // the material on the tool's right
         RampEntry ramp;
         bool wallLaps = true;           // last, laps along the edge of the free cells where material's left
+        double simplify = 0.01;         // how closely each cut is simplified, mm
     };
 
     // One cut: how it's entered, then its points at the level.

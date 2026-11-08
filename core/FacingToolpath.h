@@ -30,6 +30,10 @@ namespace camcore
         const SequenceStep* operation = nullptr;
         const Tool* tool = nullptr;     // in millimetres, from ToolInMillimetres
 
+        // How closely adaptive clearing simplifies its cuts, in mm. Generate asks for
+        // them dense (0.001), fits arcs, then simplifies what stays straight to 0.01.
+        double simplifyTolerance = 0.01;
+
         // The parts' highest point along the frame's Z, for the clearance plane.
         bool havePartMaxZ = false;
         double partMaxZ = 0.0;

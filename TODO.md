@@ -26,7 +26,6 @@ these belong in the spec (`docs\SPEC.md`) once they're made.
 - Next, after adaptive clearing (Frank's order): ramp/helix entry for Waterline Roughing (Plunge, Ramp along path, Helix, falling back) and a Helix mode on Pocketing's Entry/Exit tab; then Steep/Shallow slope limits (From/To angle) on Waterline and Parallel Finishing
 - Rest machining: clear only what a bigger tool left, from the simulated stock or a previous tool's diameter
 - More posts (GRBL, Mach3/4, UCCNC, Masso)
-- Arc fitting: fit before the generators simplify to 0.01 mm (so a 0.005 tolerance fits more), and smoother adaptive fronts (they're slightly faceted and fit few arcs)
 - Undo in the CAM tree
 - Inch display units
 - Clamps and vices as keep-out for toolpaths and the simulation

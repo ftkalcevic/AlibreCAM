@@ -357,7 +357,7 @@
   <dt>Arcs: Fit arcs, XY, ZX, YZ</dt>
   <dd>Whether the machine's controller takes arcs (G2 and G3), and in which planes: XY (G17), ZX (G18) and YZ (G19). With Fit arcs ticked, every operation's toolpath has its runs of short straight moves that follow a circle (at least three, at one feed, flat in an allowed plane of the operation's origin) replaced by arcs when it's generated; they're drawn as arcs (in magenta), simulated and posted as arcs. Arcs that operations make themselves, such as helixes and radial leads, stay arcs either way. Untick a plane your controller doesn't handle well; arcs in it are then posted as straight moves. Parallel Finishing's rows only lie in ZX or YZ when the Angle of Cuts is 0 or 90 degrees. All ticked by default. Changing these applies at the next Generate.</dd>
   <dt>Arcs: Tolerance</dt>
-  <dd>How far a fitted arc may stray from the points and moves it replaces, in millimetres. 0.005 mm by default; more than 0 and at most 1. The toolpaths are already simplified to about 0.01 mm, so a tolerance under that fits fewer arcs; 0.01 to 0.02 fits most of a smooth surface's rows.</dd>
+  <dd>How far a fitted arc may stray from the points and moves it replaces, in millimetres. 0.005 mm by default; more than 0 and at most 1. Arcs are fitted to Parallel Finishing's and adaptive clearing's moves before they're simplified, then what stays straight is simplified to 0.01 mm (every operation), so a small tolerance still fits most of a smooth surface's rows and adaptive clearing's rings.</dd>
   <dt>Close</dt>
   <dd>Closes the dialog. Everything is already saved.</dd>
 </dl>

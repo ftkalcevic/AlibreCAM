@@ -390,55 +390,126 @@ namespace camcore
                 return false;
             }
 
-            // The distance from the sources through free cells not yet worked from,
-            // stepping to the 16 cells around (straight, diagonal and knight's moves).
+            // The distance from the sources through free cells not yet worked from, by
+            // fast marching: the eikonal equation solved upwind, second order along an
+            // axis where two cells that way are known (falling back to first order),
+            // so fronts come out round rather than faceted. Walls and cells worked
+            // from before are never crossed.
             std::vector<float> Distances(const std::vector<size_t>& sources) const
             {
-                const float infinite = std::numeric_limits<float>::infinity();
-                std::vector<float> distance(m_cells, infinite);
-                using Entry = std::pair<float, size_t>;
+                const double infinite = std::numeric_limits<double>::infinity();
+                std::vector<double> distance(m_cells, infinite);
+                std::vector<unsigned char> known(m_cells, 0);
+                using Entry = std::pair<double, size_t>;
                 std::priority_queue<Entry, std::vector<Entry>, std::greater<Entry>> queue;
+                const double h = m_g.cell;
+                const auto open = [&](int i, int j) {
+                    if (i < 0 || j < 0 || i >= m_g.nx || j >= m_g.ny)
+                        return false;
+                    const size_t q = m_g.Index(i, j);
+                    return m_g.free[q] && !m_done[q];
+                };
+                const auto knownAt = [&](int i, int j, double& value) {
+                    if (i < 0 || j < 0 || i >= m_g.nx || j >= m_g.ny)
+                        return false;
+                    const size_t q = m_g.Index(i, j);
+                    if (!known[q])
+                        return false;
+                    value = distance[q];
+                    return true;
+                };
+                // The value at (i, j) from its known neighbours.
+                const auto solve = [&](int i, int j) {
+                    double weights[2] = { 0.0, 0.0 }, targets[2] = { 0.0, 0.0 };
+                    int axes = 0;
+                    for (int axis = 0; axis < 2; ++axis)
+                    {
+                        const int di = axis == 0 ? 1 : 0, dj = axis == 0 ? 0 : 1;
+                        double best = infinite, weight = 1.0, target = 0.0;
+                        for (int side : { -1, 1 })
+                        {
+                            double t1 = 0.0;
+                            if (!knownAt(i + side * di, j + side * dj, t1))
+                                continue;
+                            double t2 = 0.0;
+                            double w = 1.0, t = t1;
+                            if (knownAt(i + 2 * side * di, j + 2 * side * dj, t2) && t2 <= t1)
+                            {
+                                w = 2.25;
+                                t = (4.0 * t1 - t2) / 3.0;
+                            }
+                            // The side giving the smaller first-order value leads.
+                            if (t1 < best)
+                            {
+                                best = t1;
+                                weight = w;
+                                target = t;
+                            }
+                        }
+                        if (best < infinite)
+                        {
+                            weights[axes] = weight;
+                            targets[axes] = target;
+                            ++axes;
+                        }
+                    }
+                    if (axes == 0)
+                        return infinite;
+                    // Both axes: (sum w)T^2 - 2(sum w t)T + sum w t^2 - h^2 = 0, the larger root.
+                    if (axes == 2)
+                    {
+                        const double a = weights[0] + weights[1];
+                        const double b = weights[0] * targets[0] + weights[1] * targets[1];
+                        const double c = weights[0] * targets[0] * targets[0] + weights[1] * targets[1] * targets[1] - h * h;
+                        const double disc = b * b - a * c;
+                        if (disc >= 0.0)
+                        {
+                            const double t = (b + std::sqrt(disc)) / a;
+                            if (t >= (std::max)(targets[0], targets[1]))
+                                return t;
+                        }
+                        // Only the nearer axis.
+                        const int k = (targets[0] + h / std::sqrt(weights[0]) <= targets[1] + h / std::sqrt(weights[1])) ? 0 : 1;
+                        return targets[k] + h / std::sqrt(weights[k]);
+                    }
+                    return targets[0] + h / std::sqrt(weights[0]);
+                };
+
                 for (size_t q : sources)
                 {
-                    distance[q] = 0.0f;
-                    queue.push({ 0.0f, q });
+                    distance[q] = 0.0;
+                    queue.push({ 0.0, q });
                 }
-                static const int steps[16][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 }, { 1, 1 }, { 1, -1 },
-                                                  { -1, 1 }, { -1, -1 }, { 1, 2 }, { 2, 1 }, { -1, 2 }, { -2, 1 },
-                                                  { 1, -2 }, { 2, -1 }, { -1, -2 }, { -2, -1 } };
-                float lengths[16];
-                for (int s = 0; s < 16; ++s)
-                    lengths[s] = static_cast<float>(std::hypot(steps[s][0], steps[s][1]) * m_g.cell);
+                static const int around[4][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
                 while (!queue.empty())
                 {
                     const Entry top = queue.top();
                     queue.pop();
-                    if (top.first > distance[top.second])
+                    if (known[top.second] || top.first > distance[top.second])
                         continue;
+                    known[top.second] = 1;
                     const int i = static_cast<int>(top.second % static_cast<size_t>(m_g.nx));
                     const int j = static_cast<int>(top.second / static_cast<size_t>(m_g.nx));
-                    for (int s = 0; s < 16; ++s)
+                    for (const auto& step : around)
                     {
-                        const int a = i + steps[s][0], b = j + steps[s][1];
-                        if (a < 0 || b < 0 || a >= m_g.nx || b >= m_g.ny)
+                        const int a = i + step[0], b = j + step[1];
+                        if (!open(a, b))
                             continue;
                         const size_t q = m_g.Index(a, b);
-                        if (!m_g.free[q] || m_done[q])
+                        if (known[q])
                             continue;
-                        // A knight's move only past a free cell.
-                        if (std::abs(steps[s][0]) == 2 && !m_g.free[m_g.Index(i + steps[s][0] / 2, j)])
-                            continue;
-                        if (std::abs(steps[s][1]) == 2 && !m_g.free[m_g.Index(i, j + steps[s][1] / 2)])
-                            continue;
-                        const float through = top.first + lengths[s];
-                        if (through < distance[q])
+                        const double value = solve(a, b);
+                        if (value < distance[q])
                         {
-                            distance[q] = through;
-                            queue.push({ through, q });
+                            distance[q] = value;
+                            queue.push({ value, q });
                         }
                     }
                 }
-                return distance;
+                std::vector<float> result(m_cells);
+                for (size_t q = 0; q < m_cells; ++q)
+                    result[q] = static_cast<float>(distance[q]);
+                return result;
             }
 
             // Cuts the fronts spreading from the sources, every optimal load.
@@ -666,14 +737,14 @@ namespace camcore
                     if (loop)
                     {
                         chain.push_back(chain.front());
-                        chain = SimplifyPoints(chain, 0.01);
+                        chain = SimplifyPoints(chain, m_s.simplify);
                         chain.pop_back();
                         if (chain.size() < 3)
                             return;
                     }
                     else
                     {
-                        chain = SimplifyPoints(chain, 0.01);
+                        chain = SimplifyPoints(chain, m_s.simplify);
                     }
                     pieces.push_back(std::move(chain));
                     closed.push_back(loop ? 1 : 0);
@@ -820,7 +891,7 @@ namespace camcore
                             cut.points.insert(cut.points.begin(), air);
                     }
                 }
-                cut.points = SimplifyPoints(cut.points, 0.01);
+                cut.points = SimplifyPoints(cut.points, m_s.simplify);
                 at = cut.points.back();
                 haveAt = true;
                 result.cuts.push_back(std::move(cut));

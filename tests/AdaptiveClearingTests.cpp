@@ -473,3 +473,49 @@ TEST_CASE("adaptive clearing's settings save and load, and are off in older file
     CHECK(PocketingSettings().rampEntry.helixPercent == 80.0);
     CHECK(PocketingSettings().rampEntry.rampAngle == 2.0);
 }
+
+TEST_CASE("adaptive fronts round a helix are round")
+{
+    // A big square pocket: the rings near the helix shouldn't be polygons.
+    const double r = 3.0;
+    AdaptiveGrid grid = Grid(0, 0, 80, 80, 1.0, 0.15);
+    Fill(
+        grid, [&](double x, double y) { return x >= r && x <= 80 - r && y >= r && y <= 80 - r; },
+        [&](double x, double y) { return x >= 0 && x <= 80 && y >= 0 && y <= 80; });
+    AdaptiveSettings settings;
+    settings.toolRadius = r;
+    settings.optimalLoad = 1.0;
+    settings.simplify = 0.001;
+    const AdaptiveResult result = AdaptiveClear(grid, settings);
+    REQUIRE(result.helixes == 1);
+    const Vec3 centre = result.cuts.front().helixCentre;
+
+    // Each closed ring's points: how far they wander from a circle. Within a cell (the
+    // helix's bore, where they start, is in cells), however big the ring: 16-step
+    // distances were about 2.6% of the radius out.
+    double worst = 0.0;
+    int rings = 0;
+    for (const AdaptiveCut& cut : result.cuts)
+    {
+        if (cut.points.size() < 20)
+            continue;
+        const Vec3& a = cut.points.front();
+        const Vec3& b = cut.points.back();
+        if (std::hypot(a.x - b.x, a.y - b.y) > 0.5)
+            continue;   // not a closed ring
+        double low = 1e9, high = 0.0;
+        for (const Vec3& p : cut.points)
+        {
+            const double d = std::hypot(p.x - centre.x, p.y - centre.y);
+            low = (std::min)(low, d);
+            high = (std::max)(high, d);
+        }
+        if (high > 30.0)
+            continue;   // past where the walls bend it
+        worst = (std::max)(worst, high - low);
+        ++rings;
+    }
+    std::printf("adaptive rings: %d checked, out of round by at most %.3f mm\n", rings, worst);
+    CHECK(rings >= 5);
+    CHECK(worst < 0.15);
+}

@@ -34,6 +34,11 @@ namespace camcore
         const SequenceStep* operation = nullptr;
         const Tool* tool = nullptr;                 // in millimetres, from ToolInMillimetres
 
+        // How closely Parallel Finishing simplifies its rows, and
+        // Waterline Roughing's adaptive clearing its cuts, in mm. Generate asks for
+        // them dense (0.001), fits arcs, then simplifies what stays straight to 0.01.
+        double simplifyTolerance = 0.01;
+
         // The area, as for Plunge Roughing: picked faces' facets and closed loops,
         // projected onto the frame's XY plane and merged.
         std::vector<std::vector<Vec3>> faces;

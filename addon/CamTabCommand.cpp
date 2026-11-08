@@ -37,6 +37,11 @@ namespace fs = std::filesystem;
 
 namespace
 {
+    // Generators that simplify plainly are asked for dense moves; arcs are fitted to
+    // those, then what stays straight is simplified to the usual 0.01 mm.
+    const double kDenseSimplify = 0.001;
+    const double kFinalSimplify = 0.01;
+
     // The resize timer also checks whether the tab has focus.
     const UINT_PTR kResizeTimer = 1;
     const UINT kResizeMilliseconds = 250;
@@ -1939,12 +1944,13 @@ bool CCamTabCommand::GenerateOperation(const StepRef& target, std::string& probl
     if (!GenerateOperationMoves(target, problem))
         return false;
 
-    // Arcs fitted to the straight moves, in the planes the machine allows.
+    // Arcs fitted to the dense straight moves, in the planes the machine allows, then
+    // what stays straight simplified to 0.01 mm.
     camcore::SequenceStep& operation = m_job.sequence[target.step].children[target.child];
     const camcore::ArcFitCounts counts = camcore::FitArcs(operation.toolpath, m_machine.arcs);
-    if (counts.arcsMade > 0)
-        Log(L"[generate] arcs: %zu straight moves into %zu arcs, %zu moves to %zu", counts.linesReplaced,
-            counts.arcsMade, counts.movesBefore, counts.movesAfter);
+    const size_t simplified = camcore::SimplifyStraightRuns(operation.toolpath, kFinalSimplify);
+    Log(L"[generate] arcs: %zu straight moves into %zu arcs; %zu more left out simplifying; %zu moves to %zu",
+        counts.linesReplaced, counts.arcsMade, simplified, counts.movesBefore, operation.toolpath.moves.size());
     return true;
 }
 
@@ -2331,6 +2337,7 @@ bool CCamTabCommand::GenerateOperationMoves(const StepRef& target, std::string& 
         else
         {
             camcore::WaterlineRoughToolpathInput waterlineInput;
+            waterlineInput.simplifyTolerance = kDenseSimplify;
             waterlineInput.operation = &operation;
             waterlineInput.tool = (pTool != nullptr) ? &tool : nullptr;
             waterlineInput.havePartMaxZ = havePartMaxZ;
@@ -2443,6 +2450,7 @@ bool CCamTabCommand::GenerateOperationMoves(const StepRef& target, std::string& 
             return false;
 
         camcore::PocketToolpathInput pocketInput;
+        pocketInput.simplifyTolerance = kDenseSimplify;
         pocketInput.operation = &operation;
         pocketInput.tool = (pTool != nullptr) ? &tool : nullptr;
         pocketInput.havePartMaxZ = havePartMaxZ;
@@ -2495,6 +2503,7 @@ bool CCamTabCommand::GenerateOperationMoves(const StepRef& target, std::string& 
         }
 
         camcore::FacingToolpathInput facingInput;
+        facingInput.simplifyTolerance = kDenseSimplify;
         facingInput.operation = &operation;
         facingInput.tool = (pTool != nullptr) ? &tool : nullptr;
         facingInput.havePartMaxZ = havePartMaxZ;

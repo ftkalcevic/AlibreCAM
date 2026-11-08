@@ -8931,6 +8931,33 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > The doc is at rev 214 now; someone else has edited it too. I'll bring `docs\SPEC.md`'s header up to date, then build and run the tests:
 
+> The planes are now named XY, ZX and YZ everywhere. Release builds cleanly and all tests pass, but it isn't installed and hasn't been tried in Alibre.
+>
+> **What changed:**
+> - **Machine tab:** the check box reads ZX.
+> - **Help and spec:** both say ZX. The Claude doc is updated, and `docs\SPEC.md`'s header now says rev 214.
+> - **Posts:** the section is `[plane zx]`, and the LinuxCNC post uses it.
+> - **Code:** `ArcPlane::ZX`, `ArcFitting::zx` and `IDC_MACHINE_ARC_ZX`, plus the tests and `CLAUDE.md`.
+>
+> **Older files still work:**
+> - A machine file saved with the `xz` key still loads.
+> - A post with an old `[plane xz]` section is still used for G18.
+>
+> **The doc and `docs\SPEC.md` now differ:** someone else edited the Claude doc since my last change (revs 212 and 213). Only my edits went into `docs\SPEC.md`, so it's missing theirs.
+>
+> **To test, after installing:**
+> 1. The Machine tab's Arcs row shows XY, ZX, YZ, and your earlier settings for that plane are kept.
+> 2. Untick ZX, then Generate and Post a Parallel Finishing with rows along X. There should be no G18 arcs.
+> 3. The help changed: check the Machine and Post sections.
+
+### 🧑 Frank · 13:58
+
+> I'll test later.
+
+### 🤖 Claude
+
+> Fine. When you're ready, close Alibre and say "Install it". The test list from my last message still applies.
+
 ---
 
 # Side conversation
@@ -9042,3 +9069,119 @@ A forked copy of the session, kept apart from the main one.
 >   - Fit arcs before simplifying: Item 5: fit on the dense points inside the generators, so a 0.005 tolerance gives much shorter files.
 >   - Approach for Pocketing/Facing: Item 2: replace the fixed 2 mm with a setting (e.g. on the Adaptive Clearing group).
 >   - Pocketing islands: Item 3: leave islands inside pockets standing (adaptive and the ordinary patterns).
+
+### 🧑 Frank · 14:00
+
+> Answers:
+> - Which of these outstanding adaptive and arc items should I plan next? (Phase 2 ramp/helix entry and Phase 3 slope limits are already agreed for later.)
+>   **Smoother adaptive fronts,Fit arcs before simplifying**
+
+### 🤖 Claude
+
+> You chose smoother adaptive fronts and fitting arcs before simplifying. Before writing the plan, I'll check where each generator simplifies.
+
+> Plan:
+>
+> # Smoother adaptive fronts, and fitting arcs before simplifying
+>
+> ## Context
+>
+> These are two outstanding items from adaptive clearing and arc fitting that Frank chose to do next.
+>
+> 1. **Adaptive fronts are faceted.**
+>    - **Cause:** the distance they follow is worked out with 16-direction steps (Dijkstra), so a front round a helix is a slightly polygonal ring, not a circle.
+>    - **Effect:** passes are a little uneven, and they fit almost no arcs (an adaptive pocket went from 1,727 moves to 1,725 at 0.005 mm, and only 1,624 at 0.02).
+> 2. **Arcs are fitted after the generators have simplified to 0.01 mm.**
+>    - **Effect:** the chords already sag up to 0.01 from the curve, so the machine's 0.005 tolerance can only replace part of them. On the dome, Parallel Finishing went from 2,178 moves to 1,552 at 0.005, against 597 at 0.01.
+>    - **Fix:** fitting on the dense points first, then simplifying only what's left straight, lets 0.005 work.
+>
+> ## 1. Smoother adaptive fronts (`core\AdaptiveClearing.cpp`)
+> - **The new distance:** `Clearer::Distances` (Dijkstra) is replaced by a **fast marching** distance through the free, not-yet-worked cells, from the same sources.
+>   - It solves the eikonal equation with the upwind update: second order where both neighbours on a side are known, first order otherwise.
+>   - The narrow band is a heap, the same as now.
+>   - Cells walled off by non-free cells stay infinite, so islands and walls are honoured as now.
+> - **Unchanged:** the fronts' tracing, spacing (`WidestCut`) and linking. The fronts just come out round.
+> - **Test:** a single source in open space gives fronts that are circles within a fraction of a cell. Today's are off by up to about 2.6% of the radius.
+>
+> ## 2. Fitting arcs before simplifying
+> - **A new final pass:** the 0.01 mm simplification moves from the generators that do a plain geometric one to after fitting, in a step that runs on every Generate:
+>   - **New:** `SimplifyStraightRuns(Toolpath&, double tolerance)` in `core\ArcFit`, a 3D Douglas-Peucker on each run of straight feed moves at one feed (never across arcs, rapids, dwells or feed changes).
+>   - **Order in `CCamTabCommand::GenerateOperation`:** generate, then `FitArcs` (as now), then `SimplifyStraightRuns(0.01)`. With arcs turned off it still simplifies, so the output is as today.
+> - **Generators that leave their points dense** (a new `simplifyTolerance` on their inputs, default 0.01 so tests and other callers are unchanged; Generate passes 0.001):
+>   - **Parallel Finishing:** `GenerateParallelFinishToolpath`'s `SimplifyRun3` passes and links (`core\WaterlineRoughToolpath.cpp`, the `tolerance` of min(cell / 4, 0.01)).
+>   - **Adaptive clearing:** `SimplifyPoints(..., 0.01)` in `FrontPieces` and `CutPiece` becomes `AdaptiveSettings::simplify`. Pocketing, Facing and Waterline Roughing pass it through from their inputs (`PocketToolpathInput`, `FacingToolpathInput`, `WaterlineRoughToolpathInput`).
+> - **Unchanged:**
+>   - Waterline Finishing's `SimplifyByHeight`, which removes wobbles as well as points;
+>   - Waterline Roughing's ordinary patterns (grid contours at cell/4, too jagged for arcs).
+> - **Memory and speed:** toolpaths are denser until the final pass (Parallel Finishing on the dome: rows sampled every half cell). The fitting's doubling and binary search keep it fast. A timing test is added and logged.
+>
+> ## Tests
+> - **Fast marching:** a ring of fronts round one source is round. The existing adaptive tests (engagement, islands, facing from outside, pocketing, waterline) still pass, and the engagement figures are printed to compare.
+> - **Arc fitting surveys** (the skipped `arc fitting survey*`, plus a new one for adaptive Pocketing): Parallel Finishing and the adaptive pocket generated dense, then fitted, then simplified, at 0.005. Expect Parallel Finishing well under the 1,552 moves of fitting after simplifying, and the adaptive pocket fitting arcs at last. The before and after are logged.
+> - **`SimplifyStraightRuns`:** keeps arcs, rapids and feed changes; stays within its tolerance; and gives today's output when nothing is fitted.
+> - **Real toolpaths:** the test that fitted arcs stay within the tolerance of the original moves runs on the dense, then fitted, then simplified chain.
+>
+> ## Docs
+> - **Help:** the Machine tab's Arcs Tolerance note (fitting now happens before simplifying, so 0.005 is effective).
+> - **The spec** (the Claude doc and `docs\SPEC.md`) and **`CLAUDE.md`**: the fast marching distance, the order of fitting, simplify, and the `simplifyTolerance` inputs.
+> - **`TODO.md`:** both items removed. `Discussion.md` rebuilt.
+>
+> ## Verification
+> 1. Build Debug and Release, and run `CamCoreTests.exe` in both, including the surveys with `--no-skip`.
+> 2. Install.
+> 3. **Frank:**
+>    - Generate an adaptive Pocketing. The rings should look round, with magenta arcs on them, and the log's `[generate] arcs:` line should show many more arcs.
+>    - Generate a Parallel Finishing at 0 degrees, keeping the 0.005 tolerance. There should be far fewer moves than before.
+>    - Simulate both, and post.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Plan approved. Starting with the fast marching distance.
+
+> Now everything that builds an input for those generators asks for dense moves. Build and test:
+
+> Fitting before simplifying works. At 0.005 mm the dome's rows come out at 579 moves, against 1,552 when fitting came after simplifying, and 2,178 with no fitting at all. One test fails; I'll find it:
+
+> Still failing, so I'll reproduce the check in Python on the same data to see which condition rejects it:
+
+> The same newline trap once more. Fixing it:
+
+> All 317 tests pass in Release. Now the docs: the help's tolerance note, the spec, `CLAUDE.md` and `TODO.md`.
+
+> The doc has a newer decision: G18's plane is now named ZX ("Frank's choice"), with `[plane zx]` sections and an old `[plane xz]` still read. I'll check whether the code already has that change.
+
+> `docs\SPEC.md` was already at rev 214 from that other change, and my new paragraph went in. Setting its header to rev 215 to match the doc:
+
+> Both outstanding items you picked are done. All 317 tests pass in Debug and Release. It isn't installed, because the administrator prompt was cancelled again.
+>
+> **1. Round adaptive fronts.** The distance the fronts follow is now worked out by fast marching instead of 16-direction steps.
+> - **Before:** fronts were slightly faceted, by about 2.6% of their radius (around 0.8 mm at 30 mm).
+> - **Now:** they're round to within about half a grid cell (0.08 mm) at any radius.
+>
+> **2. Arcs fitted before simplifying.** The order is now: generate, then fit arcs, then simplify the rest.
+> - **Dense input:** Parallel Finishing and adaptive clearing hand Generate their moves dense (0.001 mm). Arcs are fitted to those, then whatever stays straight is simplified to 0.01 mm, for every operation.
+> - **With your 0.005 mm tolerance:**
+>
+> | Toolpath | No fitting | Fitted after simplifying (before) | Fitted before simplifying (now) |
+> |---|---|---|---|
+> | Parallel Finishing, rows along X | 2,178 moves | 1,552 | 575 |
+> | Adaptive round pocket | 6,318 (dense) | 1 arc fitted | 802, with 556 arcs |
+>
+> **Also fixed on the way:**
+> - The fit's check now uses each move's closest point to the arc centre, not its middle, so arcs truly stay within the tolerance.
+> - When a short first window fails, longer ones are still tried. A slightly rough start no longer stops a whole run from fitting.
+>
+> **Note on the spec.** The Claude doc had moved on to rev 215: G18's plane is now named ZX, with `[plane zx]` sections, and that change is already in the code. My paragraph sits beside it, and `docs\SPEC.md` matches at rev 215. The help's tolerance note, `CLAUDE.md` and `TODO.md` are updated too; both items are off the list.
+>
+> **To test, after installing:**
+> 1. Generate an adaptive Pocketing. The rings round the helix should look round, with magenta arcs along them, and the log's `[generate] arcs:` line should show hundreds of arcs.
+> 2. Generate a Parallel Finishing at Angle of Cuts 0, keeping the 0.005 tolerance. The arcs line should show far fewer moves than last time.
+> 3. Simulate both. Nothing should look different in the cut.
+> 4. Post both with LinuxCNC. The files should be much smaller.
+> 5. The help changed: check the Machine tab's Arcs Tolerance entry.
+
+### 🧑 Frank · 14:56
+
+> Install it

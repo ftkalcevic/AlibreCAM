@@ -125,7 +125,7 @@ TEST_CASE("straight moves that don't follow a circle closely enough stay straigh
     CHECK(noisy.moves.size() == 61);
 
     // Under it, though, they fit.
-    Toolpath close = CircleMoves(ArcPlane::XY, 10.0, 0.0, kPi, 60, 0.002);
+    Toolpath close = CircleMoves(ArcPlane::XY, 10.0, 0.0, kPi, 180, 0.002);    // 1 degree chords, sagging 0.0004
     FitArcs(close, fitting);
     CHECK(close.moves.size() < 10);
 
@@ -394,12 +394,16 @@ TEST_CASE("a real toolpath gets shorter with arcs, and stays within the toleranc
     input.operation = &step;
     input.tool = &tool;
     input.outlines = { outline };
+    input.simplifyTolerance = 0.001;     // dense, as Generate asks
     const ToolpathResult result = GeneratePocketToolpath(input);
     REQUIRE(result.ok);
 
+    // Fitted, then what stays straight simplified, as Generate does.
     Toolpath fitted = result.toolpath;
     ArcFitting fitting;
-    const ArcFitCounts counts = FitArcs(fitted, fitting);
+    ArcFitCounts counts = FitArcs(fitted, fitting);
+    SimplifyStraightRuns(fitted, 0.01);
+    counts.movesAfter = fitted.moves.size();
     std::printf("arc fitting a pocket: %zu moves to %zu, %zu arcs\n", counts.movesBefore, counts.movesAfter, counts.arcsMade);
     CHECK(counts.arcsMade > 0);
     CHECK(counts.movesAfter < counts.movesBefore);
@@ -435,4 +439,40 @@ TEST_CASE("a real toolpath gets shorter with arcs, and stays within the toleranc
             worst = (std::max)(worst, distance(p));
     }
     CHECK(worst <= fitting.tolerance + 1e-6);
+}
+
+TEST_CASE("simplifying straight runs keeps arcs, rapids and feed changes, within its tolerance")
+{
+    Toolpath toolpath;
+    toolpath.moves.push_back(ToolpathMove());                       // a rapid to the origin
+    for (int k = 1; k <= 50; ++k)
+        toolpath.moves.push_back(Feed({ k * 0.2, 0.0005 * std::sin(k * 1.3), 0.0 }));   // nearly straight
+    ToolpathMove arc = Feed({ 12, 2, 0 });
+    arc.arc = true;
+    arc.centre = { 10, 2, 0 };
+    toolpath.moves.push_back(arc);
+    toolpath.moves.push_back(Feed({ 12, 4, 0 }, 500.0));              // another feed
+    toolpath.moves.push_back(Feed({ 12, 6, 0 }, 500.0));
+    ToolpathMove rapid;
+    rapid.to = { 12, 6, 5 };
+    toolpath.moves.push_back(rapid);
+    const Toolpath before = toolpath;
+
+    const size_t removed = SimplifyStraightRuns(toolpath, 0.01);
+    CHECK(removed == 49 + 1);                   // the wobbly run to one move, the two 500s to one
+    REQUIRE(toolpath.moves.size() == 5);
+    CHECK(toolpath.moves[1].to.x == doctest::Approx(10.0));
+    CHECK(toolpath.moves[2].arc);
+    CHECK(toolpath.moves[3].feed == 500.0);
+    CHECK(toolpath.moves[3].to.y == 6.0);
+    CHECK(toolpath.moves[4].kind == MoveKind::Rapid);
+
+    // A real bend is kept.
+    Toolpath bend;
+    bend.moves.push_back(ToolpathMove());
+    bend.moves.push_back(Feed({ 5, 0, 0 }));
+    bend.moves.push_back(Feed({ 5, 0.1, 0 }));
+    bend.moves.push_back(Feed({ 10, 0.1, 0 }));
+    CHECK(SimplifyStraightRuns(bend, 0.01) == 0);
+    (void)before;
 }

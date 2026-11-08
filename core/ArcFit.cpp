@@ -111,9 +111,17 @@ namespace camcore
                         return false;
                     if (k == 0)
                         continue;
-                    const double mu = 0.5 * (u[k] + u[k - 1]), mv = 0.5 * (v[k] + v[k - 1]);
-                    if (std::fabs(std::hypot(mu - circle.cu, mv - circle.cv) - circle.radius) > tolerance)
-                        return false;
+                    // The move's nearest point to the centre (the ends are checked already).
+                    {
+                        const double du = u[k] - u[k - 1], dv = v[k] - v[k - 1];
+                        const double length2 = du * du + dv * dv;
+                        double t = 0.5;
+                        if (length2 > 0.0)
+                            t = (std::max)(0.0, (std::min)(1.0, ((circle.cu - u[k - 1]) * du + (circle.cv - v[k - 1]) * dv) / length2));
+                        const double nu = u[k - 1] + du * t, nv = v[k - 1] + dv * t;
+                        if (std::fabs(std::hypot(nu - circle.cu, nv - circle.cv) - circle.radius) > tolerance)
+                            return false;
+                    }
                     const double angle = std::atan2(v[k] - circle.cv, u[k] - circle.cu);
                     double delta = std::remainder(angle - previous, 2.0 * kPi);
                     previous = angle;
@@ -130,18 +138,19 @@ namespace camcore
             }
 
             // The furthest point from first that fits in the plane, or first if none:
-            // doubling the stretch while it fits, then halving the gap to the first that doesn't.
+            // doubling the stretch while it fits, then halving the gap to the first that
+            // doesn't. A short stretch's circle is poorly found when its points are a
+            // little rough, so until one fits, longer ones are still tried.
             size_t Furthest(size_t first, ArcPlane plane, Circle& best) const
             {
                 const size_t last = m_p.size() - 1;
                 Circle circle;
-                if (first + kFewestMoves > last || !Fits(first, first + kFewestMoves, plane, circle))
-                    return first;
-                size_t good = first + kFewestMoves;
-                best = circle;
+                size_t good = first;
                 size_t bad = 0;
-                for (size_t length = 2 * kFewestMoves;; length *= 2)
+                for (size_t length = kFewestMoves;; length *= 2)
                 {
+                    if (first + kFewestMoves > last)
+                        return first;
                     const size_t to = (std::min)(first + length, last);
                     if (Fits(first, to, plane, circle))
                     {
@@ -150,12 +159,14 @@ namespace camcore
                         if (to == last)
                             return good;
                     }
-                    else
+                    else if (good != first || length >= 32 * kFewestMoves || to == last)
                     {
                         bad = to;
                         break;
                     }
                 }
+                if (good == first)
+                    return first;
                 while (bad > good + 1)
                 {
                     const size_t mid = (good + bad) / 2;
@@ -286,5 +297,88 @@ namespace camcore
         counts.movesAfter = out.size();
         toolpath.moves = std::move(out);
         return counts;
+    }
+
+    namespace
+    {
+        double DistanceToSegment(const Vec3& p, const Vec3& a, const Vec3& b)
+        {
+            const Vec3 d = b - a;
+            const double length2 = Dot(d, d);
+            const double t = (length2 > 0.0) ? (std::max)(0.0, (std::min)(1.0, Dot(p - a, d) / length2)) : 0.0;
+            return Length(p - (a + d * t));
+        }
+
+        void KeepFurthest(const std::vector<Vec3>& points, size_t first, size_t last, double tolerance,
+                          std::vector<char>& keep)
+        {
+            // An explicit stack, as runs can be long.
+            std::vector<std::pair<size_t, size_t>> stack{ { first, last } };
+            while (!stack.empty())
+            {
+                const auto [a, b] = stack.back();
+                stack.pop_back();
+                if (b <= a + 1)
+                    continue;
+                double worst = -1.0;
+                size_t at = a;
+                for (size_t k = a + 1; k < b; ++k)
+                {
+                    const double d = DistanceToSegment(points[k], points[a], points[b]);
+                    if (d > worst)
+                    {
+                        worst = d;
+                        at = k;
+                    }
+                }
+                if (worst > tolerance)
+                {
+                    keep[at] = 1;
+                    stack.push_back({ a, at });
+                    stack.push_back({ at, b });
+                }
+            }
+        }
+    }
+
+    size_t SimplifyStraightRuns(Toolpath& toolpath, double tolerance)
+    {
+        const std::vector<ToolpathMove>& moves = toolpath.moves;
+        if (moves.size() < 3 || !(tolerance > 0.0))
+            return 0;
+        std::vector<ToolpathMove> out;
+        out.reserve(moves.size());
+        out.push_back(moves.front());
+        size_t m = 1;
+        while (m < moves.size())
+        {
+            const ToolpathMove& move = moves[m];
+            if (move.kind != MoveKind::Feed || move.arc)
+            {
+                out.push_back(move);
+                ++m;
+                continue;
+            }
+            std::vector<Vec3> points{ moves[m - 1].to };
+            size_t end = m;
+            while (end < moves.size() && moves[end].kind == MoveKind::Feed && !moves[end].arc &&
+                   moves[end].feed == move.feed)
+            {
+                points.push_back(moves[end].to);
+                ++end;
+            }
+            std::vector<char> keep(points.size(), 0);
+            keep.back() = 1;
+            KeepFurthest(points, 0, points.size() - 1, tolerance, keep);
+            for (size_t k = 1; k < points.size(); ++k)
+            {
+                if (keep[k])
+                    out.push_back(moves[m + k - 1]);
+            }
+            m = end;
+        }
+        const size_t removed = moves.size() - out.size();
+        toolpath.moves = std::move(out);
+        return removed;
     }
 }
