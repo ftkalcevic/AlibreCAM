@@ -1,4 +1,4 @@
-; LinuxCNC post for AlibreCAM: a 3 axis router, in millimetres, with manual tool changes.
+; LinuxCNC post for CAMForAlibre: a 3 axis router, in millimetres, with manual tool changes.
 ;
 ; Lines starting with a semicolon are notes and aren't written. Each [section]
 ; is written at its point in the program, filling in {...}: the name is the
@@ -6,7 +6,7 @@
 ; of the value. X, Y, Z and F are written only when they change, and a G0 or G1
 ; that would move nothing is left out. See core\ScriptedPost.h for every name.
 ;
-; To change it for your machine, copy this file to %APPDATA%\AlibreCAM\posts\
+; To change it for your machine, copy this file to %APPDATA%\CAMForAlibre\posts\
 ; and edit the copy: a post there replaces one of the same file name here.
 
 [settings]
@@ -21,7 +21,7 @@ line numbers = no
 [program start]
 %
 ({PROGRAM})
-(Posted by AlibreCAM on {DATE})
+(Posted by CAMForAlibre on {DATE})
 G21 G90 G17 G94 G40 G49 G80
 G64 P0.01
 

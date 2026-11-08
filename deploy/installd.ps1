@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-    Installs the AlibreCAM add-on into Alibre Design.
+    Installs the CAMForAlibre add-on into Alibre Design.
 
 .DESCRIPTION
-    1. Copies AlibreCAM.dll, AlibreCAM.adc and AlibreCAM.ico from the build output to
-       %ProgramData%\Alibre AddOns\AlibreCAM\
+    1. Copies CAMForAlibre.dll, CAMForAlibre.adc and CAMForAlibre.ico from the build output to
+       %ProgramData%\Alibre AddOns\CAMForAlibre\
     2. Registers the add-on under HKLM\SOFTWARE\Alibre Design Add-Ons
        (value name = add-on GUID, data = install folder).
 
@@ -22,8 +22,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$AddOnName = 'AlibreCAM'
-$AddOnGuid = '{D3A31918-AFE0-45F2-A080-B531E6894179}'   # must match AlibreCAM.adc
+$AddOnName = 'CAMForAlibre'
+$AddOnGuid = '{D3A31918-AFE0-45F2-A080-B531E6894179}'   # must match CAMForAlibre.adc
 $RegKey    = 'SOFTWARE\Alibre Design Add-Ons'
 
 # --- Elevation ---------------------------------------------------------------
@@ -74,7 +74,7 @@ try {
     Write-Host "Registered $AddOnGuid -> $targetDir under HKLM\$RegKey"
 
     Write-Host ''
-    Write-Host 'Done. Start Alibre Design and look for the "AlibreCAM" ribbon tab.' -ForegroundColor Green
+    Write-Host 'Done. Start Alibre Design and look for the "CAMForAlibre" ribbon tab.' -ForegroundColor Green
 }
 catch {
     Write-Host "Install failed: $($_.Exception.Message)" -ForegroundColor Red

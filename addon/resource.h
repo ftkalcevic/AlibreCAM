@@ -1,7 +1,7 @@
 //{{NO_DEPENDENCIES}}
-// Resource IDs for AlibreCAM.rc
+// Resource IDs for CAMForAlibre.rc
 //
-#define IDI_ALIBRECAM                     13000
+#define IDI_CAMFORALIBRE                     13000
 #define IDD_ABOUTBOX                    13001
 #define IDC_ADDON_VERSION               13002
 #define IDC_ALIBRE_VERSION              13003

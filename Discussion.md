@@ -9238,6 +9238,87 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 >   - After it finishes (Recommended): Plan now, run the rename once that session's work is done (and ideally committed), to avoid clashing edits.
 >   - Now: Start the rename now in this session.
 
+### 🧑 Frank · 15:57
+
+> Answers:
+> - How far should the rename go?
+>   **Everything user-visible + build (Recommended)**
+> - Existing data in %APPDATA%\AlibreCAM (machines, materials, posts, settings) and %LOCALAPPDATA%\AlibreCAM (log): what happens?
+>   **Move it as part of this task.  Don't add backward support to the application**
+> - Another session is mid-way through the real-time simulation change, editing the same files. When should the rename run?
+>   **After it finishes (Recommended)**
+
+### 🤖 Claude
+
+> Agreed. I'll wait until the [real-time simulation session](#local_299b3c11-4e62-4452-9ea6-a26281e1a5ab) has finished, so the two don't edit the same files at once. When it's done, ideally committed, tell me to go ahead. Here's what I'll do then:
+>
+> **Renamed to CAMForAlibre ("CAM for Alibre Design")**
+> - **Build:** `CAMForAlibre.sln`, the add-on project (building `CAMForAlibre.dll`), its `.filters` and resource file. CamCore and the tests keep their names, as does the `camcore` namespace.
+> - **Add-on registration:** the `.adc` file, the add-on's name and description as Alibre shows them, and the install folder, `C:\ProgramData\Alibre AddOns\CAMForAlibre\`. The install script removes the old `AlibreCAM` add-on folder, so Alibre doesn't load both.
+> - **Everything you see:** the CAM tab, dialog titles, message boxes ("AlibreCAM" becomes "CAM for Alibre"), the help page, posts' "Posted by" line, and the G-code header comment.
+> - **Data folders:** `%APPDATA%\CAMForAlibre` (machines, materials, posts, settings) and `%LOCALAPPDATA%\CAMForAlibre` (log, crash dump, replay files), plus the environment variables (`CAMFORALIBRE_REPLAY` and so on).
+> - **Docs:** README, the spec (both copies), `CLAUDE.md` (also its paths and the `.cam`/`.post` notes), `TODO.md` and the help.
+>
+> **Moving your data, as part of this task (no fallback in the add-on):** once Alibre is closed, I'll move `%APPDATA%\AlibreCAM` and `%LOCALAPPDATA%\AlibreCAM` to the new names and check nothing is left behind. Your `.cam` job files keep working: their format name stays as it is, so old jobs open without any special handling.
+>
+> **Unchanged:** the repository folder `D:\Projects\alibre\AlibreCAM`, and the git history.
+>
+> Then I'll build Debug and Release, run the tests and install, and give you a test list. Close Alibre first.
+
+### 🧑 Frank · 15:58
+
+> It's done.  Continue
+
+### 🤖 Claude
+
+> As expected, test data spelling out the format names got renamed too. I'll put those back:
+
+> All 320 tests pass. Next: Debug build in the background while I update the Claude doc.
+
+> Ten of the eleven mentions in the spec need changing. The eleventh is the repository path, which stays.
+
+> Now `docs\SPEC.md` to match:
+
+> Next, `CLAUDE.md`:
+
+> Installed. The registry entry points at the new folder, and the old add-on folder is gone. I'll also clear out the old-named build outputs left in `bin` and `obj`, which are only stale copies:
+
+> The project is now **CAMForAlibre** (CAM for Alibre Design), and it's built and installed. All 320 tests pass in Release. The Debug build and test run is still going, and I'll report its result when it finishes. Nothing is committed.
+>
+> **What changed**
+> - **Files:** `CAMForAlibre.sln`, and in `addon\`: `CAMForAlibre.vcxproj`, `.filters`, `.rc`, `.cpp`, `.h`, `.def`, `.adc`, `res\CAMForAlibre.ico`. The help page is now `help\CAMForAlibre.html`. All were renamed with `git mv`, so their history follows.
+> - **The add-on:** `CAMForAlibre.dll`, installed in `C:\ProgramData\Alibre AddOns\CAMForAlibre\` under the same add-on identifier. The registry now points there, and the old `AlibreCAM` add-on folder is deleted, so Alibre won't load two copies.
+> - **Everything you see:** the ribbon tab, captions, the About box, messages, the help page, and the "Posted by CAMForAlibre" line in G-code.
+> - **Your data:** `%APPDATA%\AlibreCAM` became `%APPDATA%\CAMForAlibre` (machines, materials, settings), and `%LOCALAPPDATA%\AlibreCAM` became `%LOCALAPPDATA%\CAMForAlibre` (the log, now `CAMForAlibre.log` with its history kept, plus the crash dump and replay files). Nothing is left in the old folders.
+> - **Environment variables** now start with `CAMFORALIBRE_`, for example `CAMFORALIBRE_REPLAY`.
+> - **Docs:** README, `CLAUDE.md`, `TODO.md`, the help page, and the spec (both copies now at rev 224).
+>
+> **Kept as AlibreCAM, on purpose**
+> - **The format names inside data files** ("AlibreCAM", "AlibreCAM machine" and so on). Changing them would make your existing jobs and machines unreadable, and you didn't want compatibility code. Each now has a one-line note saying so.
+> - **The repository folder** `D:\Projects\alibre\AlibreCAM`, and Claude Code's transcript folder, which is named after it.
+> - **The Claude doc's own title**, "Alibre CAM Add-on: Version 1 Specification". I didn't rename the document itself; you can rename it in Claude, and I'll update the header line in `docs\SPEC.md` to match.
+>
+> **To test:**
+> 1. Start Alibre. The ribbon tab and the About box should say CAMForAlibre, and the Add-Ons list should show it once, with no AlibreCAM left.
+> 2. Open a job. Your machines, tools, materials and settings should all be there, and an existing `.cam` file should open normally.
+> 3. Generate and Post. The G-code header should say "Posted by CAMForAlibre".
+> 4. Check that the log is being written to `%LOCALAPPDATA%\CAMForAlibre\CAMForAlibre.log`.
+> 5. The help changed: press a ? button and check the page opens.
+
+### 🧑 Frank · 16:08
+
+> <task-notification>
+> <task-id>bqdnvvien</task-id>
+> <tool-use-id>toolu_01DHD7WfiqxUXrUMor4q4ib2</tool-use-id>
+> <output-file>C:\Users\FRANKT~1\AppData\Local\Temp\claude\af67b47206b29857\64d0696c-ff4a-4283-878a-178a5e0c71d9\tasks\bqdnvvien.output</output-file>
+> <status>completed</status>
+> <summary>Background command "cd /d/Projects/alibre/AlibreCAM; M="/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe"; "$M" CAMForAlibre.sln -p:Configuration=Debug -p:Platform=x64 -m -v:minimal -nologo 2&gt;&amp;1 | grep -v "C4278\|C4192" | grep -i "error\|warning" | head; timeout 1500 bin/x64/Debug/CamCoreTests.exe 2&gt;&amp;1 | tail -3" completed (exit code 0)</summary>
+> </task-notification>
+
+### 🤖 Claude
+
+> The Debug build is also clean, and all 320 tests pass. The rename is complete in both builds; the installed copy is the Release build.
+
 ---
 
 # Side conversation
@@ -9422,3 +9503,13 @@ A forked copy of the session, kept apart from the main one.
 ### 🧑 Frank · 15:56
 
 > Changes tested successfully
+
+### 🤖 Claude
+
+> Good, thanks. I've marked real-time simulation as tested in `CLAUDE.md`. Nothing is committed: those changes are yours to commit, along with the adaptive-front and arc-fitting work from before.
+>
+> The next agreed items are Phase 2, ramp/helix entry for Waterline Roughing plus a Helix mode on Pocketing's Entry/Exit tab, then Phase 3, the steep/shallow slope limits for the finishing operations.
+
+### 🧑 Frank · 16:18
+
+> Rename successful

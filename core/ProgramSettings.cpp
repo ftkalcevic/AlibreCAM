@@ -15,6 +15,8 @@ namespace camcore
         namespace fs = std::filesystem;
         using json = nlohmann::json;
 
+        // The add-on was once called AlibreCAM; the files keep this name so they still load.
+
         const char* const kFormatName = "AlibreCAM settings";
 
         const char* ViewSizeName(ViewSize size)
@@ -73,7 +75,7 @@ namespace camcore
         const auto format = root.is_object() ? root.find("format") : root.end();
         if (!root.is_object() || format == root.end() || !format->is_string() ||
             format->get<std::string>() != kFormatName)
-            return LoadFailure(LoadStatus::NotACamFile, "Not an AlibreCAM settings file: " + path.u8string());
+            return LoadFailure(LoadStatus::NotACamFile, "Not an CAMForAlibre settings file: " + path.u8string());
 
         const auto version = root.find("formatVersion");
         if (version == root.end() || !version->is_number_integer() || version->get<int>() < 1)

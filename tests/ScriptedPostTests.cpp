@@ -91,7 +91,7 @@ TEST_CASE("the LinuxCNC post writes a program from the work zero")
     const PostOutput out = WriteScriptedPost(script, "Bracket", Frame(), { entry }, "2026-11-06");
     REQUIRE(out.ok);
     const std::string& g = out.text;
-    CHECK(g.rfind("%\n(Bracket)\n(Posted by AlibreCAM on 2026-11-06)\nG21 G90 G17 G94", 0) == 0);
+    CHECK(g.rfind("%\n(Bracket)\n(Posted by CAMForAlibre on 2026-11-06)\nG21 G90 G17 G94", 0) == 0);
     CHECK(Has(g, "M5\nT3 M6\n(6 mm [2 flute] end mill, 6 mm)\n"));
     CHECK(Has(g, "(Drill [holes])\nS12000 M3\n"));
     CHECK(Has(g, "G0 X10 Y0 Z20\nG1 Z-10 F100\nG4 P0.5\nG1 Z-5\n"));

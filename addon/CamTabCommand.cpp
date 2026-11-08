@@ -1,7 +1,7 @@
 // CamTabCommand.cpp : the two-way toggle command that owns the CAM tab.
 
 #include "stdafx.h"
-#include "AlibreCAM.h"
+#include "CAMForAlibre.h"
 #include "AddOnInterface.h"
 #include "CamTabCommand.h"
 #include "DisplaySettings.h"
@@ -110,12 +110,12 @@ namespace
 
     int AskYesNo(const std::wstring& question)
     {
-        return ::MessageBoxW(theApp.m_hAlibreWnd, question.c_str(), L"AlibreCAM", MB_YESNO | MB_ICONQUESTION);
+        return ::MessageBoxW(theApp.m_hAlibreWnd, question.c_str(), L"CAMForAlibre", MB_YESNO | MB_ICONQUESTION);
     }
 
     void ShowError(const std::wstring& message)
     {
-        ::MessageBoxW(theApp.m_hAlibreWnd, message.c_str(), L"AlibreCAM", MB_OK | MB_ICONERROR);
+        ::MessageBoxW(theApp.m_hAlibreWnd, message.c_str(), L"CAMForAlibre", MB_OK | MB_ICONERROR);
     }
 
     // "Set Origin 2", using the lowest number no step already has.
@@ -390,7 +390,7 @@ void CCamTabCommand::WarnIfUnsaved()
     {
         ::MessageBoxW(theApp.m_hAlibreWnd,
                       L"The assembly was never saved, so its unsaved CAM changes can't be kept.",
-                      L"AlibreCAM", MB_OK | MB_ICONWARNING);
+                      L"CAMForAlibre", MB_OK | MB_ICONWARNING);
         Log(L"[tab] unsaved changes lost: the assembly has no file");
         return;
     }
@@ -603,7 +603,7 @@ void CCamTabCommand::ReadJobFile()
 
     case camcore::LoadStatus::NewerVersion:
         SetSaveBlocked(true);
-        SetStatus(fileName + L" was made by a newer version of AlibreCAM, so it wasn't opened. " +
+        SetStatus(fileName + L" was made by a newer version of CAMForAlibre, so it wasn't opened. " +
                   FromUtf8(loaded.message));
         return;
 
@@ -1527,7 +1527,7 @@ bool CCamTabCommand::SaveSimulationStl(const std::filesystem::path& path, std::w
     const ULONGLONG start = GetTickCount64();
     const camcore::StockMesh mesh = camcore::MeshStock(m_simulation.Stock());
     std::string problem;
-    if (!camcore::WriteFileAtomically(path, camcore::StockMeshToStl(mesh, "AlibreCAM simulated stock, mm"), problem))
+    if (!camcore::WriteFileAtomically(path, camcore::StockMeshToStl(mesh, "CAMForAlibre simulated stock, mm"), problem))
     {
         message = L"The STL file couldn't be saved. " + FromUtf8(problem);
         Log(L"[simulate] saving %s failed: %s", path.wstring().c_str(), FromUtf8(problem).c_str());
@@ -1763,7 +1763,7 @@ void CCamTabCommand::GenerateTargets(const std::vector<StepRef>& targets)
     m_sequenceStatus = summary;
     ShowStatus();
     if (!problems.empty())
-        ::MessageBoxW(theApp.m_hAlibreWnd, (summary + L"\n" + problems).c_str(), L"AlibreCAM", MB_OK | MB_ICONWARNING);
+        ::MessageBoxW(theApp.m_hAlibreWnd, (summary + L"\n" + problems).c_str(), L"CAMForAlibre", MB_OK | MB_ICONWARNING);
 }
 
 std::vector<StepRef> CCamTabCommand::OperationsIn(const StepRef& scope, bool forPost) const
@@ -2855,7 +2855,7 @@ void CCamTabCommand::OnOperationDialogGenerate(COperationDlg* pDialog)
         return;
     if (!ApplyOperationStep(pDialog->GetStep()))
     {
-        ::MessageBoxW(pDialog->GetSafeHwnd(), L"The operation can't be changed now.", L"AlibreCAM",
+        ::MessageBoxW(pDialog->GetSafeHwnd(), L"The operation can't be changed now.", L"CAMForAlibre",
                       MB_OK | MB_ICONWARNING);
         return;
     }
@@ -2885,7 +2885,7 @@ void CCamTabCommand::OnOperationDialogGenerate(COperationDlg* pDialog)
     m_sequenceStatus = ok ? L"Generated " + name + L"." : L"Couldn't generate " + name + L".";
     ShowStatus();
     if (!ok)
-        ::MessageBoxW(pDialog->GetSafeHwnd(), (name + L": " + FromUtf8(problem)).c_str(), L"AlibreCAM",
+        ::MessageBoxW(pDialog->GetSafeHwnd(), (name + L": " + FromUtf8(problem)).c_str(), L"CAMForAlibre",
                       MB_OK | MB_ICONWARNING);
 }
 
@@ -3872,14 +3872,14 @@ void CCamTabWnd::OnSettings()
     // A damaged settings file, or one from a newer add-on, isn't overwritten.
     if (!m_settingsWritable)
     {
-        MessageBoxW(L"The settings file couldn't be read, or is from a newer AlibreCAM, so these settings "
+        MessageBoxW(L"The settings file couldn't be read, or is from a newer CAMForAlibre, so these settings "
                     L"apply until Alibre closes but aren't saved.",
-                    L"AlibreCAM", MB_OK | MB_ICONINFORMATION);
+                    L"CAMForAlibre", MB_OK | MB_ICONINFORMATION);
         return;
     }
     const camcore::SaveResult saved = camcore::SaveProgramSettings(m_settings, ProgramSettingsPath());
     if (!saved.ok)
-        MessageBoxW(FromUtf8(saved.message).c_str(), L"AlibreCAM", MB_OK | MB_ICONWARNING);
+        MessageBoxW(FromUtf8(saved.message).c_str(), L"CAMForAlibre", MB_OK | MB_ICONWARNING);
 }
 
 void CCamTabWnd::ApplyViewSize()

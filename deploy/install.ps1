@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-    Installs the AlibreCAM add-on into Alibre Design.
+    Installs the CAMForAlibre add-on into Alibre Design.
 
 .DESCRIPTION
-    1. Copies AlibreCAM.dll, AlibreCAM.adc and AlibreCAM.ico from the build output to
-       %ProgramData%\Alibre AddOns\AlibreCAM\
+    1. Copies CAMForAlibre.dll, CAMForAlibre.adc and CAMForAlibre.ico from the build output to
+       %ProgramData%\Alibre AddOns\CAMForAlibre\
        and the post scripts from posts\ into a posts\ folder there
        and the help page from help\ into a help\ folder there
     2. Registers the add-on under HKLM\SOFTWARE\Alibre Design Add-Ons
@@ -24,8 +24,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$AddOnName = 'AlibreCAM'
-$AddOnGuid = '{D3A31918-AFE0-45F2-A080-B531E6894179}'   # must match AlibreCAM.adc
+$AddOnName = 'CAMForAlibre'
+$AddOnGuid = '{D3A31918-AFE0-45F2-A080-B531E6894179}'   # must match CAMForAlibre.adc
 $RegKey    = 'SOFTWARE\Alibre Design Add-Ons'
 
 # --- Elevation ---------------------------------------------------------------
@@ -66,7 +66,7 @@ try {
 
     # --- Posts -------------------------------------------------------------------
     # The shipped post scripts go in a posts folder beside the add-on. A user's own
-    # posts live in %APPDATA%\AlibreCAM\posts and aren't touched here.
+    # posts live in %APPDATA%\CAMForAlibre\posts and aren't touched here.
     $postsDir = Join-Path $targetDir 'posts'
     New-Item -ItemType Directory -Path $postsDir -Force | Out-Null
     Copy-Item -Path (Join-Path $projectDir 'posts\*.post') -Destination $postsDir -Force
@@ -91,7 +91,7 @@ try {
     Write-Host "Registered $AddOnGuid -> $targetDir under HKLM\$RegKey"
 
     Write-Host ''
-    Write-Host 'Done. Start Alibre Design and look for the "AlibreCAM" ribbon tab.' -ForegroundColor Green
+    Write-Host 'Done. Start Alibre Design and look for the "CAMForAlibre" ribbon tab.' -ForegroundColor Green
 }
 catch {
     Write-Host "Install failed: $($_.Exception.Message)" -ForegroundColor Red

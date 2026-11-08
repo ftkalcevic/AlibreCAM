@@ -1,4 +1,4 @@
-// CrashCatcher.cpp : records a crash inside AlibreCAM's own code, so it can be found.
+// CrashCatcher.cpp : records a crash inside CAMForAlibre's own code, so it can be found.
 
 #include "stdafx.h"
 #include "CrashCatcher.h"
@@ -52,7 +52,7 @@ namespace
         if (!fatal || !InModule(at) || InterlockedExchange(&g_caught, 1) != 0)
             return EXCEPTION_CONTINUE_SEARCH;
 
-        Log(L"[crash] exception 0x%08X in AlibreCAM at %s", code, Describe(at).c_str());
+        Log(L"[crash] exception 0x%08X in CAMForAlibre at %s", code, Describe(at).c_str());
         if (code == EXCEPTION_ACCESS_VIOLATION && pInfo->ExceptionRecord->NumberParameters >= 2)
             Log(L"[crash] %s address 0x%llx",
                 pInfo->ExceptionRecord->ExceptionInformation[0] == 1 ? L"writing" : L"reading",

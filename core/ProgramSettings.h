@@ -1,7 +1,7 @@
 // ProgramSettings.h : the add-on's own settings, kept per user. No Alibre or MFC code belongs here.
 //
 // They're saved as JSON with a format version, like the tool library, in
-// %APPDATA%\AlibreCAM\settings.json.
+// %APPDATA%\CAMForAlibre\settings.json.
 
 #pragma once
 

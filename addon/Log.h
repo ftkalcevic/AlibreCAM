@@ -1,4 +1,4 @@
-// Log.h : the add-on's log file, %LOCALAPPDATA%\AlibreCAM\AlibreCAM.log.
+// Log.h : the add-on's log file, %LOCALAPPDATA%\CAMForAlibre\CAMForAlibre.log.
 //
 // Runtime behaviour inside Alibre can't be seen from outside it, so each line is
 // written and flushed at once, and the log survives a crash.

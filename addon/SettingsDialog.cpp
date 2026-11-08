@@ -1,7 +1,7 @@
 // SettingsDialog.cpp : the add-on's Settings dialog, opened from the CAM tab's gear.
 
 #include "stdafx.h"
-#include "AlibreCAM.h"
+#include "CAMForAlibre.h"
 #include "SettingsDialog.h"
 #include "Help.h"
 
@@ -14,7 +14,7 @@ fs::path ProgramSettingsPath()
     const DWORD length = GetEnvironmentVariableW(L"APPDATA", buffer, MAX_PATH);
 
     fs::path folder = (length > 0 && length < MAX_PATH) ? fs::path(buffer) : fs::temp_directory_path();
-    folder /= L"AlibreCAM";
+    folder /= L"CAMForAlibre";
 
     std::error_code ignored;
     fs::create_directories(folder, ignored);

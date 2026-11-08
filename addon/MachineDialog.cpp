@@ -2,7 +2,7 @@
 // machines, their tools, and the shared list of materials.
 
 #include "stdafx.h"
-#include "AlibreCAM.h"
+#include "CAMForAlibre.h"
 #include "MachineDialog.h"
 #include "Help.h"
 #include "ModelReader.h"
@@ -25,7 +25,7 @@ namespace
         wchar_t buffer[MAX_PATH] = {};
         const DWORD length = GetEnvironmentVariableW(L"APPDATA", buffer, MAX_PATH);
         fs::path folder = (length > 0 && length < MAX_PATH) ? fs::path(buffer) : fs::temp_directory_path();
-        folder /= L"AlibreCAM";
+        folder /= L"CAMForAlibre";
         std::error_code ignored;
         fs::create_directories(folder, ignored);
         return folder;
@@ -361,7 +361,7 @@ bool CMachineDlg::SaveCurrentMachine()
         Log(L"[machine] saved %s with %zu tools", FromUtf8(m_machine.name).c_str(), m_machine.tools.tools.size());
         return true;
     }
-    MessageBox((L"Could not save the machine. " + FromUtf8(saved.message)).c_str(), L"AlibreCAM",
+    MessageBox((L"Could not save the machine. " + FromUtf8(saved.message)).c_str(), L"CAMForAlibre",
                MB_OK | MB_ICONERROR);
     return false;
 }
@@ -392,7 +392,7 @@ bool CMachineDlg::ApplyMachineFields()
         const double value = wcstod(text, &pEnd);
         if (text.IsEmpty() || pEnd == nullptr || *pEnd != L'\0' || !(value > 0.0))
         {
-            MessageBox((std::wstring(box.label) + L" must be a number more than 0.").c_str(), L"AlibreCAM",
+            MessageBox((std::wstring(box.label) + L" must be a number more than 0.").c_str(), L"CAMForAlibre",
                        MB_OK | MB_ICONWARNING);
             SetDlgItemText(box.id, FormatNumber(m_machine.*box.field).c_str());
             return false;
@@ -413,7 +413,7 @@ bool CMachineDlg::ApplyMachineFields()
         const double value = wcstod(text, &pEnd);
         if (text.IsEmpty() || pEnd == nullptr || *pEnd != L'\0' || !(value > 0.0 && value <= 1.0))
         {
-            MessageBox(L"The arc tolerance must be a number more than 0 and at most 1 mm.", L"AlibreCAM",
+            MessageBox(L"The arc tolerance must be a number more than 0 and at most 1 mm.", L"CAMForAlibre",
                        MB_OK | MB_ICONWARNING);
             SetDlgItemText(IDC_MACHINE_ARC_TOL, FormatNumber(m_machine.arcs.tolerance).c_str());
             return false;
@@ -430,7 +430,7 @@ bool CMachineDlg::ApplyMachineFields()
         return true;
     if (changed.name.empty())
     {
-        MessageBox(L"The machine needs a name.", L"AlibreCAM", MB_OK | MB_ICONWARNING);
+        MessageBox(L"The machine needs a name.", L"CAMForAlibre", MB_OK | MB_ICONWARNING);
         SetDlgItemText(IDC_MACHINE_NAME, FromUtf8(m_machine.name).c_str());
         return false;
     }
@@ -487,7 +487,7 @@ void CMachineDlg::OnNewMachine()
     const SaveResult saved = SaveMachine(machine, MachineFilePath(MachinesFolder(), machine.id));
     if (!saved.ok)
     {
-        MessageBox((L"Could not save the machine. " + FromUtf8(saved.message)).c_str(), L"AlibreCAM",
+        MessageBox((L"Could not save the machine. " + FromUtf8(saved.message)).c_str(), L"CAMForAlibre",
                    MB_OK | MB_ICONERROR);
         return;
     }
@@ -511,7 +511,7 @@ void CMachineDlg::OnCopyMachine()
     const SaveResult saved = SaveMachine(copy, MachineFilePath(MachinesFolder(), copy.id));
     if (!saved.ok)
     {
-        MessageBox((L"Could not save the machine. " + FromUtf8(saved.message)).c_str(), L"AlibreCAM",
+        MessageBox((L"Could not save the machine. " + FromUtf8(saved.message)).c_str(), L"CAMForAlibre",
                    MB_OK | MB_ICONERROR);
         return;
     }
@@ -532,7 +532,7 @@ void CMachineDlg::OnDeleteMachine()
     const MachineEntry entry = m_entries[static_cast<size_t>(index)];
     if (entry.status == LoadStatus::Ok && readable <= 1)
     {
-        MessageBox(L"This is the only machine, so it can't be deleted. Make another one first.", L"AlibreCAM",
+        MessageBox(L"This is the only machine, so it can't be deleted. Make another one first.", L"CAMForAlibre",
                    MB_OK | MB_ICONINFORMATION);
         return;
     }
@@ -541,13 +541,13 @@ void CMachineDlg::OnDeleteMachine()
                                                                : entry.path.filename().wstring();
     const std::wstring question = L"Delete the machine " + name + L" and its tools?\n\nOther jobs that use it will "
                                   L"need another machine. This can't be undone.";
-    if (MessageBox(question.c_str(), L"AlibreCAM", MB_YESNO | MB_ICONQUESTION) != IDYES)
+    if (MessageBox(question.c_str(), L"CAMForAlibre", MB_YESNO | MB_ICONQUESTION) != IDYES)
         return;
 
     std::error_code error;
     if (!fs::remove(entry.path, error))
     {
-        MessageBox(L"Could not delete the machine's file.", L"AlibreCAM", MB_OK | MB_ICONERROR);
+        MessageBox(L"Could not delete the machine's file.", L"CAMForAlibre", MB_OK | MB_ICONERROR);
         return;
     }
     Log(L"[machine] deleted %s", entry.path.c_str());
@@ -666,7 +666,7 @@ void CMachineDlg::OnDeleteTool()
     const Tool tool = m_machine.tools.tools[static_cast<size_t>(index)];
     const std::wstring question = L"Delete " + FromUtf8(tool.name) + L"?\n\nJobs on this machine that use it will "
                                   L"need another tool.";
-    if (MessageBox(question.c_str(), L"AlibreCAM", MB_YESNO | MB_ICONQUESTION) != IDYES)
+    if (MessageBox(question.c_str(), L"CAMForAlibre", MB_YESNO | MB_ICONQUESTION) != IDYES)
         return;
 
     m_machine.tools.tools.erase(m_machine.tools.tools.begin() + index);
@@ -688,7 +688,7 @@ void CMachineDlg::OnImportTools()
     const ToolLibraryLoadResult loaded = LoadToolLibrary(path);
     if (loaded.status != LoadStatus::Ok)
     {
-        MessageBox((L"That tool library can't be read. " + FromUtf8(loaded.message)).c_str(), L"AlibreCAM",
+        MessageBox((L"That tool library can't be read. " + FromUtf8(loaded.message)).c_str(), L"CAMForAlibre",
                    MB_OK | MB_ICONWARNING);
         return;
     }
@@ -701,7 +701,7 @@ void CMachineDlg::OnImportTools()
         const std::wstring question = std::to_wstring(shared) + L" of these tools are already on this machine. "
                                       L"Replace them with the imported ones?\n\nYes replaces them, No keeps the "
                                       L"machine's and imports the rest.";
-        const int answer = MessageBox(question.c_str(), L"AlibreCAM", MB_YESNOCANCEL | MB_ICONQUESTION);
+        const int answer = MessageBox(question.c_str(), L"CAMForAlibre", MB_YESNOCANCEL | MB_ICONQUESTION);
         if (answer == IDCANCEL)
             return;
         replace = answer == IDYES;
@@ -726,7 +726,7 @@ void CMachineDlg::OnImportTools()
     if (result.renumbered > 0)
         report += L" " + std::to_wstring(result.renumbered) + L" were given new numbers, as theirs were taken.";
     Log(L"[machine] %s", report.c_str());
-    MessageBox(report.c_str(), L"AlibreCAM", MB_OK | MB_ICONINFORMATION);
+    MessageBox(report.c_str(), L"CAMForAlibre", MB_OK | MB_ICONINFORMATION);
 }
 
 void CMachineDlg::OnExportTools()
@@ -743,7 +743,7 @@ void CMachineDlg::OnExportTools()
     const SaveResult saved = SaveToolLibrary(m_machine.tools, path);
     if (!saved.ok)
     {
-        MessageBox((L"Could not export the tools. " + FromUtf8(saved.message)).c_str(), L"AlibreCAM",
+        MessageBox((L"Could not export the tools. " + FromUtf8(saved.message)).c_str(), L"CAMForAlibre",
                    MB_OK | MB_ICONERROR);
         return;
     }
@@ -774,7 +774,7 @@ bool CMachineDlg::SaveMaterialList()
     const SaveResult saved = SaveMaterials(m_materials, MaterialsPath());
     if (saved.ok)
         return true;
-    MessageBox((L"Could not save the materials. " + FromUtf8(saved.message)).c_str(), L"AlibreCAM",
+    MessageBox((L"Could not save the materials. " + FromUtf8(saved.message)).c_str(), L"CAMForAlibre",
                MB_OK | MB_ICONERROR);
     return false;
 }
@@ -799,7 +799,7 @@ void CMachineDlg::OnAddMaterial()
         return;
     if (MaterialNameTaken(prompt.GetName(), std::string()))
     {
-        MessageBox(L"There's already a material with that name.", L"AlibreCAM", MB_OK | MB_ICONWARNING);
+        MessageBox(L"There's already a material with that name.", L"CAMForAlibre", MB_OK | MB_ICONWARNING);
         return;
     }
 
@@ -823,7 +823,7 @@ void CMachineDlg::OnRenameMaterial()
         return;
     if (MaterialNameTaken(prompt.GetName(), material.id))
     {
-        MessageBox(L"There's already a material with that name.", L"AlibreCAM", MB_OK | MB_ICONWARNING);
+        MessageBox(L"There's already a material with that name.", L"CAMForAlibre", MB_OK | MB_ICONWARNING);
         return;
     }
     const std::string before = material.name;
@@ -842,7 +842,7 @@ void CMachineDlg::OnDeleteMaterial()
     const std::wstring question = L"Delete the material " + FromUtf8(material.name) + L"?\n\nEvery machine's tools "
                                   L"lose their speeds and feeds for it, and jobs that use it will need another "
                                   L"material.";
-    if (MessageBox(question.c_str(), L"AlibreCAM", MB_YESNO | MB_ICONQUESTION) != IDYES)
+    if (MessageBox(question.c_str(), L"CAMForAlibre", MB_YESNO | MB_ICONQUESTION) != IDYES)
         return;
 
     m_materials.materials.erase(m_materials.materials.begin() + index);

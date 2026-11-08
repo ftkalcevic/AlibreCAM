@@ -1,7 +1,7 @@
 // OperationDialog.cpp : the modeless dialog that edits one operation.
 
 #include "stdafx.h"
-#include "AlibreCAM.h"
+#include "CAMForAlibre.h"
 #include "OperationDialog.h"
 #include "Help.h"
 #include "CamTabCommand.h"
@@ -1011,7 +1011,7 @@ void CFeedsPage::OnFromTool()
     std::wstring problem;
     if (!m_pOwner->FeedsFromTool(feeds, problem))
     {
-        MessageBox(problem.c_str(), L"AlibreCAM", MB_OK | MB_ICONINFORMATION);
+        MessageBox(problem.c_str(), L"CAMForAlibre", MB_OK | MB_ICONINFORMATION);
         return;
     }
     SequenceStep step;

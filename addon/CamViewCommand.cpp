@@ -1,7 +1,7 @@
 // CamViewCommand.cpp : the regular command that draws CAM graphics and receives picks.
 
 #include "stdafx.h"
-#include "AlibreCAM.h"
+#include "CAMForAlibre.h"
 #include "CamViewCommand.h"
 #include "CamTabCommand.h"
 #include "DisplaySettings.h"

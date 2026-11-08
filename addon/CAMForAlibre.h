@@ -1,4 +1,4 @@
-// AlibreCAM.h : main header for the AlibreCAM add-on DLL.
+// CAMForAlibre.h : main header for the CAMForAlibre add-on DLL.
 
 #pragma once
 
@@ -10,16 +10,16 @@
 
 class CAddOnInterface;
 
-// Version shown in the About box. Keep in step with VERSIONINFO in AlibreCAM.rc.
-#define ALIBRECAM_VERSION_STRING  L"1.0.0"
+// Version shown in the About box. Keep in step with VERSIONINFO in CAMForAlibre.rc.
+#define CAMFORALIBRE_VERSION_STRING  L"1.0.0"
 
 /////////////////////////////////////////////////////////////////////////////
-// CAlibreCAMApp - the MFC application object for this regular DLL.
+// CCAMForAlibreApp - the MFC application object for this regular DLL.
 
-class CAlibreCAMApp : public CWinApp
+class CCAMForAlibreApp : public CWinApp
 {
 public:
-    CAlibreCAMApp();
+    CCAMForAlibreApp();
 
     BOOL InitInstance() override;
 
@@ -38,10 +38,10 @@ public:
     DECLARE_MESSAGE_MAP()
 };
 
-extern CAlibreCAMApp theApp;
+extern CCAMForAlibreApp theApp;
 
 /////////////////////////////////////////////////////////////////////////////
-// Entry points called by Alibre Design. Exported undecorated via AlibreCAM.def.
+// Entry points called by Alibre Design. Exported undecorated via CAMForAlibre.def.
 
 extern "C"
 {

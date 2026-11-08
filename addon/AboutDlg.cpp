@@ -1,7 +1,7 @@
-// AboutDlg.cpp : the AlibreCAM About box.
+// AboutDlg.cpp : the CAMForAlibre About box.
 
 #include "stdafx.h"
-#include "AlibreCAM.h"
+#include "CAMForAlibre.h"
 #include "AboutDlg.h"
 
 #ifdef _DEBUG
@@ -21,7 +21,7 @@ BOOL CAboutDlg::OnInitDialog()
     CDialog::OnInitDialog();
 
     CString addOnVersion;
-    addOnVersion.Format(L"Version %s", ALIBRECAM_VERSION_STRING);
+    addOnVersion.Format(L"Version %s", CAMFORALIBRE_VERSION_STRING);
     SetDlgItemText(IDC_ADDON_VERSION, addOnVersion);
 
     CString alibreVersion;

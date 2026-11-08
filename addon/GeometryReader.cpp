@@ -1,7 +1,7 @@
 // GeometryReader.cpp : reads picked faces and edges, and the assembly's size, into CamCore's terms.
 
 #include "stdafx.h"
-#include "AlibreCAM.h"
+#include "CAMForAlibre.h"
 #include "GeometryReader.h"
 #include "ModelReader.h"
 #include "Log.h"

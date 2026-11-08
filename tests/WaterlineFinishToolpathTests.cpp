@@ -272,7 +272,7 @@ TEST_CASE("a waterline finishing operation saves its settings, with its own defa
     finishing.waterlineFinishing.stepdownScallop = 0.02;
     finishing.waterlineFinishing.finishFlats = true;
 
-    const std::filesystem::path path = std::filesystem::temp_directory_path() / "AlibreCAM-finish-test.cam";
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "CAMForAlibre-finish-test.cam";
     Job job;
     job.assembly.name = "Mould";
     job.assembly.guid = "{guid}";
@@ -808,7 +808,7 @@ TEST_CASE("Optimise Stepover is saved, and a file without it reads as off")
     group.name = "Folder 1";
     group.children.push_back(finishing);
     job.sequence.push_back(group);
-    const std::filesystem::path path = std::filesystem::temp_directory_path() / "AlibreCAM-optimise-test.cam";
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "CAMForAlibre-optimise-test.cam";
     REQUIRE(SaveJob(job, path).ok);
     LoadResult loaded = LoadJob(path);
     REQUIRE(loaded.status == LoadStatus::Ok);

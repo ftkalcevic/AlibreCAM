@@ -1,7 +1,7 @@
 // ProgressDialog.cpp : the window that shows what Generate is doing while it works.
 
 #include "stdafx.h"
-#include "AlibreCAM.h"
+#include "CAMForAlibre.h"
 #include "ProgressDialog.h"
 
 #include <cmath>

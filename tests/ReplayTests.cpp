@@ -101,7 +101,7 @@ TEST_CASE("a finishing operation's input saves and loads, giving the same toolpa
     const ToolpathResult original = GenerateWaterlineFinishToolpath(input);
     REQUIRE(original.ok);
 
-    const std::filesystem::path path = std::filesystem::temp_directory_path() / "AlibreCAM-dump-test.json";
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "CAMForAlibre-dump-test.json";
     std::string problem;
     REQUIRE(SaveFinishingInput(input, path, problem));
     FinishingDump dump;
@@ -175,25 +175,25 @@ namespace
     }
 }
 
-// Set ALIBRECAM_REPLAY to a dump Generate wrote (last-finishing.json) and run by
+// Set CAMFORALIBRE_REPLAY to a dump Generate wrote (last-finishing.json) and run by
 // name (-tc="replay*" --no-skip): it says what's wrong in the laps, stage by stage.
 TEST_CASE("replay a saved finishing operation" * doctest::skip())
 {
     char* pPath = nullptr;
     size_t length = 0;
-    _dupenv_s(&pPath, &length, "ALIBRECAM_REPLAY");
+    _dupenv_s(&pPath, &length, "CAMFORALIBRE_REPLAY");
     const std::string path = (pPath != nullptr) ? pPath : "";
     free(pPath);
-    REQUIRE_MESSAGE(!path.empty(), "Set ALIBRECAM_REPLAY to the dump's path.");
+    REQUIRE_MESSAGE(!path.empty(), "Set CAMFORALIBRE_REPLAY to the dump's path.");
     FinishingDump dump;
     std::string problem;
     REQUIRE_MESSAGE(LoadFinishingInput(path, dump, problem), problem);
     MESSAGE("replaying " << dump.operation.name << ": " << dump.input.partTriangles.size() / 3 << " triangles, "
                          << dump.input.faceSurfaces.size() << " faces' surfaces, tool " << dump.tool.diameter);
-    // ALIBRECAM_REPLAY_OPTIMISE=1 (or 0) turns Waterline Finishing's Optimise Stepover on (or off).
+    // CAMFORALIBRE_REPLAY_OPTIMISE=1 (or 0) turns Waterline Finishing's Optimise Stepover on (or off).
     char* pOptimise = nullptr;
     size_t optimiseLength = 0;
-    _dupenv_s(&pOptimise, &optimiseLength, "ALIBRECAM_REPLAY_OPTIMISE");
+    _dupenv_s(&pOptimise, &optimiseLength, "CAMFORALIBRE_REPLAY_OPTIMISE");
     if (pOptimise != nullptr)
         WaterlineSettingsOf(dump.operation).optimiseStepover = pOptimise[0] == '1';
     free(pOptimise);
@@ -241,10 +241,10 @@ TEST_CASE("replay as waterline roughing" * doctest::skip())
 {
     char* pPath = nullptr;
     size_t length = 0;
-    _dupenv_s(&pPath, &length, "ALIBRECAM_REPLAY");
+    _dupenv_s(&pPath, &length, "CAMFORALIBRE_REPLAY");
     const std::string path = (pPath != nullptr) ? pPath : "";
     free(pPath);
-    REQUIRE_MESSAGE(!path.empty(), "Set ALIBRECAM_REPLAY to the dump's path.");
+    REQUIRE_MESSAGE(!path.empty(), "Set CAMFORALIBRE_REPLAY to the dump's path.");
     FinishingDump dump;
     std::string problem;
     REQUIRE_MESSAGE(LoadFinishingInput(path, dump, problem), problem);

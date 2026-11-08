@@ -15,7 +15,7 @@
     <VCProjectVersion>17.0</VCProjectVersion>
     <ProjectGuid>{35D0D679-492F-4D6B-A968-75924ACFAAB3}</ProjectGuid>
     <Keyword>MFCDLLProj</Keyword>
-    <RootNamespace>AlibreCAM</RootNamespace>
+    <RootNamespace>CAMForAlibre</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -43,7 +43,7 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
-    <TargetName>AlibreCAM</TargetName>
+    <TargetName>CAMForAlibre</TargetName>
     <OutDir>$(ProjectDir)..\bin\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)..\obj\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
     <!-- F5 launches Alibre Design (deploy the build with deploy\install.ps1 first). -->
@@ -67,7 +67,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <ModuleDefinitionFile>AlibreCAM.def</ModuleDefinitionFile>
+      <ModuleDefinitionFile>CAMForAlibre.def</ModuleDefinitionFile>
     </Link>
     <ResourceCompile>
       <Culture>0x0c09</Culture>
@@ -125,7 +125,7 @@
     <ClCompile Include="ProgressDialog.cpp" />
     <ClCompile Include="SimulationDialog.cpp" />
     <ClCompile Include="ToolDialogs.cpp" />
-    <ClCompile Include="AlibreCAM.cpp" />
+    <ClCompile Include="CAMForAlibre.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
@@ -151,22 +151,22 @@
     <ClInclude Include="ProgressDialog.h" />
     <ClInclude Include="SimulationDialog.h" />
     <ClInclude Include="ToolDialogs.h" />
-    <ClInclude Include="AlibreCAM.h" />
+    <ClInclude Include="CAMForAlibre.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="stdafx.h" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="AlibreCAM.rc" />
+    <ResourceCompile Include="CAMForAlibre.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="res\AlibreCAM.ico" />
+    <Image Include="res\CAMForAlibre.ico" />
     <Image Include="res\CamToolbar16.bmp" />
     <Image Include="res\CamToolbar24.bmp" />
     <Image Include="res\CamToolbar32.bmp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="AlibreCAM.def" />
-    <None Include="AlibreCAM.adc" />
+    <None Include="CAMForAlibre.def" />
+    <None Include="CAMForAlibre.adc" />
     <None Include="Alibre.props" />
     <None Include="..\deploy\install.ps1" />
     <None Include="..\deploy\uninstall.ps1" />
@@ -183,13 +183,13 @@
 
   <!-- Put the .adc and .ico beside the DLL so the output folder is a complete add-on. -->
   <Target Name="CopyAddOnFiles" AfterTargets="Build">
-    <Copy SourceFiles="$(ProjectDir)AlibreCAM.adc;$(ProjectDir)res\AlibreCAM.ico"
+    <Copy SourceFiles="$(ProjectDir)CAMForAlibre.adc;$(ProjectDir)res\CAMForAlibre.ico"
           DestinationFolder="$(OutDir)"
           SkipUnchangedFiles="true" />
   </Target>
   <ProjectExtensions>
     <VisualStudio>
-      <UserProperties RESOURCE_FILE="AlibreCAM.rc" />
+      <UserProperties RESOURCE_FILE="CAMForAlibre.rc" />
     </VisualStudio>
   </ProjectExtensions>
 </Project>

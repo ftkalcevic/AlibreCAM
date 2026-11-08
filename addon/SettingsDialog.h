@@ -7,7 +7,7 @@
 #include "resource.h"
 #include "ProgramSettings.h"
 
-// Where the settings are kept: %APPDATA%\AlibreCAM\settings.json. The folder is
+// Where the settings are kept: %APPDATA%\CAMForAlibre\settings.json. The folder is
 // made if it isn't there.
 std::filesystem::path ProgramSettingsPath();
 

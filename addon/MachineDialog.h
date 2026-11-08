@@ -1,8 +1,8 @@
 // MachineDialog.h : the Machine dialog, which chooses the job's machine and edits
 // machines, their tools, and the shared list of materials.
 //
-// Machines are files in %APPDATA%\AlibreCAM\machines\, and the materials are
-// %APPDATA%\AlibreCAM\materials.json. Changes are saved to them straight away.
+// Machines are files in %APPDATA%\CAMForAlibre\machines\, and the materials are
+// %APPDATA%\CAMForAlibre\materials.json. Changes are saved to them straight away.
 
 #pragma once
 
@@ -14,10 +14,10 @@
 #include "Machine.h"
 #include "Materials.h"
 
-// %APPDATA%\AlibreCAM\machines\. Creates the folder if needed.
+// %APPDATA%\CAMForAlibre\machines\. Creates the folder if needed.
 std::filesystem::path MachinesFolder();
 
-// %APPDATA%\AlibreCAM\materials.json.
+// %APPDATA%\CAMForAlibre\materials.json.
 std::filesystem::path MaterialsPath();
 
 // The machine a job with none takes: the last one used if it's there, otherwise

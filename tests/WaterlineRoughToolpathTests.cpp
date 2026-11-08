@@ -406,7 +406,7 @@ TEST_CASE("every waterline setting saves, and older jobs keep their stepdown")
     w.bottom = 1;
     w.clearFlats = false;
 
-    const std::filesystem::path path = std::filesystem::temp_directory_path() / "AlibreCAM-waterline-all-test.cam";
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "CAMForAlibre-waterline-all-test.cam";
     Job job;
     job.assembly.name = "Mould";
     job.assembly.guid = "{guid}";
@@ -448,7 +448,7 @@ TEST_CASE("every waterline setting saves, and older jobs keep their stepdown")
     std::filesystem::remove(path, ignored);
 
     // A job saved before the Cut Levels tab: just the stock to leave and stepDown.
-    const std::filesystem::path oldPath = std::filesystem::temp_directory_path() / "AlibreCAM-waterline-old-test.cam";
+    const std::filesystem::path oldPath = std::filesystem::temp_directory_path() / "CAMForAlibre-waterline-old-test.cam";
     {
         std::string text;
         {
@@ -484,7 +484,7 @@ TEST_CASE("waterline roughing refuses what it can't do, and saves its settings")
     CHECK_FALSE(ValidateWaterlineRoughing(bad).empty());
 
     CHECK(IsOperation(StepType::WaterlineRoughing));
-    const std::filesystem::path path = std::filesystem::temp_directory_path() / "AlibreCAM-waterline-test.cam";
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "CAMForAlibre-waterline-test.cam";
     Job job;
     job.assembly.name = "Mould";
     job.assembly.guid = "{guid}";

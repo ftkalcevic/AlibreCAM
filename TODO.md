@@ -1,4 +1,4 @@
-# AlibreCAM to-do list
+# CAMForAlibre to-do list
 
 Work still to do, beyond the build order in `CLAUDE.md`. Decisions about any of
 these belong in the spec (`docs\SPEC.md`) once they're made.

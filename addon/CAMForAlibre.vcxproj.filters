@@ -37,7 +37,7 @@
     <ClCompile Include="ProgressDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SimulationDialog.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ToolDialogs.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="AlibreCAM.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="CAMForAlibre.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="stdafx.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -61,22 +61,22 @@
     <ClInclude Include="ProgressDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SimulationDialog.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ToolDialogs.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="AlibreCAM.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="CAMForAlibre.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="resource.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="stdafx.h"><Filter>Header Files</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="AlibreCAM.rc"><Filter>Resource Files</Filter></ResourceCompile>
+    <ResourceCompile Include="CAMForAlibre.rc"><Filter>Resource Files</Filter></ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="res\AlibreCAM.ico"><Filter>Resource Files</Filter></Image>
+    <Image Include="res\CAMForAlibre.ico"><Filter>Resource Files</Filter></Image>
     <Image Include="res\CamToolbar16.bmp"><Filter>Resource Files</Filter></Image>
     <Image Include="res\CamToolbar24.bmp"><Filter>Resource Files</Filter></Image>
     <Image Include="res\CamToolbar32.bmp"><Filter>Resource Files</Filter></Image>
   </ItemGroup>
   <ItemGroup>
-    <None Include="AlibreCAM.def"><Filter>Source Files</Filter></None>
-    <None Include="AlibreCAM.adc"><Filter>Add-On Files</Filter></None>
+    <None Include="CAMForAlibre.def"><Filter>Source Files</Filter></None>
+    <None Include="CAMForAlibre.adc"><Filter>Add-On Files</Filter></None>
     <None Include="Alibre.props"><Filter>Add-On Files</Filter></None>
     <None Include="..\deploy\install.ps1"><Filter>Add-On Files</Filter></None>
     <None Include="..\deploy\uninstall.ps1"><Filter>Add-On Files</Filter></None>

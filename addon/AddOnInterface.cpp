@@ -1,7 +1,7 @@
-// AddOnInterface.cpp : IAlibreAddOn implementation for AlibreCAM.
+// AddOnInterface.cpp : IAlibreAddOn implementation for CAMForAlibre.
 
 #include "stdafx.h"
-#include "AlibreCAM.h"
+#include "CAMForAlibre.h"
 #include "AddOnInterface.h"
 #include "AboutDlg.h"
 #include "CamTabCommand.h"
@@ -146,7 +146,7 @@ STDMETHODIMP CAddOnInterface::MenuItemText(long menuID, BSTR* pMenuDisplayText)
 
     switch (menuID)
     {
-    case MENU_ID_ROOT:   *pMenuDisplayText = _bstr_t(L"AlibreCAM").Detach(); break;
+    case MENU_ID_ROOT:   *pMenuDisplayText = _bstr_t(L"CAMForAlibre").Detach(); break;
     case MENU_ID_CAM_TAB: *pMenuDisplayText = _bstr_t(L"CAM Tab").Detach(); break;
     case MENU_ID_ABOUT:  *pMenuDisplayText = _bstr_t(L"About").Detach();    break;
     default: break;
@@ -184,15 +184,15 @@ STDMETHODIMP CAddOnInterface::MenuItemToolTip(long menuID, BSTR* pToolTip)
     switch (menuID)
     {
     case MENU_ID_ROOT:
-        *pToolTip = _bstr_t(L"AlibreCAM add-on").Detach();
+        *pToolTip = _bstr_t(L"CAMForAlibre add-on").Detach();
         break;
     case MENU_ID_CAM_TAB:
         *pToolTip = IsAlibreVersionSupported()
                         ? _bstr_t(L"Open or close the CAM tab in the Design Explorer. Assemblies only.").Detach()
-                        : _bstr_t(L"AlibreCAM needs Alibre Design 27.0.1.27039 or later.").Detach();
+                        : _bstr_t(L"CAMForAlibre needs Alibre Design 27.0.1.27039 or later.").Detach();
         break;
     case MENU_ID_ABOUT:
-        *pToolTip = _bstr_t(L"Show information about the AlibreCAM add-on").Detach();
+        *pToolTip = _bstr_t(L"Show information about the CAMForAlibre add-on").Detach();
         break;
     default:
         break;
@@ -372,7 +372,7 @@ STDMETHODIMP CAddOnInterface::MenuIcon(long menuID, BSTR* pMenuIconPath)
 
     // The icon is deployed beside the DLL. Resolve it from our own module,
     // never from the current working directory.
-    CString iconPath = GetModuleFolder() + L"AlibreCAM.ico";
+    CString iconPath = GetModuleFolder() + L"CAMForAlibre.ico";
     if (GetFileAttributesW(iconPath) != INVALID_FILE_ATTRIBUTES)
         *pMenuIconPath = _bstr_t(static_cast<LPCWSTR>(iconPath)).Detach();
 
@@ -383,7 +383,7 @@ STDMETHODIMP CAddOnInterface::UseDedicatedRibbonTab(VARIANT_BOOL* pFlag)
 {
     if (pFlag == nullptr)
         return E_POINTER;
-    *pFlag = VARIANT_TRUE;      // give AlibreCAM its own ribbon tab
+    *pFlag = VARIANT_TRUE;      // give CAMForAlibre its own ribbon tab
     return S_OK;
 }
 

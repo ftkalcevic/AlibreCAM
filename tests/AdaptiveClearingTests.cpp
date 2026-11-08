@@ -70,12 +70,12 @@ namespace
         return writing;
     }
 
-    // For looking at: ALIBRECAM_ADAPTIVE_DUMP set to a folder writes the moves there as text.
+    // For looking at: CAMFORALIBRE_ADAPTIVE_DUMP set to a folder writes the moves there as text.
     void DumpToolpath(const Toolpath& toolpath, const char* name)
     {
         char* folder = nullptr;
         size_t length = 0;
-        if (_dupenv_s(&folder, &length, "ALIBRECAM_ADAPTIVE_DUMP") != 0 || folder == nullptr)
+        if (_dupenv_s(&folder, &length, "CAMFORALIBRE_ADAPTIVE_DUMP") != 0 || folder == nullptr)
             return;
         const std::string path = std::string(folder) + "/" + name + ".txt";
         std::free(folder);
@@ -91,7 +91,7 @@ namespace
     {
         char* folder = nullptr;
         size_t length = 0;
-        const bool set = _dupenv_s(&folder, &length, "ALIBRECAM_ADAPTIVE_DUMP") == 0 && folder != nullptr;
+        const bool set = _dupenv_s(&folder, &length, "CAMFORALIBRE_ADAPTIVE_DUMP") == 0 && folder != nullptr;
         std::free(folder);
         return set;
     }

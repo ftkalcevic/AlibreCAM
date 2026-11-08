@@ -17,7 +17,7 @@ namespace
         std::wstring folder(buffer, length);
         if (!folder.empty() && folder.back() != L'\\')
             folder += L'\\';
-        folder += L"AlibreCAM\\";
+        folder += L"CAMForAlibre\\";
         CreateDirectoryW(folder.c_str(), nullptr);
         return folder;
     }
@@ -30,8 +30,8 @@ std::wstring LogFolderPath()
 
 void LogInit()
 {
-    g_path = LogFolder() + L"AlibreCAM.log";
-    Log(L"==== AlibreCAM loaded ====");
+    g_path = LogFolder() + L"CAMForAlibre.log";
+    Log(L"==== CAMForAlibre loaded ====");
 }
 
 void Log(const wchar_t* format, ...)

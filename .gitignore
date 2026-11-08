@@ -3,4 +3,4 @@ bin/
 obj/
 *.user
 *.aps
-AlibreCAM.user.props
+CAMForAlibre.user.props

@@ -1,6 +1,6 @@
 // Machine.h : a machine, with its axes and its tools. No Alibre or MFC code belongs here.
 //
-// Each machine is a file of its own in %APPDATA%\AlibreCAM\machines\, named by
+// Each machine is a file of its own in %APPDATA%\CAMForAlibre\machines\, named by
 // its ID. A job stores the ID of the machine it uses.
 
 #pragma once

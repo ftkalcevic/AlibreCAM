@@ -17,7 +17,7 @@ struct PostChoice
 };
 
 // The posts there are: the installed posts folder beside the add-on, with the
-// user's %APPDATA%\AlibreCAM\posts\ adding more and replacing any of the same
+// user's %APPDATA%\CAMForAlibre\posts\ adding more and replacing any of the same
 // file name, sorted by name, then the built-in APT CL data last. A script that
 // can't be read is listed with its file name, so posting with it says why.
 std::vector<PostChoice> FindPosts();

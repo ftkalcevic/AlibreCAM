@@ -19,6 +19,8 @@ namespace camcore
         namespace fs = std::filesystem;
         using nlohmann::json;
 
+        // The add-on was once called AlibreCAM; the files keep this name so they still load.
+
         const char* const kFormatName = "AlibreCAM";
 
         LoadResult LoadFailure(LoadStatus status, const std::string& message, int fileVersion = 0)

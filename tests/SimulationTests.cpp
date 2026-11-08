@@ -648,9 +648,9 @@ TEST_CASE("the whole stock meshes as the chunks joined, and saves as a binary ST
             CHECK(static_cast<size_t>(whole.faces[f + c]) < whole.vertices.size() / 3);
     }
 
-    const std::string stl = StockMeshToStl(whole, "AlibreCAM test");
+    const std::string stl = StockMeshToStl(whole, "CAMForAlibre test");
     REQUIRE(stl.size() == 84 + 50 * whole.TriangleCount());
-    CHECK(stl.compare(0, 14, "AlibreCAM test") == 0);
+    CHECK(stl.compare(0, 17, "CAMForAlibre test") == 0);
     CHECK(ReadUint32(stl, 80) == whole.TriangleCount());
     for (size_t t = 0; t < whole.TriangleCount(); ++t)
     {

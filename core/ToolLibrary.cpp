@@ -19,6 +19,8 @@ namespace camcore
         namespace fs = std::filesystem;
         using nlohmann::json;
 
+        // The add-on was once called AlibreCAM; the files keep this name so they still load.
+
         const char* const kFormatName = "AlibreCAM tool library";
         const double kMillimetresPerInch = 25.4;
 

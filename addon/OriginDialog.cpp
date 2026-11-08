@@ -1,7 +1,7 @@
 // OriginDialog.cpp : the modeless dialog that edits one Set Origin step.
 
 #include "stdafx.h"
-#include "AlibreCAM.h"
+#include "CAMForAlibre.h"
 #include "OriginDialog.h"
 #include "Help.h"
 #include "CamTabCommand.h"

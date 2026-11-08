@@ -1,4 +1,4 @@
-// stdafx.h : precompiled header for the AlibreCAM Alibre Design add-on.
+// stdafx.h : precompiled header for the CAMForAlibre Alibre Design add-on.
 //
 // The Alibre type libraries are imported by file name only. The folder that
 // holds them (C:\Program Files\Alibre Design <version>\Program\) is found by

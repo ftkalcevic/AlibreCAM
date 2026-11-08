@@ -1,4 +1,4 @@
-// AlibreCAM.rc : resources for the AlibreCAM add-on.
+// CAMForAlibre.rc : resources for the CAMForAlibre add-on.
 //
 #include "resource.h"
 
@@ -35,7 +35,7 @@ END
 /////////////////////////////////////////////////////////////////////////////
 // Icon
 
-IDI_ALIBRECAM             ICON                    "res\\AlibreCAM.ico"
+IDI_CAMFORALIBRE             ICON                    "res\\CAMForAlibre.ico"
 
 // The CAM tab's toolbar at each view size: square images side by side (draw over
 // model, show toolpaths, settings), magenta for transparent.
@@ -51,7 +51,7 @@ IDB_CAM_TREE_32           BITMAP                  "res\\CamTree32.bmp"
 
 IDD_SETTINGS DIALOGEX 0, 0, 180, 92
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "AlibreCAM Settings"
+CAPTION "CAMForAlibre Settings"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
     GROUPBOX        "CAM View Size",IDC_STATIC,7,7,166,56
@@ -147,11 +147,11 @@ END
 
 IDD_ABOUTBOX DIALOGEX 0, 0, 250, 104
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "About AlibreCAM"
+CAPTION "About CAMForAlibre"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
-    ICON            IDI_ALIBRECAM,IDC_STATIC,14,14,20,20
-    LTEXT           "AlibreCAM Add-On for Alibre Design",IDC_STATIC,46,14,190,8,SS_NOPREFIX
+    ICON            IDI_CAMFORALIBRE,IDC_STATIC,14,14,20,20
+    LTEXT           "CAMForAlibre Add-On for Alibre Design",IDC_STATIC,46,14,190,8,SS_NOPREFIX
     LTEXT           "Version",IDC_ADDON_VERSION,46,27,190,8,SS_NOPREFIX
     LTEXT           "Copyright (C) 2026 Frank's Workshop",IDC_STATIC,46,40,190,8,SS_NOPREFIX
     LTEXT           "Running in Alibre Design",IDC_ALIBRE_VERSION,46,58,190,16,SS_NOPREFIX
@@ -770,7 +770,7 @@ END
 // The window that shows what Generate is doing.
 IDD_GENERATE_PROGRESS DIALOGEX 0, 0, 240, 56
 STYLE DS_SETFONT | DS_FIXEDSYS | DS_MODALFRAME | WS_POPUP | WS_CAPTION
-CAPTION "AlibreCAM"
+CAPTION "CAMForAlibre"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
     LTEXT           "",IDC_PROGRESS_OPERATION,8,8,224,9,SS_ENDELLIPSIS
@@ -1044,12 +1044,12 @@ BEGIN
         BLOCK "0c0904b0"
         BEGIN
             VALUE "CompanyName", "Frank's Workshop"
-            VALUE "FileDescription", "AlibreCAM add-on for Alibre Design"
+            VALUE "FileDescription", "CAMForAlibre add-on for Alibre Design"
             VALUE "FileVersion", "1.0.0.0"
-            VALUE "InternalName", "AlibreCAM.dll"
+            VALUE "InternalName", "CAMForAlibre.dll"
             VALUE "LegalCopyright", "Copyright (C) 2026 Frank's Workshop"
-            VALUE "OriginalFilename", "AlibreCAM.dll"
-            VALUE "ProductName", "AlibreCAM"
+            VALUE "OriginalFilename", "CAMForAlibre.dll"
+            VALUE "ProductName", "CAMForAlibre"
             VALUE "ProductVersion", "1.0.0.0"
         END
     END

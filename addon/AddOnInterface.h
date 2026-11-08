@@ -1,8 +1,8 @@
-// AddOnInterface.h : the IAlibreAddOn implementation for AlibreCAM.
+// AddOnInterface.h : the IAlibreAddOn implementation for CAMForAlibre.
 //
 // Menu tree exposed to Alibre:
 //
-//   AlibreCAM            (root, id 100)  -> shown as a dedicated ribbon tab
+//   CAMForAlibre            (root, id 100)  -> shown as a dedicated ribbon tab
 //     CAM Tab           (leaf, id 102)  -> two-way toggle: Design Explorer tab
 //     About             (leaf, id 101)  -> stateless command: shows About box
 

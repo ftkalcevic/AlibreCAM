@@ -521,7 +521,7 @@ TEST_CASE("an empty features list is fine with the stock's footprint")
 TEST_CASE("a plunge roughing operation saves its settings")
 {
     CHECK(IsOperation(StepType::PlungeRoughing));
-    const std::filesystem::path path = std::filesystem::temp_directory_path() / "AlibreCAM-plunge-test.cam";
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "CAMForAlibre-plunge-test.cam";
 
     Job job;
     job.assembly.name = "Mould";

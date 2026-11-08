@@ -159,7 +159,7 @@ TEST_CASE("a closed loop that stays down carries on round the same way")
 TEST_CASE("an engrave operation saves its traversal")
 {
     CHECK(IsOperation(StepType::Engrave));
-    const std::filesystem::path path = std::filesystem::temp_directory_path() / "AlibreCAM-engrave-test.cam";
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "CAMForAlibre-engrave-test.cam";
 
     Job job;
     job.assembly.name = "Plate";

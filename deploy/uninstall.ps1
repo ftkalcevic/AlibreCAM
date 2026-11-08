@@ -1,17 +1,17 @@
 <#
 .SYNOPSIS
-    Removes the AlibreCAM add-on from Alibre Design.
+    Removes the CAMForAlibre add-on from Alibre Design.
 
 .DESCRIPTION
     Deletes the registry value under HKLM\SOFTWARE\Alibre Design Add-Ons and
-    the folder %ProgramData%\Alibre AddOns\AlibreCAM\. Needs administrator
+    the folder %ProgramData%\Alibre AddOns\CAMForAlibre\. Needs administrator
     rights; re-launches itself elevated if necessary. Close Alibre Design first.
 #>
 
 $ErrorActionPreference = 'Stop'
 
-$AddOnName = 'AlibreCAM'
-$AddOnGuid = '{D3A31918-AFE0-45F2-A080-B531E6894179}'   # must match AlibreCAM.adc
+$AddOnName = 'CAMForAlibre'
+$AddOnGuid = '{D3A31918-AFE0-45F2-A080-B531E6894179}'   # must match CAMForAlibre.adc
 $RegKey    = 'SOFTWARE\Alibre Design Add-Ons'
 
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -46,7 +46,7 @@ try {
         Write-Host "Deleted $targetDir"
     }
 
-    Write-Host 'AlibreCAM add-on uninstalled.' -ForegroundColor Green
+    Write-Host 'CAMForAlibre add-on uninstalled.' -ForegroundColor Green
 }
 catch {
     Write-Host "Uninstall failed: $($_.Exception.Message)" -ForegroundColor Red

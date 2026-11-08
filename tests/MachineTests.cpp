@@ -22,7 +22,7 @@ namespace
         fs::path path;
         Folder()
         {
-            path = fs::temp_directory_path() / ("AlibreCAM-machine-test-" + NewStableId());
+            path = fs::temp_directory_path() / ("CAMForAlibre-machine-test-" + NewStableId());
             fs::create_directories(path);
         }
         ~Folder()

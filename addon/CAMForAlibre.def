@@ -1,7 +1,7 @@
-; AlibreCAM.def : exports Alibre Design looks up by name.
-; Names must stay undecorated - check with: dumpbin /exports AlibreCAM.dll
+; CAMForAlibre.def : exports Alibre Design looks up by name.
+; Names must stay undecorated - check with: dumpbin /exports CAMForAlibre.dll
 
-LIBRARY "AlibreCAM"
+LIBRARY "CAMForAlibre"
 
 EXPORTS
     AddOnLoad

@@ -1,6 +1,6 @@
 // Materials.h : the shared list of materials a job can be cut from. No Alibre or MFC code belongs here.
 //
-// The list is one file for every machine, %APPDATA%\AlibreCAM\materials.json.
+// The list is one file for every machine, %APPDATA%\CAMForAlibre\materials.json.
 // Tools keep feeds per material by the material's ID, so a material can be renamed.
 
 #pragma once

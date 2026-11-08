@@ -1,7 +1,7 @@
 // PostDialog.cpp : chooses the post and the output file before posting.
 
 #include "stdafx.h"
-#include "AlibreCAM.h"
+#include "CAMForAlibre.h"
 #include "PostDialog.h"
 #include "Help.h"
 
@@ -52,7 +52,7 @@ std::vector<PostChoice> FindPosts()
     wchar_t appData[MAX_PATH] = {};
     const DWORD length = GetEnvironmentVariableW(L"APPDATA", appData, MAX_PATH);
     if (length > 0 && length < MAX_PATH)
-        AddPosts(fs::path(appData) / L"AlibreCAM" / L"posts", found);
+        AddPosts(fs::path(appData) / L"CAMForAlibre" / L"posts", found);
 
     std::vector<PostChoice> posts;
     for (const auto& file : found)

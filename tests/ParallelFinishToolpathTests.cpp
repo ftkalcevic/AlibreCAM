@@ -595,7 +595,7 @@ TEST_CASE("a parallel finishing operation saves its settings, with its own defau
     parallel.parallelFinishing.direction = CutDirection::Conventional;
     parallel.parallelFinishing.approachDistance = 3.5;
 
-    const std::filesystem::path path = std::filesystem::temp_directory_path() / "AlibreCAM-parallel-test.cam";
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "CAMForAlibre-parallel-test.cam";
     Job job;
     job.assembly.name = "Mould";
     job.assembly.guid = "{guid}";

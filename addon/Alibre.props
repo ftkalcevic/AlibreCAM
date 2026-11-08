@@ -7,7 +7,7 @@
 
   To pin a specific install (e.g. with side-by-side versions, compile against
   the OLDEST one you want to support), set AlibreProgramDir in any of:
-    - AlibreCAM.user.props beside this file (not checked in), e.g.
+    - CAMForAlibre.user.props beside this file (not checked in), e.g.
         <Project><PropertyGroup>
           <AlibreProgramDir>C:\Program Files\Alibre Design 2x.x.x.xxxxx\Program\</AlibreProgramDir>
         </PropertyGroup></Project>
@@ -16,8 +16,8 @@
 -->
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
-  <Import Project="$(MSBuildThisFileDirectory)AlibreCAM.user.props"
-          Condition="Exists('$(MSBuildThisFileDirectory)AlibreCAM.user.props')" />
+  <Import Project="$(MSBuildThisFileDirectory)CAMForAlibre.user.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)CAMForAlibre.user.props')" />
 
   <PropertyGroup>
     <_AlibreProgramFiles>$(ProgramW6432)</_AlibreProgramFiles>

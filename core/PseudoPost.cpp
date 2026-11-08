@@ -36,7 +36,7 @@ namespace camcore
         const auto line = [&](const std::string& text) { out += text + "\n"; };
 
         line("PARTNO " + jobName);
-        line("$$ AlibreCAM APT CL data. Points are in mm from the work zero, the first Set Origin.");
+        line("$$ CAMForAlibre APT CL data. Points are in mm from the work zero, the first Set Origin.");
         line("UNITS/MM");
 
         const SequenceStep* currentOrigin = nullptr;

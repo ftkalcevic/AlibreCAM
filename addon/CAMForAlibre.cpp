@@ -1,10 +1,10 @@
-// AlibreCAM.cpp : DLL initialisation and the entry points Alibre Design calls.
+// CAMForAlibre.cpp : DLL initialisation and the entry points Alibre Design calls.
 //
 // Every exported function starts with AFX_MANAGE_STATE so MFC uses this
 // DLL's module state (resources, window maps) rather than Alibre's.
 
 #include "stdafx.h"
-#include "AlibreCAM.h"
+#include "CAMForAlibre.h"
 #include "AddOnInterface.h"
 #include "CrashCatcher.h"
 #include "Log.h"
@@ -13,19 +13,19 @@
 #define new DEBUG_NEW
 #endif
 
-BEGIN_MESSAGE_MAP(CAlibreCAMApp, CWinApp)
+BEGIN_MESSAGE_MAP(CCAMForAlibreApp, CWinApp)
 END_MESSAGE_MAP()
 
-CAlibreCAMApp::CAlibreCAMApp()
+CCAMForAlibreApp::CCAMForAlibreApp()
     : m_hAlibreWnd(nullptr)
     , m_pAddOn(nullptr)
 {
 }
 
 // The one and only application object
-CAlibreCAMApp theApp;
+CCAMForAlibreApp theApp;
 
-BOOL CAlibreCAMApp::InitInstance()
+BOOL CCAMForAlibreApp::InitInstance()
 {
     CWinApp::InitInstance();
     return TRUE;

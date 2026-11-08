@@ -2,7 +2,7 @@
 // each material, and the small dialogs it and the Machine dialog use.
 
 #include "stdafx.h"
-#include "AlibreCAM.h"
+#include "CAMForAlibre.h"
 #include "ToolDialogs.h"
 #include "Help.h"
 #include "ModelReader.h"
@@ -70,7 +70,7 @@ void CNamePromptDlg::OnOK()
     text.Trim();
     if (text.IsEmpty())
     {
-        MessageBox(L"Enter a name.", L"AlibreCAM", MB_OK | MB_ICONWARNING);
+        MessageBox(L"Enter a name.", L"CAMForAlibre", MB_OK | MB_ICONWARNING);
         return;
     }
     m_name = static_cast<LPCWSTR>(text);
@@ -151,7 +151,7 @@ void CToolFeedsDlg::OnOK()
         MessageBox(m_offered.empty() ? L"Every material already has speeds and feeds for this tool. Add a "
                                        L"material on the Machine dialog's Materials tab first."
                                      : L"Choose a material.",
-                   L"AlibreCAM", MB_OK | MB_ICONWARNING);
+                   L"CAMForAlibre", MB_OK | MB_ICONWARNING);
         return;
     }
 
@@ -160,7 +160,7 @@ void CToolFeedsDlg::OnOK()
     std::wstring problems;
     if (m_page == nullptr || m_page->GetSafeHwnd() == nullptr || !m_page->Save(step, problems))
     {
-        MessageBox(problems.c_str(), L"AlibreCAM", MB_OK | MB_ICONWARNING);
+        MessageBox(problems.c_str(), L"CAMForAlibre", MB_OK | MB_ICONWARNING);
         return;
     }
 
@@ -280,7 +280,7 @@ void CToolEditDlg::OnAddFeeds()
 {
     if (m_materials.materials.empty())
     {
-        MessageBox(L"There are no materials yet. Add them on the Machine dialog's Materials tab.", L"AlibreCAM",
+        MessageBox(L"There are no materials yet. Add them on the Machine dialog's Materials tab.", L"CAMForAlibre",
                    MB_OK | MB_ICONINFORMATION);
         return;
     }
@@ -439,7 +439,7 @@ void CToolEditDlg::OnOK()
 
     if (!problems.empty())
     {
-        MessageBox(problems.c_str(), L"AlibreCAM", MB_OK | MB_ICONWARNING);
+        MessageBox(problems.c_str(), L"CAMForAlibre", MB_OK | MB_ICONWARNING);
         return;
     }
 

@@ -1,7 +1,7 @@
 // StockDialog.cpp : the dialogs that make or change the job's stock.
 
 #include "stdafx.h"
-#include "AlibreCAM.h"
+#include "CAMForAlibre.h"
 #include "StockDialog.h"
 #include "Help.h"
 #include "CamTabCommand.h"

@@ -1,4 +1,4 @@
-// AboutDlg.h : the AlibreCAM About box.
+// AboutDlg.h : the CAMForAlibre About box.
 
 #pragma once
 

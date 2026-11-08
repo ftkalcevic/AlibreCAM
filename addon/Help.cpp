@@ -1,7 +1,7 @@
 // Help.cpp : opens the add-on's help page in the browser at a section.
 
 #include "stdafx.h"
-#include "AlibreCAM.h"
+#include "CAMForAlibre.h"
 #include "Help.h"
 
 #include <shellapi.h>
@@ -20,7 +20,7 @@ namespace
         wchar_t module[MAX_PATH] = {};
         if (GetModuleFileNameW(AfxGetInstanceHandle(), module, MAX_PATH) == 0)
             return fs::path();
-        return fs::path(module).parent_path() / L"help" / L"AlibreCAM.html";
+        return fs::path(module).parent_path() / L"help" / L"CAMForAlibre.html";
     }
 
     // The command the default browser opens web links with, such as
@@ -71,12 +71,12 @@ void ShowHelp(const wchar_t* section)
     if (file.empty() || !fs::is_regular_file(file, error))
     {
         Log(L"[help] no help page at %s", file.c_str());
-        AfxMessageBox(L"The help page wasn't found. Install the add-on again to put it beside AlibreCAM.dll.",
+        AfxMessageBox(L"The help page wasn't found. Install the add-on again to put it beside CAMForAlibre.dll.",
                       MB_OK | MB_ICONINFORMATION);
         return;
     }
 
-    // file:///C:/.../AlibreCAM.html#section
+    // file:///C:/.../CAMForAlibre.html#section
     wchar_t url[4096] = {};
     DWORD length = static_cast<DWORD>(std::size(url));
     std::wstring target;

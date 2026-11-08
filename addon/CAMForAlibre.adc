@@ -1,9 +1,9 @@
-<AlibreDesignAddOn specificationVersion="2" friendlyName="AlibreCAM">
+<AlibreDesignAddOn specificationVersion="2" friendlyName="CAMForAlibre">
    <Author name="Frank's Workshop" link="http://www.franksworkshop.com.au"/>
-   <DLL loadedWhen="Startup" location="AlibreCAM.dll"/>
+   <DLL loadedWhen="Startup" location="CAMForAlibre.dll"/>
    <Copyright>Copyright (C) 2026 Frank's Workshop</Copyright>
-   <Icon location="AlibreCAM.ico"/>
-   <Menu text="AlibreCAM"/>
+   <Icon location="CAMForAlibre.ico"/>
+   <Menu text="CAMForAlibre"/>
    <Description>CAM for Alibre Design assemblies.</Description>
    <Workspace type="Always"/>
    <Property name="Identifier" value="{D3A31918-AFE0-45F2-A080-B531E6894179}"/>

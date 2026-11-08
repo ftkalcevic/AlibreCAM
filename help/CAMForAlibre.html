@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AlibreCAM Help</title>
+<title>CAMForAlibre Help</title>
 <style>
   :root {
     --bg: #ffffff; --text: #1d1d1f; --muted: #5f6368; --rule: #dadce0;
@@ -54,7 +54,7 @@
 </head>
 <body>
 <nav>
-  <h2>AlibreCAM</h2>
+  <h2>CAMForAlibre</h2>
   <a href="#top">Introduction</a>
   <a href="#cam-tab">CAM tab</a>
   <a class="sub" href="#cam-toolbar">Toolbar</a>
@@ -99,9 +99,9 @@
 </nav>
 <main>
 
-<h1 id="top">AlibreCAM Help</h1>
+<h1 id="top">CAMForAlibre Help</h1>
 <p class="muted">A CAM add-on for Alibre Design assemblies.</p>
-<p>AlibreCAM adds a CAM tab to the Design Explorer of an assembly. In it you build a sequence of operations that machine the assembly's parts, generate a toolpath for each, see the toolpaths in the view, and post them as G-code for your machine. Toolpaths are 3+2 indexed: each Set Origin step can tilt or move the origin, and operations run under the origin above them.</p>
+<p>CAMForAlibre adds a CAM tab to the Design Explorer of an assembly. In it you build a sequence of operations that machine the assembly's parts, generate a toolpath for each, see the toolpaths in the view, and post them as G-code for your machine. Toolpaths are 3+2 indexed: each Set Origin step can tilt or move the origin, and operations run under the origin above them.</p>
 <p>The job is kept in a <code>.cam</code> file beside the assembly, with the same name. It's saved only when you press Save, and you're warned about unsaved changes when the assembly closes. All lengths are in millimetres, and Z is measured along the active origin's Z axis, pointing out of the material.</p>
 <p>Press <strong>?</strong> on the CAM tab's toolbar, or at the bottom left of a dialog, to open this page at the section for it.</p>
 
@@ -268,7 +268,7 @@
 
 <section id="settings">
 <h2>Settings</h2>
-<p>Program settings that apply to every job. They're saved for you in <code>%APPDATA%\AlibreCAM\settings.json</code>.</p>
+<p>Program settings that apply to every job. They're saved for you in <code>%APPDATA%\CAMForAlibre\settings.json</code>.</p>
 <dl>
   <dt>CAM View Size</dt>
   <dd>The size of the CAM tab's text, buttons and toolbar icons. <strong>Small</strong> uses Windows' normal font and 16 pixel icons, <strong>Medium</strong> text 1.25 times as large and 24 pixel icons, and <strong>Large</strong> 1.5 times and 32 pixel icons.</dd>
@@ -336,7 +336,7 @@
 
 <section id="machine">
 <h2>Machine</h2>
-<p>The machine the job is cut on, its tools, and the list of materials. Each machine is a file of its own in <code>%APPDATA%\AlibreCAM\machines\</code>, holding its settings and its tools, and the job remembers which one it uses. A new job starts on the machine used last. Changes are saved straight away. Open it by double-clicking Machine, Tools or Material on the CAM tab.</p>
+<p>The machine the job is cut on, its tools, and the list of materials. Each machine is a file of its own in <code>%APPDATA%\CAMForAlibre\machines\</code>, holding its settings and its tools, and the job remembers which one it uses. A new job starts on the machine used last. Changes are saved straight away. Open it by double-clicking Machine, Tools or Material on the CAM tab.</p>
 <dl>
   <dt>Machine</dt>
   <dd>The machine this job uses. Choosing another moves the job to it, and it becomes the machine new jobs start on.</dd>
@@ -388,7 +388,7 @@
 </dl>
 
 <h3 id="machine-materials">Materials tab</h3>
-<p>The materials jobs can be cut from. The list is shared by every machine (<code>%APPDATA%\AlibreCAM\materials.json</code>). Only names for now.</p>
+<p>The materials jobs can be cut from. The list is shared by every machine (<code>%APPDATA%\CAMForAlibre\materials.json</code>). Only names for now.</p>
 <dl>
   <dt>Material list</dt>
   <dd>Every material. Double-click one to rename it.</dd>
@@ -494,7 +494,7 @@
 
 <section id="post">
 <h2>Post</h2>
-<p>Writes the generated toolpaths as a program for a machine. Every point is measured from the work zero, the first Set Origin that isn't suppressed. Posts are plain text <code>.post</code> files in the add-on's <code>posts</code> folder, and your own in <code>%APPDATA%\AlibreCAM\posts\</code> add to them or replace one with the same file name.</p>
+<p>Writes the generated toolpaths as a program for a machine. Every point is measured from the work zero, the first Set Origin that isn't suppressed. Posts are plain text <code>.post</code> files in the add-on's <code>posts</code> folder, and your own in <code>%APPDATA%\CAMForAlibre\posts\</code> add to them or replace one with the same file name.</p>
 <dl>
   <dt>Posting</dt>
   <dd>What's being posted: every operation, or a folder's.</dd>
@@ -862,7 +862,7 @@
 <h2>Waterline Finishing tab</h2>
 <p>Waterline Finishing finishes the sides of a 3D shape with a single lap round the parts at each level, from the top of the cut down to its bottom (see its <a href="#tab-waterline-levels">Cut Levels</a> tab, which it shares with Waterline Roughing). Its tabs are Features, Tool, Feeds &amp; Speeds, Clearance, Cut Levels and this one. It's meant to follow a roughing operation, with a ball mill for curved shapes.</p>
 <p>The area comes from the Features tab as for Waterline Roughing. At each level the lap is where the tool, with its true shape, just touches the parts (less the Stock to Leave), and is cut off at the area's edge, or past it by the Overtravel. Each separate part (island) gets its own lap. Where the parts slope gently, so that two levels' laps are further apart than the stepover, extra levels are added between them until no gap is wider than the stepover. A lap is entered at rapid to the Approach Distance above its start, then at the plunge feed. The tool stays down from one lap to the next lap round the same part when the move is short and clear of the parts, and otherwise lifts to the clearance plane.</p>
-<p>The laps are found on a fine grid first, then every point is moved sideways onto the level exactly, with the tool's shape dropped onto the parts' facets, and with a ball mill onto the faces' true surfaces (as Parallel Finishing's rows are: spheres, cylinders, cones, tori and splines quickly by AlibreCAM, any other face more slowly through Alibre). Where the level line itself doubles back in a thin finger or a tiny loop (under 0.2 mm wide and 3 mm long, as where the tool just grazes a slight ridge), the lap goes straight across instead, and tiny steps backwards are left out, but only where the tool keeps clear of the part doing so. Then they're simplified: a straight move may replace several points if it stays within 0.01 mm of them sideways, or if the tool's height along it stays within 0.01 mm of the level (and it's within 0.5 mm of them). So on steep sides the laps follow the parts closely, and on shallow ground, where a tiny difference in height moves the level line a long way sideways, they run smoothly instead of wandering.</p>
+<p>The laps are found on a fine grid first, then every point is moved sideways onto the level exactly, with the tool's shape dropped onto the parts' facets, and with a ball mill onto the faces' true surfaces (as Parallel Finishing's rows are: spheres, cylinders, cones, tori and splines quickly by CAMForAlibre, any other face more slowly through Alibre). Where the level line itself doubles back in a thin finger or a tiny loop (under 0.2 mm wide and 3 mm long, as where the tool just grazes a slight ridge), the lap goes straight across instead, and tiny steps backwards are left out, but only where the tool keeps clear of the part doing so. Then they're simplified: a straight move may replace several points if it stays within 0.01 mm of them sideways, or if the tool's height along it stays within 0.01 mm of the level (and it's within 0.5 mm of them). So on steep sides the laps follow the parts closely, and on shallow ground, where a tiny difference in height moves the level line a long way sideways, they run smoothly instead of wandering.</p>
 <p>The laps finish walls only: on a flat face they run round its edge but don't cover it. Tick Finish Flats to clear the flats as well.</p>
 <dl>
   <dt>Stock to Leave</dt>
@@ -885,7 +885,7 @@
 <section id="tab-parallel-finishing">
 <h2>Parallel Finishing tab</h2>
 <p>Parallel Finishing finishes a 3D shape with straight rows a stepover apart, the tool rising and falling to follow the parts' surface with its own shape (a ball mill's ball, a corner radius, a flat end), so it never cuts into them. It suits gently curved and sloping surfaces; on steep walls the rows are far apart along the wall, so use Waterline Finishing there. Its tabs are Features, Tool, Feeds &amp; Speeds, Clearance, <a href="#tab-waterline-levels">Cut Levels</a> (the waterline operations' tab, showing only Top and Bottom) and this one.</p>
-<p>The area comes from the Features tab as for the waterline operations. The tool's centre runs right up to the area's edge, and past it by the Overtravel. Where there's no part under the tool, it goes down to the bottom of the cut. It's always a single finishing pass over the whole depth: its Cut Levels tab has only Top and Bottom. Rows are cut only where the surface is below the Top, and go no lower than the Bottom. Each row is entered at rapid to the Approach Distance above its start, then at the plunge feed. The tool's height along each row is worked out exactly for its shape against the parts' triangles (the facets Alibre gives for each part), checked every half grid cell along the row (the tool's diameter / 80) and kept to within 0.01 mm when the moves are simplified. The facets are flat, so on a curved surface they're a little off the true surface. With a ball mill each point is then moved onto the true surface of the face it touches, so the ball sits exactly its radius plus the Stock to Leave from it. Spheres, cylinders, cones, tori and spline (NURBS) faces are worked out by AlibreCAM itself, on all the computer's cores, which is quick; a face whose shape can't be read that way is asked of Alibre a point at a time, which is much slower. Flat faces are already exact, so points on them are left as they are. To save time, every second point along a row is moved onto the surface, and each point between two on the same face takes the middle of their heights, which is within a micron or so on a smooth surface. Points where it can't be done (the contact is on the ball's side, or Alibre can't say) keep the facets' answer; the log says how many and why. Alibre has to answer for every point one at a time, so with a ball mill Generate can take tens of seconds, and Alibre is busy until it's done.</p>
+<p>The area comes from the Features tab as for the waterline operations. The tool's centre runs right up to the area's edge, and past it by the Overtravel. Where there's no part under the tool, it goes down to the bottom of the cut. It's always a single finishing pass over the whole depth: its Cut Levels tab has only Top and Bottom. Rows are cut only where the surface is below the Top, and go no lower than the Bottom. Each row is entered at rapid to the Approach Distance above its start, then at the plunge feed. The tool's height along each row is worked out exactly for its shape against the parts' triangles (the facets Alibre gives for each part), checked every half grid cell along the row (the tool's diameter / 80) and kept to within 0.01 mm when the moves are simplified. The facets are flat, so on a curved surface they're a little off the true surface. With a ball mill each point is then moved onto the true surface of the face it touches, so the ball sits exactly its radius plus the Stock to Leave from it. Spheres, cylinders, cones, tori and spline (NURBS) faces are worked out by CAMForAlibre itself, on all the computer's cores, which is quick; a face whose shape can't be read that way is asked of Alibre a point at a time, which is much slower. Flat faces are already exact, so points on them are left as they are. To save time, every second point along a row is moved onto the surface, and each point between two on the same face takes the middle of their heights, which is within a micron or so on a smooth surface. Points where it can't be done (the contact is on the ball's side, or Alibre can't say) keep the facets' answer; the log says how many and why. Alibre has to answer for every point one at a time, so with a ball mill Generate can take tens of seconds, and Alibre is busy until it's done.</p>
 <dl>
   <dt>Stock to Leave</dt>
   <dd>Material left covering the parts: the tool stays this far from them. 0 (the default) cuts to the parts' surface. 0 or more.</dd>

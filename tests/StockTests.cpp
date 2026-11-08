@@ -161,7 +161,7 @@ TEST_CASE("the box around some points")
 
 TEST_CASE("the stock is saved with the job")
 {
-    const std::filesystem::path path = std::filesystem::temp_directory_path() / "AlibreCAM-stock-test.cam";
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "CAMForAlibre-stock-test.cam";
 
     Job job;
     job.assembly.name = "Bracket";

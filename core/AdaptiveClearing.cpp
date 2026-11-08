@@ -33,13 +33,13 @@ namespace camcore
 
         double g_contourMs = 0.0, g_widestMs = 0.0;     // timing, for finding where the time goes
 
-        // ALIBRECAM_ADAPTIVE_DEBUG=1 prints each pass, for finding problems.
+        // CAMFORALIBRE_ADAPTIVE_DEBUG=1 prints each pass, for finding problems.
         bool Debugging()
         {
             static const bool on = [] {
                 char* value = nullptr;
                 size_t length = 0;
-                const bool set = _dupenv_s(&value, &length, "ALIBRECAM_ADAPTIVE_DEBUG") == 0 && value != nullptr &&
+                const bool set = _dupenv_s(&value, &length, "CAMFORALIBRE_ADAPTIVE_DEBUG") == 0 && value != nullptr &&
                                  value[0] == '1';
                 std::free(value);
                 return set;

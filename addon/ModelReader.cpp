@@ -1,7 +1,7 @@
 // ModelReader.cpp : reads Alibre's model into plain data for CamCore.
 
 #include "stdafx.h"
-#include "AlibreCAM.h"
+#include "CAMForAlibre.h"
 #include "ModelReader.h"
 #include "Log.h"
 

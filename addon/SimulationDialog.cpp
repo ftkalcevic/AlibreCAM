@@ -2,7 +2,7 @@
 // against the stock in Alibre's view.
 
 #include "stdafx.h"
-#include "AlibreCAM.h"
+#include "CAMForAlibre.h"
 #include "SimulationDialog.h"
 #include "CamTabCommand.h"
 #include "Help.h"
