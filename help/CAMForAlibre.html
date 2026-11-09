@@ -72,6 +72,7 @@
   <a class="sub" href="#machine-materials">Materials tab</a>
   <a href="#tool-edit">Tool</a>
   <a class="sub" href="#tool-feeds">Speeds and Feeds</a>
+  <a class="sub" href="#choose-material">Choose Material</a>
   <a href="#set-origin">Set Origin</a>
   <a href="#post">Post</a>
   <a href="#operation">Operation dialog</a>
@@ -149,7 +150,7 @@
   <dt>Setup ▸ Tools</dt>
   <dd>The machine's tools. Click a tool to select it: new operations start with the selected tool. Double-click Tools or a tool to open the Machine dialog at its <a href="#machine-tools">Tools tab</a>.</dd>
   <dt>Setup ▸ Material</dt>
-  <dd>The material the job is cut from, shown as <em>Material - name</em>. Right-click it to choose a material, or No Material, or Edit Materials to change the list. The Feeds &amp; Speeds tab's From Tool button uses it. Double-click opens the <a href="#machine-materials">Materials tab</a>.</dd>
+  <dd>The material the job is cut from, shown as <em>Material - name</em>. Right-click it to choose a material, or No Material, or Edit Materials to change the list. The Feeds &amp; Speeds tab's Load from Tool and Save to Tool buttons use it. Double-click opens the <a href="#machine-materials">Materials tab</a>.</dd>
   <dt>Setup ▸ Stock</dt>
   <dd>The material the parts are cut from. A job has at most one stock, and the node shows its kind, such as <em>Stock - Box Stock</em>. Right-click it to make one: <a href="#stock-box">Box Stock</a>, <a href="#stock-part-box">Part Box Stock</a> or <a href="#stock-import">Import Stock</a>. Once there's a stock, those are greyed, and Edit (or double-clicking Stock) changes it and Delete removes it. The stock is drawn as its edges in teal, and it's measured along the assembly's axes.</dd>
   <dt>Operations</dt>
@@ -592,12 +593,27 @@
 </dl>
 </section>
 
+<section id="choose-material">
+<h2>Choose Material</h2>
+<p>Appears when Save to Tool is pressed and the job has no material.</p>
+<dl>
+  <dt>Material</dt>
+  <dd>The material to save the speeds and feeds for. It also becomes the job's material.</dd>
+  <dt>OK</dt>
+  <dd>Uses the chosen material and carries on saving.</dd>
+  <dt>Cancel</dt>
+  <dd>Nothing is saved, and the job's material stays unset.</dd>
+</dl>
+</section>
+
 <section id="tab-feeds">
 <h2>Feeds &amp; Speeds tab</h2>
 <p>The spindle speed and feed rates for this operation. They belong to the operation because they depend on the material. Feeds are in mm/min.</p>
 <dl>
-  <dt>From Tool</dt>
+  <dt>Load from Tool</dt>
   <dd>Fills every field from the speeds and feeds of the tool chosen on the Tool tab, for the job's material. If the tool has none for that material, it says so and changes nothing. The values can be changed afterwards.</dd>
+  <dt>Save to Tool</dt>
+  <dd>Saves this tab's values to the tool chosen on the Tool tab, for the job's material, in the machine's file straight away; the status on the CAM tab confirms it. If the job has no material you <a href="#choose-material">choose one</a>, which becomes the job's material. If the tool already has speeds and feeds for that material, you're asked before they're overwritten. Not offered when editing several operations at once.</dd>
   <dt>Spindle Speed</dt>
   <dd>In revolutions per minute.</dd>
   <dt>Plunge</dt>

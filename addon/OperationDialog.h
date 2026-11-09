@@ -211,6 +211,7 @@ protected:
     BOOL OnInitDialog() override;
     afx_msg void OnTransferChanged();
     afx_msg void OnFromTool();
+    afx_msg void OnToTool();
 
     DECLARE_MESSAGE_MAP()
 
@@ -631,6 +632,11 @@ public:
     // The chosen tool's speeds and feeds for the job's material. False with a
     // problem, in words for the user, if there are none.
     bool FeedsFromTool(camcore::FeedSettings& feeds, std::wstring& problem) const;
+
+    // Saves these to the chosen tool for the job's material, prompting for a material
+    // if the job has none and before replacing a row. False with an empty problem if
+    // the user turned it down.
+    bool SaveFeedsToTool(const camcore::FeedSettings& feeds, std::wstring& problem);
 
     enum { IDD = IDD_OPERATION };
 

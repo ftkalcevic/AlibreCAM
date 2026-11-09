@@ -366,6 +366,22 @@ namespace camcore
         return nullptr;
     }
 
+    void SetFeedsFor(Tool& tool, const std::string& materialId, const FeedSettings& feeds)
+    {
+        for (ToolFeeds& row : tool.feeds)
+        {
+            if (row.materialId == materialId)
+            {
+                row.feeds = feeds;
+                return;
+            }
+        }
+        ToolFeeds row;
+        row.materialId = materialId;
+        row.feeds = feeds;
+        tool.feeds.push_back(row);
+    }
+
     int NextFreeToolNumber(const ToolLibrary& library)
     {
         std::set<int> used;

@@ -137,6 +137,9 @@ namespace camcore
     // The tool's feeds for a material, or null if it has none.
     const ToolFeeds* FeedsFor(const Tool& tool, const std::string& materialId);
 
+    // Sets the tool's speeds and feeds for a material, replacing any it has.
+    void SetFeedsFor(Tool& tool, const std::string& materialId, const FeedSettings& feeds);
+
     // The lowest tool number not already in use.
     int NextFreeToolNumber(const ToolLibrary& library);
 

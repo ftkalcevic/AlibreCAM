@@ -70,6 +70,10 @@ public:
     std::wstring GetMaterialName() const;       // "none" when the job has no material
     void ChooseMaterial(const std::string& id);
 
+    // Writes the speeds and feeds to the tool in the machine's file.
+    bool SaveToolFeeds(const std::string& toolId, const std::string& materialId, const camcore::FeedSettings& feeds,
+                       std::wstring& problem);
+
     // The stock. There's at most one.
     bool HasStock() const { return m_job.stock.kind != camcore::StockKind::None; }
     void MakeStock(camcore::StockKind kind);

@@ -9733,6 +9733,52 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > test passed
 
+### 🤖 Claude
+
+> Good, the image buttons are marked as tested in `CLAUDE.md`. The button row, templates, tool drawing and reduced neck work are all still uncommitted, ready for you to commit.
+
+### 🧑 Frank · 17:24
+
+> In the Speeds & Feeds tab, move the "From Tool" button to under the Transfer Group, and call it "Load from Tool".  Add another button, "Save to Tool".  Save to tool will save the speeds and feeds settings to the tool for the current material.  If not material is set, the user is prompted.  If there is already settings saved for this tool/material combo, prompt to overwrite it.
+
+### 🤖 Claude
+
+> Load from Tool and Save to Tool are built in Debug and Release and `CamCoreTests` passes, but they **aren't installed** because the administrator prompt was cancelled. Nothing has been tried in Alibre yet, and nothing is committed.
+>
+> **What changed**
+> - **Load from Tool:** the old From Tool button, renamed and moved under the Transfer group. It works as before.
+> - **Save to Tool:** sits beside it and saves the tab's values to the tool chosen on the Tool tab, for the job's material. They go straight into the machine's file, and the CAM tab's status line confirms it.
+> - **Existing settings:** if that tool already has settings for the material, it asks before overwriting.
+> - **No material:** a small new Choose Material dialog appears. A material that has since been deleted from the list counts as none.
+>
+> **Choices I made that you can change**
+> - The material you pick in that dialog also becomes the job's material, so Load from Tool then works straight away and the job shows as unsaved. You only asked for a prompt, so say if you'd rather it applied to that one save.
+> - Save to Tool is hidden when editing several operations at once, because fields that differ between them are blank.
+>
+> The help has the new buttons and a Choose Material section, and the spec (both copies, rev 232) and `CLAUDE.md` are updated.
+>
+> **To test, once it's installed**
+> 1. Open an operation's Feeds & Speeds tab and check both buttons sit under the Transfer group, and that a tool's own Speeds and Feeds dialog shows neither.
+> 2. Press Save to Tool with a material set and no existing row. Check the status line, then the tool's Speeds & Feeds list.
+> 3. Change a value and save again. It should ask, and No should leave the tool as it was, Yes should update it.
+> 4. Set No Material and press Save to Tool. Choose one and check the Material node updates. Try Cancel too: nothing should change.
+> 5. Enter a bad value, such as a blank feed, and check it's refused with a message.
+> 6. Use Load from Tool to bring the saved values back.
+> 7. Edit several operations at once and check Save to Tool is hidden.
+> 8. Open the help from both places and check the new text reads correctly.
+
+### 🧑 Frank · 17:45
+
+> Install it
+
+### 🤖 Claude
+
+> It's installed, and the installed add-on and help both match this build. Start Alibre and go through the eight tests from my last message.
+
+### 🧑 Frank · 17:48
+
+> Test passed
+
 ---
 
 # Side conversation

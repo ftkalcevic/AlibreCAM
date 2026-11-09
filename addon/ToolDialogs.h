@@ -31,6 +31,29 @@ private:
     std::wstring m_name;
 };
 
+// Chooses one of the materials.
+class CChooseMaterialDlg : public CDialog
+{
+public:
+    CChooseMaterialDlg(const camcore::MaterialList& materials, CWnd* pParent);
+
+    const std::string& GetMaterialId() const { return m_id; }
+
+    enum { IDD = IDD_CHOOSE_MATERIAL };
+
+protected:
+    BOOL OnInitDialog() override;
+    void OnOK() override;
+    afx_msg void OnHelpButton();
+
+    DECLARE_MESSAGE_MAP()
+
+private:
+    camcore::MaterialList m_materials;
+    std::string m_id;
+    CComboBox m_list;
+};
+
 // A tool's speeds and feeds for one material: a material, and the Feeds & Speeds tab's fields.
 class CToolFeedsDlg : public CDialog
 {

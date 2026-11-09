@@ -401,3 +401,22 @@ TEST_CASE("the settings remember the last machine")
     REQUIRE(loaded.status == LoadStatus::Ok);
     CHECK(loaded.settings.lastMachineId == "router1");
 }
+
+TEST_CASE("setting a tool's feeds for a material adds a row or replaces its own")
+{
+    Tool tool;
+    FeedSettings first;
+    first.cut = 500.0;
+    FeedSettings second;
+    second.cut = 900.0;
+
+    SetFeedsFor(tool, "alu", first);
+    SetFeedsFor(tool, "steel", first);
+    REQUIRE(tool.feeds.size() == 2);
+    CHECK(FeedsFor(tool, "alu")->feeds.cut == 500.0);
+
+    SetFeedsFor(tool, "alu", second);
+    REQUIRE(tool.feeds.size() == 2);
+    CHECK(FeedsFor(tool, "alu")->feeds.cut == 900.0);
+    CHECK(FeedsFor(tool, "steel")->feeds.cut == 500.0);
+}

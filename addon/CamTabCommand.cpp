@@ -707,6 +707,44 @@ void CCamTabCommand::SaveJobFile()
     SetStatus(L"Saved " + fileName + L".");
 }
 
+bool CCamTabCommand::SaveToolFeeds(const std::string& toolId, const std::string& materialId,
+                                    const camcore::FeedSettings& feeds, std::wstring& problem)
+{
+    if (m_machine.id.empty())
+    {
+        problem = L"The job's machine couldn't be read, so its tools can't be changed.";
+        return false;
+    }
+
+    camcore::Machine updated = m_machine;
+    camcore::Tool* pTool = nullptr;
+    for (camcore::Tool& tool : updated.tools.tools)
+    {
+        if (tool.id == toolId)
+            pTool = &tool;
+    }
+    if (pTool == nullptr)
+    {
+        problem = L"That tool isn't on the machine any more.";
+        return false;
+    }
+    camcore::SetFeedsFor(*pTool, materialId, feeds);
+    const std::wstring toolName = L"T" + std::to_wstring(pTool->number) + L" " + FromUtf8(pTool->name);
+
+    const camcore::SaveResult saved =
+        camcore::SaveMachine(updated, camcore::MachineFilePath(MachinesFolder(), updated.id));
+    if (!saved.ok)
+    {
+        problem = L"Could not save the machine. " + FromUtf8(saved.message);
+        return false;
+    }
+
+    m_machine = updated;
+    m_library = m_machine.tools;
+    SetStatus(L"Saved the speeds and feeds to " + toolName + L" for " + GetMaterialName() + L".");
+    return true;
+}
+
 void CCamTabCommand::LoadOtherJobFile()
 {
     AFX_MANAGE_STATE(AfxGetStaticModuleState());

@@ -79,6 +79,46 @@ void CNamePromptDlg::OnOK()
 }
 
 /////////////////////////////////////////////////////////////////////////////
+// CChooseMaterialDlg
+
+BEGIN_MESSAGE_MAP(CChooseMaterialDlg, CDialog)
+    ON_BN_CLICKED(IDC_HELP_BUTTON, &CChooseMaterialDlg::OnHelpButton)
+END_MESSAGE_MAP()
+
+CChooseMaterialDlg::CChooseMaterialDlg(const MaterialList& materials, CWnd* pParent)
+    : CDialog(IDD_CHOOSE_MATERIAL, pParent)
+    , m_materials(materials)
+{
+}
+
+BOOL CChooseMaterialDlg::OnInitDialog()
+{
+    CDialog::OnInitDialog();
+    m_list.SubclassDlgItem(IDC_CHOOSE_MATERIAL_LIST, this);
+    for (size_t i = 0; i < m_materials.materials.size(); ++i)
+    {
+        const int index = m_list.AddString(FromUtf8(m_materials.materials[i].name).c_str());
+        m_list.SetItemData(index, i);
+    }
+    m_list.SetCurSel(0);
+    return TRUE;
+}
+
+void CChooseMaterialDlg::OnOK()
+{
+    const int index = m_list.GetCurSel();
+    if (index < 0)
+        return;
+    m_id = m_materials.materials[m_list.GetItemData(index)].id;
+    CDialog::OnOK();
+}
+
+void CChooseMaterialDlg::OnHelpButton()
+{
+    ShowHelp(L"choose-material");
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // CToolFeedsDlg
 
 BEGIN_MESSAGE_MAP(CToolFeedsDlg, CDialog)

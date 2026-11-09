@@ -227,6 +227,7 @@
 #define IDD_TOOL_FEEDS                  13035
 #define IDD_OP_CHAMFERING               13036
 #define IDD_OP_ENGRAVING                13037
+#define IDD_CHOOSE_MATERIAL             13048
 #define IDC_VIEW_SMALL                  13296
 #define IDC_VIEW_MEDIUM                 13297
 #define IDC_VIEW_LARGE                  13298
@@ -413,6 +414,8 @@
 #define IDC_TOOL_NECK_LENGTH            13485
 #define IDC_TOOL_SHANK_DIAMETER         13486
 #define IDC_TOOL_DRAWING                13487
+#define IDC_FEEDS_TO_TOOL               13488
+#define IDC_CHOOSE_MATERIAL_LIST        13489
 #define IDC_WL_STEPDOWN_GROUP           13442
 #define IDC_WL_ORDER_GROUP              13443
 #define IDC_WL_LEVELS_GROUP             13444
@@ -454,9 +457,9 @@
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        13048
+#define _APS_NEXT_RESOURCE_VALUE        13049
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13488
+#define _APS_NEXT_CONTROL_VALUE         13490
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

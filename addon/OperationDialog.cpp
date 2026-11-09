@@ -3,6 +3,7 @@
 #include "stdafx.h"
 #include "CAMForAlibre.h"
 #include "OperationDialog.h"
+#include "ToolDialogs.h"
 #include "Help.h"
 #include "CamTabCommand.h"
 #include "ModelReader.h"
@@ -938,6 +939,7 @@ void CToolPage::OnToolChanged(NMHDR* pNotify, LRESULT* pResult)
 
 BEGIN_MESSAGE_MAP(CFeedsPage, COperationPage)
     ON_BN_CLICKED(IDC_FEEDS_FROM_TOOL, &CFeedsPage::OnFromTool)
+    ON_BN_CLICKED(IDC_FEEDS_TO_TOOL, &CFeedsPage::OnToTool)
     ON_BN_CLICKED(IDC_FEEDS_TRANSFER_RAPID, &CFeedsPage::OnTransferChanged)
     ON_BN_CLICKED(IDC_FEEDS_TRANSFER_SET, &CFeedsPage::OnTransferChanged)
 END_MESSAGE_MAP()
@@ -1001,9 +1003,12 @@ BOOL CFeedsPage::OnInitDialog()
 {
     COperationPage::OnInitDialog();
 
-    // From Tool belongs to an operation. Editing a tool's own feeds hosts this page without one.
+    // These belong to an operation. Editing a tool's own feeds hosts this page without
+    // one. Saving needs every field filled in, which fields differing in a bulk edit aren't.
     if (m_pOwner == nullptr)
         GetDlgItem(IDC_FEEDS_FROM_TOOL)->ShowWindow(SW_HIDE);
+    if (m_pOwner == nullptr || m_pOwner->IsBulk())
+        GetDlgItem(IDC_FEEDS_TO_TOOL)->ShowWindow(SW_HIDE);
     return TRUE;
 }
 
@@ -1022,6 +1027,22 @@ void CFeedsPage::OnFromTool()
     SequenceStep step;
     step.feeds = feeds;
     Load(step);
+}
+
+void CFeedsPage::OnToTool()
+{
+    if (m_pOwner == nullptr)
+        return;
+
+    SequenceStep step;
+    std::wstring problem;
+    if (!Save(step, problem))
+    {
+        MessageBox(problem.c_str(), L"CAMForAlibre", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    if (!m_pOwner->SaveFeedsToTool(step.feeds, problem) && !problem.empty())
+        MessageBox(problem.c_str(), L"CAMForAlibre", MB_OK | MB_ICONWARNING);
 }
 
 void CFeedsPage::UpdateFields()
@@ -3752,6 +3773,51 @@ bool COperationDlg::FeedsFromTool(FeedSettings& feeds, std::wstring& problem) co
     }
     feeds = pRow->feeds;
     return true;
+}
+
+bool COperationDlg::SaveFeedsToTool(const FeedSettings& feeds, std::wstring& problem)
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    if (m_pTab == nullptr || m_pToolPage == nullptr)
+    {
+        problem = L"The CAM tab has closed.";
+        return false;
+    }
+
+    const ToolLibrary library = m_pTab->GetToolLibrary();
+    const Tool* pTool = FindToolById(library, m_pToolPage->ChosenToolId());
+    if (pTool == nullptr)
+    {
+        problem = L"Choose a tool on the Tool tab first.";
+        return false;
+    }
+
+    // A material since deleted from the list counts as none.
+    std::string materialId = m_pTab->GetMaterialId();
+    if (materialId.empty() || FindMaterial(m_pTab->GetMaterials(), materialId) == nullptr)
+    {
+        if (m_pTab->GetMaterials().materials.empty())
+        {
+            problem = L"There are no materials yet. Right-click Material on the CAM tab and choose Edit Materials.";
+            return false;
+        }
+        CChooseMaterialDlg dialog(m_pTab->GetMaterials(), this);
+        if (dialog.DoModal() != IDOK)
+            return false;
+        materialId = dialog.GetMaterialId();
+        m_pTab->ChooseMaterial(materialId);
+    }
+
+    if (FeedsFor(*pTool, materialId) != nullptr)
+    {
+        const std::wstring question = L"T" + std::to_wstring(pTool->number) + L" " + FromUtf8(pTool->name) +
+                                      L" already has speeds and feeds for " + m_pTab->GetMaterialName() +
+                                      L".\n\nOverwrite them?";
+        if (MessageBox(question.c_str(), L"CAMForAlibre", MB_YESNO | MB_ICONQUESTION) != IDYES)
+            return false;
+    }
+    return m_pTab->SaveToolFeeds(pTool->id, materialId, feeds, problem);
 }
 
 bool COperationDlg::GetFrame(camcore::Frame& frame) const
