@@ -10,7 +10,7 @@ these belong in the spec (`docs\SPEC.md`) once they're made.
   - 3D
     - Project finishing
     - 3D offset pocketing and profiling
-    - Pencil tracing
+    - Pencil tracing (idea saved in `docs\PencilMachining.md`)
     - Valley remachining
     - Plateau machining
     - Parallel hill machining
@@ -21,14 +21,12 @@ these belong in the spec (`docs\SPEC.md`) once they're made.
 - More stock alignment options
 - 4th axis: rotate and machine, etc.
 - 🔴 Show some summary information under each op, eg tool
-- 🔴 More details in tool
 - New dialogs should inherit speed/feeds for the last (?)  copy/paste(?)
 - Rest machining: built for Waterline Roughing and Pocketing. Still to do: Facing, and pencil passes for finishing
-- Issue: rest machining still retracts too often between cuts on the same level (Frank's report after Pocketing was added; to be dealt with later)
 - More posts (GRBL, Mach3/4, UCCNC, Masso)
 - Undo in the CAM tree
 - Inch display units
-- Clamps and vices as keep-out for toolpaths and the simulation
+- Clamps and vices as keep-out for toolpaths and the simulation (design saved in `docs\ClampsAndKeepOuts.md`, its decisions still open)
 - Tool holder from a model: pick an Alibre part (or file) as the holder's shape, used in the simulation in place of the plain cylinder
 - Pictures on the dialog tabs showing what each parameter means, where it helps
 - Performance

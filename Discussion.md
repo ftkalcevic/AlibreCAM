@@ -9961,6 +9961,315 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > There's still an issue with excessive retracting when working on the same level.  For now, list this as an issue.  We will deal with it later.
 
+### 🤖 Claude
+
+> I've added the retracting to `TODO.md` as an issue, right under the rest machining entry, and changed no code.
+>
+> When you come back to it, it would help to know which operation and pattern showed it, and a job I can replay would be even better.
+
+### 🧑 Frank · 19:15
+
+> What's next?
+
+### 🤖 Claude
+
+> I'd do **V-carve** next. It's one of the three items you've marked high priority, it's the biggest of them, and it adds something the add-on can't do yet. Sign and lettering work suits home routers, and the V-mill and Engrave code is already there to build on. The output is a variable-depth centreline, and the new simulation can check it.
+>
+> The other two high-priority items are small, so they could go first as a quick win:
+> - **Summary under each operation:** show the tool, and perhaps the stepdown or time, on the tree. It's about one session's work and you'd use it on every job.
+> - **More details in tool:** the reduced neck and the drawing have already covered part of this, so tell me what's still missing, or I'll close it.
+>
+> After those, in the order I'd take them:
+> 1. **Clamps and vices as keep-out:** the biggest safety gain for real cutting, in both toolpaths and the simulation.
+> 2. **More posts (GRBL, Mach3/4, UCCNC, Masso):** cheap, and it opens the add-on up to the home machines you're targeting.
+> 3. **Undo in the CAM tree** and **inherit speeds and feeds in new operations:** everyday convenience.
+> 4. **Retract issue and rest machining for Facing:** best done together, once you have a job that shows the retracts.
+>
+> Which do you want: V-carve, or the operation summary first?
+
+### 🧑 Frank · 19:16
+
+> Close "more tool details"
+
+### 🤖 Claude
+
+> "More details in tool" is gone from `TODO.md`. That leaves V-carve and the summary under each operation as the two high-priority items.
+
+### 🧑 Frank · 19:17
+
+> How do you suggest we handle clamps and keep outs?
+
+### 🤖 Claude
+
+> Plan:
+>
+> # Clamps and keep-outs: suggested design
+>
+> ## Context
+>
+> Nothing stops a toolpath hitting a clamp, a vice or a screw. `TODO.md` lists "Clamps and vices as keep-out for toolpaths and the simulation". A crash here costs a cutter or a spindle, so it's the most valuable safety feature left.
+>
+> Today, a clamp modelled in the assembly is treated as *part of the job*: `ReadAssemblyPartFacets` takes every visible part. So the 3D operations avoid it by accident, but the simulation's Not enough removed / Too much removed compares against it, and 2 1/2 axis operations ignore it.
+>
+> ## Suggestion in one paragraph
+>
+> A new **Fixtures** node in Setup, under Stock. A fixture is either an **assembly part you pick** (a modelled clamp or vice) or a plain **keep-out box** you type in (for when you don't want to model it). Fixtures are never "the part". The simulation always checks against them; 3D operations avoid them; 2 1/2 axis operations warn at Generate rather than silently changing your cut.
+>
+> ## What each fixture is
+>
+> - **Fixtures node:** Setup ▸ Fixtures, with a child per fixture. Right-click: Add Parts, Add Keep-Out Box, then Edit, Suppress, Delete on each.
+> - **Parts:** picked as Part Box Stock picks them (`ReadSelectedParts`), stored by occurrence key, so they follow the model if a clamp moves.
+> - **Box:** corner and size in assembly axes, as Box Stock (`CBoxStockDlg`, `BoxStockBox`).
+> - **Fixture Clearance:** one job-wide margin, default 2 mm, how far the tool must stay from any fixture.
+> - **Drawn** in the view in their own colour as edges, like stock (`MeshOutlineEdges`, `BoxEdges`), with a toolbar show/hide toggle.
+> - **Saved** under `setup.fixtures`, `.cam` format version 16, and carried in templates (boxes useful; picked parts need checking on another assembly).
+>
+> ## What they do
+>
+> | Where | Behaviour |
+> |---|---|
+> | **The part** | Fixture parts are left out of `ReadAssemblyPartFacets`, so they stop counting in comparisons and flat-level detection. |
+> | **Clearance plane** | Automatic and Stock max Z rise to clear the highest fixture, so rapids at clearance can't hit one. An Absolute Z or Part max Z clearance below a fixture is a warning at Generate. |
+> | **Simulation** | A fixture voxel grid is filled with `FillMesh`. Tool, neck, shank and holder are checked with `CountMove` as they are against stock, including rapids. A hit stops with "The tool hits fixture X" and the buttons carry on. Fixtures are drawn shaded. |
+> | **3D operations** (Plunge Roughing, Waterline, Parallel) | Fixture triangles, grown by the clearance, are added to the obstacles the tool's tip can't go through (`PartHeightField` via `partTriangles`, without affecting flat levels or surface refinement). They then avoid them with no new toolpath code. |
+> | **2 1/2 axis operations** (Facing, Profiling, Pocketing, Engrave, Chamfer, Drill, Hole Pocketing) | After Generate, each toolpath is checked against the fixtures (a new core `CheckFixtures`). A collision is reported in the status and as a tree warning, naming the operation. The toolpath is left as generated. |
+>
+> **Why warn for 2 1/2 axis, not trim:** trimming silently leaves stock uncut or changes the cut in ways you'd only find on the machine, and a warning tells you to move the clamp or shrink the area. Automatic trimming can come later as an option.
+>
+> ## Order of work
+>
+> 1. Fixtures node, dialogs, drawing, saving, and leaving them out of the part.
+> 2. Simulation collisions and drawing.
+> 3. Clearance plane, then 3D avoidance and the 2 1/2 axis check at Generate.
+>
+> ## Limits to expect
+>
+> - Fixtures apply to every operation. Clamps that move between setups (a flip, say) would need a per-Set Origin list, which I'd leave until it's needed; Suppress covers it for now.
+> - A suppressed or hidden fixture part is not checked. Hidden parts stay out of the part list as they do now.
+> - The check is against the tool's real shape in the simulation, but the 2 1/2 axis check at Generate uses cylinders.
+>
+> ## Decisions for you
+>
+> 1. **Both kinds:** picked parts and typed boxes (suggested), or only one?
+> 2. **2 1/2 axis:** warn only (suggested), or trim the toolpath round fixtures?
+> 3. **Clearance:** one job-wide Fixture Clearance, 2 mm (suggested), or one per fixture?
+> 4. **Scope:** all operations (suggested), or per Set Origin from the start?
+> 5. **Templates:** carry fixtures (suggested), or leave them out?
+>
+> ## Files
+>
+> `core\Stock` or a new `core\Fixtures`, `core\CamJob`, `core\Simulation`, `core\Clearance`, `addon\CamTabCommand`, `addon\StockDialog` (or a new `addon\FixtureDialog`), `addon\CamViewCommand`, `addon\SimulationDialog`, `addon\CAMForAlibre.rc`, `addon\resource.h`, the tree and toolbar strips, help, spec, `CLAUDE.md`, `TODO.md`, and new tests.
+>
+> ## Verification
+>
+> - **Core tests:** saving round trip and older jobs; a tool and holder hitting a fixture in the simulation, and a rapid over one; automatic clearance above a tall fixture; Waterline Roughing keeping the clearance from a fixture; `CheckFixtures` flagging a profile passing through a box and passing one that clears it.
+> - **Build** Debug and Release, run `CamCoreTests.exe`, install.
+> - **Frank in Alibre:** model a clamp, add it as a fixture, and check that it's drawn, that the simulation stops on a crash, that a 3D operation goes round it, and that a Profiling through it warns.
+
+*(Frank turned the plan down.)*
+
+### 🧑 Frank · 19:20
+
+> Save this for later.
+
+### 🤖 Claude
+
+> Saved for later, nothing built. The design is in `C:\Users\Frank Tkalcevic\.claude\plans\silly-napping-dahl.md`, with the five decisions for you still open.
+>
+> That file isn't a safe long-term home, because the next plan in this session will overwrite it. I'm still in plan mode, so I can't write to the repository yet, and `Discussion.md` didn't get rebuilt this turn either. Once plan mode is off, say so and I'll copy the design to `docs\ClampsAndKeepOuts.md`, point the clamps line in `TODO.md` at it, and rebuild `Discussion.md`.
+
+### 🧑 Frank · 19:20
+
+> How would pencil machining work?
+
+### 🤖 Claude
+
+> Pencil machining runs a small ball along the inside creases of a part, where two surfaces meet in a fillet or a sharp valley. A larger finishing ball can't reach into those, so it leaves a thick ridge there. The pencil pass cleans it out by following the line where the tool touches both surfaces at once.
+>
+> **How I'd build it, as a new "Pencil Finishing" operation under Add 3 Axis**
+> 1. **Height map:** work out how low the tool's tip can go over the area. `TipHeights` and `DropCutter` already do this, with the tool's true shape.
+> 2. **Find the creases:** the tip's height surface has a sharp valley exactly where the tool touches two surfaces, because the contact jumps from one face to the other. Any cell where the slope changes abruptly from one side to the other, in the valley direction, is a crease. A **Crease Angle** setting decides how sharp it has to be, so gentle blends are ignored.
+> 3. **Turn cells into lines:** thin the crease cells to one-cell-wide lines and chain them into paths. Junctions where three creases meet split the paths, and short scraps are dropped.
+> 4. **Make them exact:** re-drop every point with `DropCutter`, and with a ball use the true-surface `ExactHeights` that Parallel Finishing has. This matters because the grid alone would make the path step, as Parallel Finishing's first rows did. Then simplify and fit arcs as usual.
+> 5. **Order the cuts:** nearest path next, staying down if the link is short and clear. Each path is cut uphill where possible, so the ball's centre isn't plunging into the corner.
+>
+> **Settings**
+> - The Features tab's area, Tool (ball or corner radius only), Feeds & Speeds and Clearance, as other operations have.
+> - Stock to Leave, Overtravel, Approach Distance and the Slope limits, all shared with the finishing operations.
+> - **Crease Angle** and **Minimum Length**.
+> - **Passes Each Side** and **Stepover:** with 0 it's a single centre line. With more, it adds offset passes either side, to blend the band a bigger ball left. That's essentially the "Valley remachining" item on the list, so one operation could cover both.
+>
+> **The main decision is what defines "needs cleaning"**
+> - **Geometry only (what I'd do first):** cut every crease of the model that's sharp enough. It's simple and predictable, and it needs nothing from earlier operations.
+> - **Compared with a reference tool:** you enter the previous ball's diameter, and it cuts only where that ball couldn't reach. The width of the band falls out of the difference between the two tools' height maps, so Passes Each Side could be automatic. It adds one field and is cheap, so it's a good second step.
+> - **From the simulated stock, as Rest Machining does:** the most accurate, but the simulation's cell size limits it. Finishing leftovers are often thinner than a cell, so it's a poor fit here.
+>
+> **The hard part** will be clean lines where creases fade out or meet at junctions. Expect the same kind of tuning that Waterline Finishing's laps needed. `CountLapGlitches` and the replay tests would help there.
+>
+> I've left the clamps design where it was and written nothing this turn. Do you want this planned in detail, or kept as an idea for later?
+
+### 🧑 Frank · 19:21
+
+> Save this for later.
+
+### 🤖 Claude
+
+> Saved. The pencil machining idea now sits below the clamps design in `C:\Users\Frank Tkalcevic\.claude\plans\silly-napping-dahl.md`.
+>
+> The same caveat applies to both: that file is outside the repository, and a new plan could overwrite it. Once plan mode is off, say so and I'll move both designs into `docs\`, link them from `TODO.md`, and rebuild `Discussion.md`.
+
+### 🧑 Frank · 19:25
+
+> Back to troubleshooting the excessive retracting when rest machinging.The example, Rough 2, starts with plunge roughing.  Then waterline roughing with rest machining.  On the same horizontal level, it keeps doing a full retract just to move along a few millimeters
+
+### 🤖 Claude
+
+> Plan:
+>
+> # Fix: excessive retracts in adaptive Rest Machining (this is the plan to approve)
+>
+> ## Context
+>
+> In `Rough 2`, Plunge Roughing is followed by Waterline Roughing - REST (3 mm end mill, Use Adaptive Clearing ticked). The saved toolpath has 322 lifts to the clearance plane, and 310 of them come back down at the same level. Half are under about 7 mm of travel, and 56 are under 3 mm. Plunge roughing leaves scattered plugs, so rest machining has many short cuts, each needing a link. My earlier stay-down fix only touched the non-adaptive patterns.
+>
+> ## Cause
+>
+> `CanLink` (`core\AdaptiveClearing.cpp`) stays down only if the **straight line** between two cuts is entirely on free cells. Around the round part at each level, cuts run right along the edge of where the tool may go, so a straight chord between two of them crosses or grazes that edge and fails. In the saved toolpath, 163 of the 310 chords pass inside the part-side limit of the cuts at that level, and the first samples of the others run within about 0.1 mm of it. Only 23 are over 30 mm, where a lift is right. This is read from the saved toolpath, as a roughing job's input isn't captured for replay, so the first step confirms it.
+>
+> ## Fix
+>
+> 1. **Reproduce** in a core test: a round part in a stock with scattered plugs left by plunging, adaptive rest at one level, counting lifts that return to the same level.
+> 2. **Route links round the part.** When the straight line fails, `CanLink` looks for a shortest path through free cells (8-neighbour search limited to a window round the two ends), then simplifies it, keeping it on free cells. The link is used if it's no longer than the existing limit of max(30 mm, 10 radii) and no more than about 3 times the straight distance.
+> 3. **Don't feed through uncut stock:** the path's cells must pass the same `Touches` test as a long straight link.
+> 4. **Output:** `AdaptiveCut` gains link points (the path before its first point), written by `WriteAdaptiveCuts` at the cut feed. Applies to every adaptive use, so it helps Pocketing and Facing as well.
+>
+> ## Verification
+>
+> - The new test's lifts fall sharply; the same stock is left in the simulation; no link's centre leaves free cells; existing adaptive tests still pass.
+> - Build Debug and Release, run `CamCoreTests.exe`, install.
+> - **Frank in Alibre:** regenerate `Rough 2`'s REST operation and simulate it.
+> - Update `TODO.md` (close the issue if it's fixed) and `CLAUDE.md`.
+>
+> ---
+>
+> # Saved for later, not part of this fix
+>
+> # Clamps and keep-outs: suggested design
+>
+> ## Context
+>
+> Nothing stops a toolpath hitting a clamp, a vice or a screw. `TODO.md` lists "Clamps and vices as keep-out for toolpaths and the simulation". A crash here costs a cutter or a spindle, so it's the most valuable safety feature left.
+>
+> Today, a clamp modelled in the assembly is treated as *part of the job*: `ReadAssemblyPartFacets` takes every visible part. So the 3D operations avoid it by accident, but the simulation's Not enough removed / Too much removed compares against it, and 2 1/2 axis operations ignore it.
+>
+> ## Suggestion in one paragraph
+>
+> A new **Fixtures** node in Setup, under Stock. A fixture is either an **assembly part you pick** (a modelled clamp or vice) or a plain **keep-out box** you type in (for when you don't want to model it). Fixtures are never "the part". The simulation always checks against them; 3D operations avoid them; 2 1/2 axis operations warn at Generate rather than silently changing your cut.
+>
+> ## What each fixture is
+>
+> - **Fixtures node:** Setup ▸ Fixtures, with a child per fixture. Right-click: Add Parts, Add Keep-Out Box, then Edit, Suppress, Delete on each.
+> - **Parts:** picked as Part Box Stock picks them (`ReadSelectedParts`), stored by occurrence key, so they follow the model if a clamp moves.
+> - **Box:** corner and size in assembly axes, as Box Stock (`CBoxStockDlg`, `BoxStockBox`).
+> - **Fixture Clearance:** one job-wide margin, default 2 mm, how far the tool must stay from any fixture.
+> - **Drawn** in the view in their own colour as edges, like stock (`MeshOutlineEdges`, `BoxEdges`), with a toolbar show/hide toggle.
+> - **Saved** under `setup.fixtures`, `.cam` format version 16, and carried in templates (boxes useful; picked parts need checking on another assembly).
+>
+> ## What they do
+>
+> | Where | Behaviour |
+> |---|---|
+> | **The part** | Fixture parts are left out of `ReadAssemblyPartFacets`, so they stop counting in comparisons and flat-level detection. |
+> | **Clearance plane** | Automatic and Stock max Z rise to clear the highest fixture, so rapids at clearance can't hit one. An Absolute Z or Part max Z clearance below a fixture is a warning at Generate. |
+> | **Simulation** | A fixture voxel grid is filled with `FillMesh`. Tool, neck, shank and holder are checked with `CountMove` as they are against stock, including rapids. A hit stops with "The tool hits fixture X" and the buttons carry on. Fixtures are drawn shaded. |
+> | **3D operations** (Plunge Roughing, Waterline, Parallel) | Fixture triangles, grown by the clearance, are added to the obstacles the tool's tip can't go through (`PartHeightField` via `partTriangles`, without affecting flat levels or surface refinement). They then avoid them with no new toolpath code. |
+> | **2 1/2 axis operations** (Facing, Profiling, Pocketing, Engrave, Chamfer, Drill, Hole Pocketing) | After Generate, each toolpath is checked against the fixtures (a new core `CheckFixtures`). A collision is reported in the status and as a tree warning, naming the operation. The toolpath is left as generated. |
+>
+> **Why warn for 2 1/2 axis, not trim:** trimming silently leaves stock uncut or changes the cut in ways you'd only find on the machine, and a warning tells you to move the clamp or shrink the area. Automatic trimming can come later as an option.
+>
+> ## Order of work
+>
+> 1. Fixtures node, dialogs, drawing, saving, and leaving them out of the part.
+> 2. Simulation collisions and drawing.
+> 3. Clearance plane, then 3D avoidance and the 2 1/2 axis check at Generate.
+>
+> ## Limits to expect
+>
+> - Fixtures apply to every operation. Clamps that move between setups (a flip, say) would need a per-Set Origin list, which I'd leave until it's needed; Suppress covers it for now.
+> - A suppressed or hidden fixture part is not checked. Hidden parts stay out of the part list as they do now.
+> - The check is against the tool's real shape in the simulation, but the 2 1/2 axis check at Generate uses cylinders.
+>
+> ## Decisions for you
+>
+> 1. **Both kinds:** picked parts and typed boxes (suggested), or only one?
+> 2. **2 1/2 axis:** warn only (suggested), or trim the toolpath round fixtures?
+> 3. **Clearance:** one job-wide Fixture Clearance, 2 mm (suggested), or one per fixture?
+> 4. **Scope:** all operations (suggested), or per Set Origin from the start?
+> 5. **Templates:** carry fixtures (suggested), or leave them out?
+>
+> ## Files
+>
+> `core\Stock` or a new `core\Fixtures`, `core\CamJob`, `core\Simulation`, `core\Clearance`, `addon\CamTabCommand`, `addon\StockDialog` (or a new `addon\FixtureDialog`), `addon\CamViewCommand`, `addon\SimulationDialog`, `addon\CAMForAlibre.rc`, `addon\resource.h`, the tree and toolbar strips, help, spec, `CLAUDE.md`, `TODO.md`, and new tests.
+>
+> ## Verification
+>
+> - **Core tests:** saving round trip and older jobs; a tool and holder hitting a fixture in the simulation, and a rapid over one; automatic clearance above a tall fixture; Waterline Roughing keeping the clearance from a fixture; `CheckFixtures` flagging a profile passing through a box and passing one that clears it.
+> - **Build** Debug and Release, run `CamCoreTests.exe`, install.
+> - **Frank in Alibre:** model a clamp, add it as a fixture, and check that it's drawn, that the simulation stops on a crash, that a 3D operation goes round it, and that a Profiling through it warns.
+>
+> ---
+>
+> # Pencil machining: saved idea (not planned in detail)
+>
+> A new "Pencil Finishing" operation under Add 3 Axis: a small ball follows the inside creases where two surfaces meet.
+>
+> 1. **Height map:** `TipHeights` and `DropCutter`, with the tool's true shape.
+> 2. **Find creases:** cells where the tip surface's slope changes abruptly across a valley (the contact jumps between faces), sharper than a Crease Angle.
+> 3. **Lines:** thin to one cell wide, chain into paths, split at junctions, drop scraps.
+> 4. **Exact:** re-drop each point with `DropCutter`, and `ExactHeights` for a ball; then simplify and fit arcs.
+> 5. **Order:** nearest path next, staying down on short clear links, cutting uphill where possible.
+>
+> **Settings:** the usual Features, Tool (ball or corner radius only), Feeds & Speeds, Clearance; Stock to Leave, Overtravel, Approach Distance, Slope limits; Crease Angle, Minimum Length; Passes Each Side and Stepover (offset passes cover the "Valley remachining" TODO item too).
+>
+> **What defines "needs cleaning":** geometry only first (every crease sharp enough); then optionally a reference tool's diameter (cut only where that ball couldn't reach, with the band from the difference of the two tools' height maps). Not the simulated stock: finishing leftovers are often thinner than a cell.
+>
+> **Hard part:** clean lines where creases fade out or meet at junctions; `CountLapGlitches` and the replay tests would help.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Confirmed and fixed in the test: plunges dropped from 24 to 1. Running the full build and tests, then installing.
+
+> The fix is built in Debug and Release and `CamCoreTests` passes, but it **isn't installed** because the administrator prompt was cancelled. `Rough 2` hasn't been regenerated with it, so the real job is unproven. Nothing is committed.
+>
+> **What was wrong**
+> Your REST operation has Use Adaptive Clearing ticked, and my earlier stay-down fix only covered the other patterns. Adaptive clearing stayed down only if the straight line to the next cut was entirely inside where the tool may go. Around `Rough 2`'s round part, the cuts run right along that limit, so a straight line between two of them clips it and the tool retracts instead. The saved toolpath had 322 lifts, and 310 came back down to the same level, half of them after moving less than about 7 mm.
+>
+> **The fix**
+> When the straight line fails, the tool now finds a short way round through clear space and stays down. The route must avoid stock still to cut, be no more than about 3 times the straight distance, and be at most 30 mm or 10 tool radii long, whichever is greater. Beyond that it still lifts, which is right.
+>
+> In a test built to match your job, a round part with scattered plugs left beside it, plunges fell from 24 to 1, with every link staying in clear space. This applies to all adaptive clearing, so Pocketing and Facing benefit as well.
+>
+> I've left the retract issue in `TODO.md` until you confirm it. The clamps and pencil designs are now saved in the repository as `docs\ClampsAndKeepOuts.md` and `docs\PencilMachining.md`, linked from `TODO.md`.
+>
+> **To test, once it's installed**
+> 1. Open `Rough 2`, regenerate the REST operation, and watch for retracts on one level. Short hops should be gone, and only long moves should still lift.
+> 2. Simulate both operations and check there are no rapids into stock, and the part isn't touched.
+> 3. Regenerate an adaptive Pocketing or Facing and check it still looks right.
+
+### 🧑 Frank · 19:46
+
+> Install it
+
+### 🤖 Claude
+
+> It's installed, and the installed add-on matches this build. Start Alibre, regenerate `Rough 2`'s REST operation, and go through the three tests from my last message.
+
+### 🧑 Frank · 19:51
+
+> Good enough
+
 ---
 
 # Side conversation

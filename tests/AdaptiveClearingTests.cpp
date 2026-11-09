@@ -537,3 +537,49 @@ TEST_CASE("adaptive fronts round a helix are round")
     CHECK(rings >= 5);
     CHECK(worst < 0.15);
 }
+
+TEST_CASE("adaptive links stay down round a part between scattered leftovers")
+{
+    // A round part with small plugs of stock left beside it, as plunge roughing leaves.
+    const double cell = 0.1, r = 1.5, part = 12.0 + r;
+    AdaptiveGrid grid = Grid(-30, -30, 30, 30, 2.0, cell);
+    for (int j = 0; j < grid.ny; ++j)
+    {
+        for (int i = 0; i < grid.nx; ++i)
+        {
+            const Vec3 c = grid.Centre(i, j);
+            const size_t q = grid.Index(i, j);
+            grid.free[q] = (std::hypot(c.x, c.y) > part && std::fabs(c.x) <= 30 && std::fabs(c.y) <= 30) ? 1 : 0;
+            for (int k = 0; k < 12; ++k)
+            {
+                const double a = k * 2.0 * 3.14159265358979323846 / 12;
+                if (std::hypot(c.x - (part + 1.5) * std::cos(a), c.y - (part + 1.5) * std::sin(a)) < 2.5 &&
+                    std::hypot(c.x, c.y) > 12.0)
+                    grid.material[q] = 1;
+            }
+        }
+    }
+    AdaptiveSettings settings;
+    settings.toolRadius = r;
+    settings.optimalLoad = 1.5;
+    settings.wallLaps = false;
+    const AdaptiveGrid start = grid;
+    const AdaptiveResult result = AdaptiveClear(std::move(grid), settings);
+    int plunges = 0, links = 0;
+    for (const AdaptiveCut& cut : result.cuts)
+        (cut.entry == AdaptiveCut::Entry::Link ? links : plunges) += 1;
+    MESSAGE("cuts: ", result.cuts.size(), ", links ", links, ", plunges ", plunges);
+    CHECK(plunges <= 2);
+    CHECK(result.leftArea < 0.5);
+
+    // Links stay on the free cells.
+    for (const AdaptiveCut& cut : result.cuts)
+    {
+        for (const Vec3& p : cut.link)
+        {
+            const int i = static_cast<int>(std::lround((p.x - start.xLow) / start.cell));
+            const int j = static_cast<int>(std::lround((p.y - start.yLow) / start.cell));
+            CHECK(start.free[start.Index(i, j)] != 0);
+        }
+    }
+}

@@ -352,6 +352,143 @@ namespace camcore
                 return shortStep || !Touches(a, b, m_r - m_load - m_g.cell);
             }
 
+            // When the straight line won't do: a way there through free cells, off the
+            // material, not much longer than the straight line. The points between, in
+            // route (the ends are a and b themselves).
+            bool RouteLink(const Vec3& a, const Vec3& b, Polyline& route)
+            {
+                const double straight = std::hypot(b.x - a.x, b.y - a.y);
+                const double limit = (std::max)(30.0, 10.0 * m_r);
+                const double longest = (std::min)(limit, 3.0 * straight + 4.0 * m_g.cell);
+                if (straight > limit)
+                    return false;
+
+                // The usable cell at or next to an end, which may sit just off the free cells.
+                const auto usable = [&](size_t q) { return m_g.free[q] != 0 && m_g.material[q] == 0; };
+                const auto nearestUsable = [&](const Vec3& p, size_t& found) {
+                    size_t q = 0;
+                    if (!CellAt(p, q))
+                        return false;
+                    const int ci = static_cast<int>(q % static_cast<size_t>(m_g.nx));
+                    const int cj = static_cast<int>(q / static_cast<size_t>(m_g.nx));
+                    double best = 1e18;
+                    for (int j = (std::max)(0, cj - 3); j <= (std::min)(m_g.ny - 1, cj + 3); ++j)
+                    {
+                        for (int i = (std::max)(0, ci - 3); i <= (std::min)(m_g.nx - 1, ci + 3); ++i)
+                        {
+                            const size_t c = m_g.Index(i, j);
+                            const double d = std::hypot(i - ci, j - cj);
+                            if (usable(c) && d < best)
+                            {
+                                best = d;
+                                found = c;
+                            }
+                        }
+                    }
+                    return best < 1e17;
+                };
+                size_t from = 0, to = 0;
+                if (!nearestUsable(a, from) || !nearestUsable(b, to))
+                    return false;
+
+                // A*, the distance so far in mm.
+                if (m_routeStamp.size() != m_cells)
+                {
+                    m_routeStamp.assign(m_cells, 0);
+                    m_routeCost.resize(m_cells);
+                    m_routeFrom.resize(m_cells);
+                }
+                const unsigned stamp = ++m_routeGeneration;
+                const int toI = static_cast<int>(to % static_cast<size_t>(m_g.nx));
+                const int toJ = static_cast<int>(to / static_cast<size_t>(m_g.nx));
+                const auto remaining = [&](int i, int j) { return std::hypot(i - toI, j - toJ) * m_g.cell; };
+                using Entry = std::pair<float, size_t>;
+                std::priority_queue<Entry, std::vector<Entry>, std::greater<Entry>> open;
+                m_routeStamp[from] = stamp;
+                m_routeCost[from] = 0.0f;
+                m_routeFrom[from] = from;
+                open.push({ 0.0f, from });
+                bool reached = false;
+                while (!open.empty())
+                {
+                    const size_t q = open.top().second;
+                    open.pop();
+                    if (q == to)
+                    {
+                        reached = true;
+                        break;
+                    }
+                    const int i = static_cast<int>(q % static_cast<size_t>(m_g.nx));
+                    const int j = static_cast<int>(q / static_cast<size_t>(m_g.nx));
+                    for (int dj = -1; dj <= 1; ++dj)
+                    {
+                        for (int di = -1; di <= 1; ++di)
+                        {
+                            const int ni = i + di, nj = j + dj;
+                            if ((di == 0 && dj == 0) || ni < 0 || nj < 0 || ni >= m_g.nx || nj >= m_g.ny)
+                                continue;
+                            const size_t n = m_g.Index(ni, nj);
+                            if (!usable(n) ||
+                                (di != 0 && dj != 0 && (!usable(m_g.Index(i, nj)) || !usable(m_g.Index(ni, j)))))
+                                continue;
+                            const float cost =
+                                m_routeCost[q] + static_cast<float>(((di != 0 && dj != 0) ? 1.41421356 : 1.0) * m_g.cell);
+                            const double total = cost + remaining(ni, nj);
+                            if (total > longest || (m_routeStamp[n] == stamp && m_routeCost[n] <= cost))
+                                continue;
+                            m_routeStamp[n] = stamp;
+                            m_routeCost[n] = cost;
+                            m_routeFrom[n] = q;
+                            open.push({ static_cast<float>(total), n });
+                        }
+                    }
+                }
+                if (!reached)
+                    return false;
+
+                std::vector<Vec3> cells;
+                for (size_t q = to;; q = m_routeFrom[q])
+                {
+                    cells.push_back(CentreOf(q));
+                    if (q == from)
+                        break;
+                }
+                std::reverse(cells.begin(), cells.end());
+
+                // Straightened: from each point, as far along as a clear straight line reaches.
+                const auto clear = [&](const Vec3& p, const Vec3& q) {
+                    if (!FreeAlong(p, q) || Touches(p, q, m_r - m_load - m_g.cell))
+                        return false;
+                    const double length = std::hypot(q.x - p.x, q.y - p.y);
+                    const int samples = (std::max)(1, static_cast<int>(std::ceil(length / (0.5 * m_g.cell))));
+                    for (int k = 0; k <= samples; ++k)
+                    {
+                        const double t = static_cast<double>(k) / samples;
+                        size_t c = 0;
+                        if (!CellAt({ p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t, 0.0 }, c) || m_g.material[c])
+                            return false;
+                    }
+                    return true;
+                };
+                route.clear();
+                size_t i = 0;
+                const size_t last = cells.size() - 1;
+                while (i < last)
+                {
+                    size_t best = i + 1;
+                    for (size_t step = 2; i + step <= last && clear(cells[i], cells[i + step]); step *= 2)
+                        best = i + step;
+                    if (last > best && clear(cells[i], cells[last]))
+                        best = last;
+                    if (!clear(cells[i], cells[best]))
+                        return false;
+                    i = best;
+                    if (i < last)
+                        route.push_back(cells[i]);
+                }
+                return true;
+            }
+
             // Is every point of a straight move on free cells?
             bool FreeAlong(const Vec3& a, const Vec3& b) const
             {
@@ -857,8 +994,10 @@ namespace camcore
                     cut.points.push_back(piece[k]);
                 for (size_t k = 0; k + 1 < cut.points.size(); ++k)
                     Sweep(cut.points[k], cut.points[k + 1], true);
-                cut.entry = (haveAt && CanLink(at, cut.points.front(), stepAcross)) ? AdaptiveCut::Entry::Link
-                                                                                     : AdaptiveCut::Entry::Plunge;
+                cut.entry = (haveAt && (CanLink(at, cut.points.front(), stepAcross) ||
+                                        RouteLink(at, cut.points.front(), cut.link)))
+                                ? AdaptiveCut::Entry::Link
+                                : AdaptiveCut::Entry::Plunge;
                 if (cut.entry == AdaptiveCut::Entry::Plunge && pDistance != nullptr)
                 {
                     // Down in the air the fronts spread from, nearest the start, then across into the cut.
@@ -967,6 +1106,10 @@ namespace camcore
             std::vector<unsigned char> m_done;     // worked from by an earlier set of fronts
             std::vector<std::pair<float, size_t>> m_sorted;     // this set's cells by distance
             std::vector<unsigned> m_stamp;                      // squares looked at for the current front
+            std::vector<unsigned> m_routeStamp;                 // RouteLink's search
+            std::vector<float> m_routeCost;
+            std::vector<size_t> m_routeFrom;
+            unsigned m_routeGeneration = 0;
             unsigned m_stampNow = 0;
         };
     }
@@ -1116,6 +1259,8 @@ namespace camcore
             const Vec3 first{ cut.points.front().x, cut.points.front().y, z };
             if (cut.entry == AdaptiveCut::Entry::Link && down)
             {
+                for (const Vec3& point : cut.link)
+                    add(MoveKind::Feed, { point.x, point.y, z }, writing.feeds.cut);
                 add(MoveKind::Feed, first, writing.feeds.cut);
             }
             else if (cut.entry == AdaptiveCut::Entry::Helix && cut.helixRadius > 0.0)

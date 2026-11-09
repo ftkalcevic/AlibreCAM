@@ -58,6 +58,7 @@ namespace camcore
         Entry entry = Entry::Plunge;
         Vec3 helixCentre;
         double helixRadius = 0.0;
+        Polyline link;                  // with Link: points to go through first, round what's in the way
         Polyline points;                // at least one; z is 0
     };
 
