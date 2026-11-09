@@ -10270,6 +10270,18 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Good enough
 
+### 🤖 Claude
+
+> Good. I've removed the retract issue from `TODO.md` and noted the fix as tested on `Rough 2` in `CLAUDE.md`. The work since your last commit is still uncommitted, ready for you to commit.
+
+## 2026-11-10
+
+### 🧑 Frank · 08:07
+
+> *[picture]*
+>
+> Add the "made by ai" badge to the top of the readme file
+
 ---
 
 # Side conversation

@@ -1,3 +1,5 @@
+![Made by AI / LLM, human reviewed](docs/made-by-ai.png)
+
 # CAMForAlibre — Alibre Design add-on (C++/MFC)
 
 This is an add-on for Alibre Design to provide basic CAM and GCode generation.  It was
