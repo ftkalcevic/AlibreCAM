@@ -336,3 +336,126 @@ TEST_CASE("a Helix entry goes down a helix inside the wall, at every level, no s
         CHECK(levels.count(-1.0) == 1);     // down to the last level too
     }
 }
+
+TEST_CASE("pocketing rest machining cuts only what the bigger tool left")
+{
+    // A 30 x 30 pocket 5 deep in a 40 x 40 x 10 stock: a 10 mm tool leaves round
+    // corners, which a 4 mm tool then takes.
+    ProfileChain outline;
+    outline.ok = true;
+    outline.closed = true;
+    outline.path = PathFromPoints({ { 5, 5, 5 }, { 35, 5, 5 }, { 35, 35, 5 }, { 5, 35, 5 } });
+
+    SequenceStep big = PocketStep(PocketCutType::Offset);
+    big.clearance.absoluteZ = 20;
+    big.feeds.engage = big.feeds.approach = big.feeds.retract = big.feeds.departure = 500;
+    big.pocketing.stepover.percent = 40.0;
+    Tool bigTool;
+    bigTool.diameter = 10;
+    bigTool.fluteLength = 20;
+    bigTool.overallLength = 40;
+    Tool smallTool = bigTool;
+    smallTool.diameter = 4;
+
+    PocketToolpathInput first;
+    first.operation = &big;
+    first.tool = &bigTool;
+    first.outlines = { outline };
+    const ToolpathResult roughed = GeneratePocketToolpath(first);
+    REQUIRE(roughed.ok);
+
+    SimOperation bigOp;
+    bigOp.name = "Big";
+    bigOp.profile = ProfileOf(bigTool);
+    bigOp.toolpath = roughed.toolpath;
+    const StockBox box{ { 0, 0, 0 }, { 40, 40, 10 } };
+    Simulation simulation;
+    simulation.Start(box, {}, { bigOp }, SimResolution{ true, 0.25 });
+    simulation.RunToEnd();
+    REQUIRE(simulation.Finished());
+    const RemainingStock remaining = RemainingStockHeights(simulation.Stock(), Frame());
+
+    SequenceStep small = big;
+    small.pocketing.stepover.percent = 40.0;
+    small.pocketing.restMachining = true;
+    PocketToolpathInput second = first;
+    second.operation = &small;
+    second.tool = &smallTool;
+    second.remainingStock = &remaining;
+
+    const auto finishedLike = [&](const ToolpathResult& cut) {
+        SequenceStep all = small;
+        all.pocketing.restMachining = false;
+        all.pocketing.adaptive = false;
+        PocketToolpathInput whole = second;
+        whole.operation = &all;
+        whole.remainingStock = nullptr;
+        const ToolpathResult everything = GeneratePocketToolpath(whole);
+        REQUIRE(everything.ok);
+
+        SimOperation smallOp;
+        smallOp.name = "Small";
+        smallOp.profile = ProfileOf(smallTool);
+        smallOp.toolpath = cut.toolpath;
+        SimOperation allOp = smallOp;
+        allOp.toolpath = everything.toolpath;
+        Simulation both, single;
+        both.Start(box, {}, { bigOp, smallOp }, SimResolution{ true, 0.25 });
+        while (!both.Finished())
+        {
+            both.RunToEnd();
+            both.ClearWarning();
+        }
+        single.Start(box, {}, { allOp }, SimResolution{ true, 0.25 });
+        single.RunToEnd();
+        const double a = static_cast<double>(both.Stock().Count());
+        const double b = static_cast<double>(single.Stock().Count());
+        MESSAGE("cells left: rest ", a, ", whole ", b);
+        CHECK(std::fabs(a - b) < b * 0.005);
+    };
+
+    const auto staysInCorners = [&](const ToolpathResult& cut) {
+        int rapids = 0;
+        for (const ToolpathMove& move : cut.toolpath.moves)
+        {
+            rapids += (move.kind == MoveKind::Rapid && move.to.z > 19.0) ? 1 : 0;
+            if (move.kind == MoveKind::Feed && move.to.z < 5.5)
+                CHECK((std::fabs(move.to.x - 20.0) > 9.0 && std::fabs(move.to.y - 20.0) > 9.0));
+        }
+        MESSAGE("rapids at the clearance plane: ", rapids, " in ", cut.toolpath.moves.size(), " moves");
+    };
+
+    SUBCASE("offset cuts")
+    {
+        const ToolpathResult cut = GeneratePocketToolpath(second);
+        REQUIRE(cut.ok);
+        staysInCorners(cut);
+        finishedLike(cut);
+    }
+
+    SUBCASE("linear cuts")
+    {
+        small.pocketing.cutType = PocketCutType::Linear;
+        const ToolpathResult cut = GeneratePocketToolpath(second);
+        REQUIRE(cut.ok);
+        staysInCorners(cut);
+        finishedLike(cut);
+    }
+
+    SUBCASE("adaptive clearing")
+    {
+        small.pocketing.adaptive = true;
+        const ToolpathResult cut = GeneratePocketToolpath(second);
+        REQUIRE(cut.ok);
+        staysInCorners(cut);
+        finishedLike(cut);
+    }
+
+    SUBCASE("nothing left says so, and nothing given is refused")
+    {
+        small.pocketing.restMinimum = 20.0;
+        CHECK_FALSE(GeneratePocketToolpath(second).ok);
+        second.remainingStock = nullptr;
+        CHECK_FALSE(GeneratePocketToolpath(second).ok);
+    }
+}

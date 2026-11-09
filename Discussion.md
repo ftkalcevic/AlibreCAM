@@ -9779,6 +9779,188 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Test passed
 
+### 🤖 Claude
+
+> Good, Load from Tool and Save to Tool are marked as tested in `CLAUDE.md`. They're uncommitted along with the earlier work, ready for you to commit.
+
+### 🧑 Frank · 17:49
+
+> Suggest how REST machining will work
+
+### 🤖 Claude
+
+> Plan:
+>
+> # Rest machining: suggested design
+>
+> ## Context
+>
+> After a big roughing tool, a smaller tool should cut only what the big one couldn't reach (corners, narrow slots, steps left by a large stepdown), not recut the whole part. `TODO.md` lists it: "clear only what a bigger tool left, from the simulated stock or a previous tool's diameter".
+>
+> ## Suggestion in one paragraph
+>
+> A **Rest Machining** check box on the operation. When ticked, Generate first runs the earlier operations through the existing simulation, without showing it, to find what stock is really left. The operation then keeps only the cuts that have stock to remove. The tool, stepover and everything else on the tab work as usual.
+>
+> ## Why the simulated stock, not "a previous tool's diameter"
+>
+> | | Simulated stock (suggested) | Previous tool's diameter |
+> |---|---|---|
+> | Knows what was actually cut | Yes, any mix of operations, tools, origins and stepdowns | No, it assumes the previous tool reached everywhere it could |
+> | Steps left by a big stepdown | Found | Missed |
+> | Extra input | None | The user names a tool, and has to get it right |
+> | Cost | A few seconds at Generate | Almost none |
+>
+> The simulation already handles every tool shape, tilted origins and arcs (`core\Simulation`), so little new geometry is needed.
+>
+> ## How it works
+>
+> 1. **Find what's left.** In `CCamTabCommand::GenerateOperationMoves`, when ticked:
+>    - Run every earlier unsuppressed operation in sequence order through a `Simulation`, from the job's stock, at a coarser cell than the display (about a quarter of the tool's radius, 0.05 mm at the finest).
+>    - The Generating window shows "Simulating earlier operations".
+>    - It needs a stock. An earlier operation with no toolpath stops Generate and names it, as a wrong answer would be silent otherwise.
+> 2. **Turn it into heights.** A new core function gives the highest remaining stock per cell of the operation's grid, along its own Z, so tilted origins work (`RemainingStockHeights`, using `VoxelStock::Filled` and `Centre`, in `core\Simulation`).
+> 3. **Decide where to cut, per level.** A cell has rest material at a level if the remaining height is above that level by more than **Minimum Material** (new field, default 0.1 mm), which stops the tool chasing voxel noise and thin skins. The cut zone is those cells grown by the tool's radius (`SquaredDistanceTransform`), inside the existing free cells.
+> 4. **Use the zone.** Waterline Roughing is the natural first home:
+>    - With adaptive clearing, `AdaptiveGrid::material` becomes the rest cells. Everything else is air, so the existing fronts start from air and spread only through what's left. Almost no new toolpath code.
+>    - With Part Offset, Stock Offset or Linear, the contours are clipped to the zone by the clipping already there, and pieces shorter than the tool's radius are dropped.
+> 5. **Moves.** Links stay down only through cells with no rest material at that level, otherwise via clearance. Entries come down at rapid to the Approach Distance above the *remaining* stock under the tool, so it doesn't feed slowly through air that's already cleared.
+> 6. **Saved** as `restMachining` and `restMinimum` with `WaterlineRoughingSettings`, `.cam` format version 15. Older jobs read as off.
+>
+> ## Order of work
+>
+> 1. Waterline Roughing, with and without adaptive clearing (covers most of the value).
+> 2. Pocketing and Facing's adaptive mode, which share `AdaptiveGrid`.
+> 3. Finishing later, as a separate decision: "pencil" passes that follow only the corners a bigger ball left. That needs a different test (the scallop left, not stock above a level).
+>
+> ## Limits to expect
+>
+> - If an earlier operation changes, the rest operation must be regenerated. Automatic marking is the out-of-date work in build step 7. Generating the whole job runs in sequence order, so that's correct.
+> - Accuracy is the simulation's cell size, which is why Minimum Material shouldn't be set below about a cell.
+> - Clamps and the tool holder are not considered, as for other operations.
+>
+> ## Decisions for you
+>
+> 1. **Source:** simulated stock (suggested), or also offer a previous tool's diameter?
+> 2. **Which earlier operations count:** every earlier one in the sequence (suggested), or a list chosen on the tab?
+> 3. **First operations:** Waterline Roughing first (suggested), then Pocketing and Facing?
+> 4. **An earlier operation with no toolpath:** stop and name it (suggested), or generate it automatically first?
+> 5. **Name and default:** "Rest Machining" with Minimum Material 0.1 mm, off by default?
+>
+> ## Files
+>
+> `core\Simulation` (remaining heights), `core\WaterlineRoughing`, `core\WaterlineRoughToolpath`, `core\CamJob`, `addon\CamTabCommand.cpp`, `addon\OperationDialog`, `addon\CAMForAlibre.rc`, `addon\resource.h`, `help\CAMForAlibre.html`, the spec, `CLAUDE.md`, `TODO.md`, and new tests.
+>
+> ## Verification
+>
+> - **Core tests:** a big tool pocketing a square part, then a small tool on rest:
+>   - cuts only near the corners the big tool left;
+>   - the combined simulated result matches the small tool cutting everything, within a cell;
+>   - nothing to do leaves an empty toolpath with a clear message;
+>   - a tilted origin;
+>   - saving round trip, and an older job reads as off.
+> - **Build** Debug and Release, run `CamCoreTests.exe`, install.
+> - **Frank in Alibre:** rough with a large tool, add a small tool with Rest Machining, Generate, and simulate both. The small tool should only visit what's left, with no rapids into stock.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Core and the tab are written; fixing my new test's setup, then checking the rest machining results.
+
+> Rest Machining is built and installed for Waterline Roughing, the first step of the plan you approved. `CamCoreTests` passes in Debug and Release, but it hasn't been tried in Alibre, and nothing is committed. Pocketing, Facing and pencil finishing are still to do, and I've noted that in `TODO.md`.
+>
+> I took the suggested answer for each of the plan's five decisions: simulated stock, every earlier operation, Waterline Roughing first, stop and name an operation with no toolpath, and the name with a 0.1 mm default.
+>
+> **How to use it**
+> On the Waterline Roughing tab, tick **Rest Machining** and set **Minimum Material** (0.1 mm by default). Generate then simulates the earlier operations and cuts only what they left. The Generating window shows "Simulating earlier operations" while it does that. It needs a stock.
+>
+> **What the tests showed**
+> - A 10 mm tool followed by a 4 mm tool on rest left exactly the same stock as the 4 mm tool cutting everything, with about 28% less feed travel. That saving depends on how much the first tool left.
+> - With adaptive clearing, the same case left about 1.5% more stock than the 4 mm tool cutting everything.
+> - When a tool had already cleared all round a part's walls, rest correctly said there was nothing left to cut, rather than recutting them.
+>
+> **Worth knowing**
+> - If you change an earlier operation, generate the rest operation again. Nothing marks it out of date yet.
+> - Material thinner than Minimum Material plus about 1.5 simulation cells is left on part walls, on top of Stock to Leave. The cell is the tool's radius divided by 8, between 0.05 and 0.25 mm.
+> - `.cam` files are now format version 15, so jobs saved from here on won't open in older builds.
+>
+> **To test**
+> 1. Rough with a large tool, then add a Waterline Roughing with a small tool and Rest Machining. Generate both in order.
+> 2. Simulate both. The small tool should visit only what's left, with no rapids into stock.
+> 3. Check that it comes down just above the stock that's really there, without feeding slowly through cleared air.
+> 4. Tick Use Adaptive Clearing on the rest operation and repeat.
+> 5. Try each pattern: Part Offset, Stock Offset and Linear.
+> 6. Clear the earlier operation's toolpath and Generate. It should stop and name that operation.
+> 7. Delete the stock and Generate. It should say a stock is needed.
+> 8. Raise Minimum Material and check that thin leftovers are skipped.
+> 9. Save and reload the job, and check an older job loads with it off.
+> 10. Help has changed: the Waterline Roughing section has both new fields. Check it reads correctly.
+
+### 🧑 Frank · 18:39
+
+> 2 issues - when I delete an operation (right click delete) the dialog looks modeless and disappears in the background.  It should be modal.  The waterline roughing rest machining seems to retract too often - it retracts after a cut, then returns to the same horizontal level.
+
+### 🤖 Claude
+
+> Both fixes are built and installed, and `CamCoreTests` passes in Debug and Release. Neither has been tried in Alibre yet, and nothing is committed.
+>
+> **Delete prompt**
+> The box was already modal in code, but it was attached to a window handle that isn't Alibre's real top-level window, so it could slip behind. Message boxes on the CAM tab now attach to the window you're working in. That covers Delete, and also the unsaved-changes, error, Load Template and Delete Stock prompts, which had the same fault.
+>
+> **Retracting too often**
+> My first version lifted whenever a link crossed any cell that had stock left at the start of the level, even if the tool had just cleared it. The operation now tracks what it has cut as it goes. It stays down in two cases:
+> - the link is short, the same rule as normal roughing;
+> - the link is up to 8 tool radii long and the tool's edge doesn't meet any stock still to cut.
+>
+> Longer links, or ones that would feed through uncut stock, still lift. The limit of 8 radii is my choice, because a longer link at cutting feed can be slower than lifting and rapiding across.
+>
+> In the test case, the small tool's toolpath now has only 2 rapids at the clearance plane in 139 moves, and it leaves exactly the same stock as before. Feed travel also fell from about 650 mm to 464 mm, as there are fewer entries.
+>
+> This only changes the Part Offset, Stock Offset and Linear patterns. Adaptive clearing has its own linking and is unchanged, so tell me if you saw the retracts with Use Adaptive Clearing ticked.
+>
+> **To test**
+> 1. Right-click Delete on an operation and on a folder. The prompt should stay in front and block Alibre until answered.
+> 2. Try Delete Stock, Load Template with existing steps, and closing with unsaved changes.
+> 3. Generate your Waterline Roughing with Rest Machining again and check the retracts between cuts at one level have gone.
+> 4. Simulate it and check there are no rapids into stock and nothing is left uncut.
+
+### 🧑 Frank · 18:53
+
+> Fixed.
+
+### 🤖 Claude
+
+> Good, Rest Machining for Waterline Roughing is marked as tested in `CLAUDE.md`. Everything since your last commit is still uncommitted, ready for you to commit. Pocketing, Facing and pencil finishing remain in `TODO.md` for when you want them.
+
+### 🧑 Frank · 18:54
+
+> Add REST machining option to pocketing.
+
+### 🤖 Claude
+
+> Pocketing now has Rest Machining, built and installed, and `CamCoreTests` passes in Debug and Release. It hasn't been tried in Alibre, and nothing is committed. Facing and pencil finishing are still in `TODO.md`.
+>
+> **How it works**
+> On the Pocketing tab there's a new **Rest Machining** group with the check box and **Minimum Material** (0.1 mm by default). It behaves as it does on Waterline Roughing: Generate simulates the earlier operations and cuts only what they left. It works with Offset, Linear and Spiral cuts and with adaptive clearing, and each level of each pocket is worked out separately. The pocket's wall takes the place of the part's outline, so stock meant to stay on the wall isn't chased.
+>
+> It already includes the stay-down rule you just tested, so it won't retract between nearby cuts. Plain arrivals rapid to 2 mm above the stock really under the tool, then feed down. Entries that use a helix or ramp still start from their usual height.
+>
+> **What the tests showed**
+> In a 30 x 30 pocket, a 10 mm tool followed by a 4 mm tool on rest left exactly the same stock as the 4 mm tool cutting the whole pocket, for Offset, Linear and adaptive. The 4 mm tool only visited the four corners. Spiral uses the same clipping but has no test of its own.
+>
+> **To test**
+> 1. Rough a pocket with a large tool, then add a Pocketing with a small tool and Rest Machining, and Generate both in order.
+> 2. Simulate both. The small tool should visit only the corners or whatever was left, with no rapids into stock.
+> 3. Try Offset, Linear, Spiral and Use Adaptive Clearing.
+> 4. Try several cut levels, and a large first stepdown with a smaller one on rest, so only the steps get cut.
+> 5. Check the tab: Minimum Material is greyed unless the box is ticked, and the settings survive saving and reloading.
+> 6. Clear the earlier operation's toolpath and Generate. It should stop and name that operation.
+> 7. Help has changed: the Pocketing section has both new fields. Check it reads correctly.
+
+### 🧑 Frank · 19:14
+
+> There's still an issue with excessive retracting when working on the same level.  For now, list this as an issue.  We will deal with it later.
+
 ---
 
 # Side conversation

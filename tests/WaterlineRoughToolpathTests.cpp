@@ -633,3 +633,227 @@ TEST_CASE("waterline roughing enters by helix, ramp or plunge, never steeper tha
         }
     }
 }
+
+TEST_CASE("rest machining cuts only what the bigger tool left")
+{
+    // A 40 x 40 x 10 stock, a pocket 30 x 30 in the middle with a 10 mm tool, its
+    // sharp corners left, which a 4 mm tool then takes.
+    SequenceStep big;
+    big.type = StepType::WaterlineRoughing;
+    big.id = "big";
+    big.name = "Big";
+    big.waterlineRoughing.stockToLeave = 0.0;
+    big.waterlineRoughing.stepDown = 10.0;
+    big.waterlineRoughing.useBottom = true;
+    big.waterlineRoughing.bottom = 5.0;
+    big.waterlineRoughing.useTop = true;
+    big.waterlineRoughing.top = 10.0;
+    big.waterlineRoughing.clearFlats = false;
+    big.waterlineRoughing.stepoverPercent = 40.0;
+    big.waterlineRoughing.stepoverMode = WaterlineStepoverMode::Percent;
+    big.feeds.plunge = big.feeds.cut = big.feeds.engage = big.feeds.approach = 500.0;
+    big.feeds.retract = big.feeds.departure = big.feeds.transfer = 500.0;
+    big.feeds.spindleRpm = 10000.0;
+    big.clearance.mode = ClearanceMode::AbsoluteZ;
+    big.clearance.absoluteZ = 20.0;
+
+    Tool bigTool;
+    bigTool.diameter = 10.0;
+    bigTool.fluteLength = 20.0;
+    bigTool.overallLength = 40.0;
+    Tool smallTool = bigTool;
+    smallTool.diameter = 4.0;
+
+    // The pocket's area as a closed loop; the walls are the area's edge, inset by the tool.
+    const auto square = [](double half) {
+        ProfileChain chain;
+        chain.ok = true;
+        chain.closed = true;
+        chain.path = StockFootprint(Frame(), { { 20 - half, 20 - half, 0 }, { 20 + half, 20 + half, 10 } });
+        return chain;
+    };
+
+    WaterlineRoughToolpathInput first;
+    first.operation = &big;
+    first.tool = &bigTool;
+    first.outlines = { square(10.0) };
+    first.haveStockMaxZ = true;
+    first.stockMaxZ = 10.0;
+    first.haveStockMinZ = true;
+    first.stockMinZ = 0.0;
+    const ToolpathResult roughed = GenerateWaterlineRoughToolpath(first);
+    REQUIRE(roughed.ok);
+
+    SimOperation bigOp;
+    bigOp.profile = ProfileOf(bigTool);
+    bigOp.toolpath = roughed.toolpath;
+    bigOp.name = "Big";
+    Simulation simulation;
+    simulation.Start({ { 0, 0, 0 }, { 40, 40, 10 } }, {}, { bigOp }, SimResolution{ true, 0.25 });
+    simulation.RunToEnd();
+    REQUIRE(simulation.Finished());
+
+    Frame frame;
+    const RemainingStock remaining = RemainingStockHeights(simulation.Stock(), frame);
+    CHECK(remaining.HighestIn(19.9, 19.9, 20.1, 20.1) < 5.2f);      // cleared in the middle
+    CHECK(remaining.HighestIn(1.0, 1.0, 1.2, 1.2) > 9.5f);          // not touched outside the reach
+
+    // A wider area than the big tool needed: the band it couldn't reach is what's left.
+    SequenceStep rest = big;
+    rest.waterlineRoughing.restMachining = true;
+    rest.waterlineRoughing.stepoverPercent = 40.0;
+    WaterlineRoughToolpathInput second = first;
+    second.operation = &rest;
+    second.tool = &smallTool;
+    second.outlines = { square(15.0 + 2.0) };
+    second.remainingStock = &remaining;
+
+    SUBCASE("nothing given is refused")
+    {
+        second.remainingStock = nullptr;
+        CHECK_FALSE(GenerateWaterlineRoughToolpath(second).ok);
+    }
+
+    SUBCASE("it stays near what's left, and doesn't feed through the cleared middle")
+    {
+        const ToolpathResult cut = GenerateWaterlineRoughToolpath(second);
+        REQUIRE(cut.ok);
+        WaterlineRoughToolpathInput whole = second;
+        SequenceStep all = rest;
+        all.waterlineRoughing.restMachining = false;
+        whole.operation = &all;
+        const ToolpathResult everything = GenerateWaterlineRoughToolpath(whole);
+        REQUIRE(everything.ok);
+        double restLength = 0.0, wholeLength = 0.0;
+        for (const ToolpathResult* pResult : { &cut, &everything })
+        {
+            Vec3 at;
+            bool have = false;
+            for (const ToolpathMove& move : pResult->toolpath.moves)
+            {
+                if (have && move.kind == MoveKind::Feed)
+                    (pResult == &cut ? restLength : wholeLength) += std::hypot(move.to.x - at.x, move.to.y - at.y);
+                at = move.to;
+                have = true;
+            }
+        }
+        MESSAGE("feed length: rest ", restLength, ", whole ", wholeLength);
+        int lifts = 0;
+        for (const ToolpathMove& move : cut.toolpath.moves)
+            lifts += (move.kind == MoveKind::Rapid && move.to.z > 19.0) ? 1 : 0;
+        MESSAGE("rapids at the clearance plane: ", lifts, " in ", cut.toolpath.moves.size(), " moves");
+        CHECK(restLength < wholeLength * 0.8);
+        for (const ToolpathMove& move : cut.toolpath.moves)
+        {
+            if (move.kind != MoveKind::Feed || move.to.z > 5.5)
+                continue;
+            // Not across the middle the big tool cleared: at most its tool radius beyond the rest.
+            CHECK((std::fabs(move.to.x - 20.0) > 8.0 || std::fabs(move.to.y - 20.0) > 8.0));
+        }
+
+        // Cutting it finishes the job about as well as cutting everything.
+        SimOperation smallOp;
+        smallOp.profile = ProfileOf(smallTool);
+        smallOp.toolpath = cut.toolpath;
+        smallOp.name = "Small";
+        SimOperation allOp = smallOp;
+        allOp.toolpath = everything.toolpath;
+        Simulation both, single;
+        both.Start({ { 0, 0, 0 }, { 40, 40, 10 } }, {}, { bigOp, smallOp }, SimResolution{ true, 0.25 });
+        both.RunToEnd();
+        both.ClearWarning();
+        both.RunToEnd();
+        single.Start({ { 0, 0, 0 }, { 40, 40, 10 } }, {}, { allOp }, SimResolution{ true, 0.25 });
+        single.RunToEnd();
+        const double a = static_cast<double>(both.Stock().Count());
+        const double b = static_cast<double>(single.Stock().Count());
+        MESSAGE("cells left: rest ", a, ", whole ", b);
+        CHECK(std::fabs(a - b) < b * 0.02);
+    }
+
+    SUBCASE("nothing left says so")
+    {
+        second.outlines = { square(10.0) };
+        const RemainingStock* pSame = second.remainingStock;
+        CHECK(pSame != nullptr);
+        rest.waterlineRoughing.restMinimum = 20.0;
+        const ToolpathResult cut = GenerateWaterlineRoughToolpath(second);
+        CHECK_FALSE(cut.ok);
+    }
+
+    SUBCASE("adaptive clearing takes the same material")
+    {
+        rest.waterlineRoughing.adaptive = true;
+        const ToolpathResult cut = GenerateWaterlineRoughToolpath(second);
+        REQUIRE(cut.ok);
+        SimOperation smallOp;
+        smallOp.profile = ProfileOf(smallTool);
+        smallOp.toolpath = cut.toolpath;
+        smallOp.name = "Small";
+        Simulation both;
+        both.Start({ { 0, 0, 0 }, { 40, 40, 10 } }, {}, { bigOp, smallOp }, SimResolution{ true, 0.25 });
+        while (!both.Finished())
+        {
+            both.RunToEnd();
+            both.ClearWarning();
+        }
+        const long long before = simulation.Stock().Count();
+        const long long after = both.Stock().Count();
+        MESSAGE("cells: after the big tool ", before, ", after adaptive rest ", after);
+        CHECK(after < before);
+        const RemainingStock left = RemainingStockHeights(both.Stock(), frame);
+        CHECK(left.HighestIn(35.5, 20.0, 36.5, 20.5) < 5.5f);       // the band the big tool couldn't reach
+    }
+
+    SUBCASE("the walls of a part already cleared aren't cut again")
+    {
+        SequenceStep around = big;
+        around.waterlineRoughing.stockToLeave = 0.5;
+        Tool six = bigTool;
+        six.diameter = 6.0;
+        WaterlineRoughToolpathInput blockFirst = first;
+        blockFirst.operation = &around;
+        blockFirst.tool = &six;
+        blockFirst.outlines = { square(20.0) };
+        blockFirst.partTriangles = Box({ 10, 10, 0 }, { 30, 30, 10 });
+        const ToolpathResult cleared = GenerateWaterlineRoughToolpath(blockFirst);
+        REQUIRE(cleared.ok);
+        SimOperation sixOp;
+        sixOp.profile = ProfileOf(six);
+        sixOp.toolpath = cleared.toolpath;
+        sixOp.name = "Six";
+        Simulation block;
+        block.Start({ { 0, 0, 0 }, { 40, 40, 10 } }, {}, { sixOp }, SimResolution{ true, 0.25 });
+        block.RunToEnd();
+        const RemainingStock blockLeft = RemainingStockHeights(block.Stock(), frame);
+
+        SequenceStep again = around;
+        again.waterlineRoughing.restMachining = true;
+        WaterlineRoughToolpathInput blockRest = blockFirst;
+        blockRest.operation = &again;
+        blockRest.tool = &smallTool;
+        blockRest.remainingStock = &blockLeft;
+        CHECK_FALSE(GenerateWaterlineRoughToolpath(blockRest).ok);  // nothing left to cut
+    }
+
+    SUBCASE("a turned frame reads the same stock")
+    {
+        Frame turned;
+        turned.xAxis = { 0.0, 1.0, 0.0 };
+        turned.yAxis = { -1.0, 0.0, 0.0 };
+        const RemainingStock map = RemainingStockHeights(simulation.Stock(), turned);
+        CHECK(map.HighestIn(19.9, -20.1, 20.1, -19.9) < 5.2f);
+        CHECK(map.HighestIn(1.0, -1.2, 1.2, -1.0) > 9.5f);
+    }
+}
+
+TEST_CASE("rest machining settings are saved")
+{
+    SequenceStep step;
+    step.type = StepType::WaterlineRoughing;
+    step.waterlineRoughing.restMachining = true;
+    step.waterlineRoughing.restMinimum = 0.3;
+    CHECK(ValidateWaterlineRoughing(step.waterlineRoughing).empty());
+    step.waterlineRoughing.restMinimum = -1.0;
+    CHECK_FALSE(ValidateWaterlineRoughing(step.waterlineRoughing).empty());
+}

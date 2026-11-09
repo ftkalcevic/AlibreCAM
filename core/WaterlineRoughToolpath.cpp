@@ -363,6 +363,7 @@ namespace camcore
             std::vector<char> inArea;       // where the tool's centre may go at all
             std::vector<char> inPickedArea; // the area itself, before the linear extension grows it
             std::vector<float> tips;        // the lowest the tip may go; lowest() with no part near
+            std::vector<float> partTops;    // Rest Machining: the parts' own highest point; lowest() with none
 
             bool CellAt(const Vec3& p, size_t& q) const
             {
@@ -545,6 +546,19 @@ namespace camcore
             PartHeightField heights;
             heights.BuildGrid(input.partTriangles, w.xLow, w.yLow, w.nx, w.ny, w.cell);
             w.tips = heights.TipHeights(ProfileOf(tool), w.s);
+            if (roughing && settings.restMachining)
+            {
+                w.partTops.assign(w.cells, std::numeric_limits<float>::lowest());
+                for (int j = 0; j < w.ny; ++j)
+                {
+                    for (int i = 0; i < w.nx; ++i)
+                    {
+                        double height = 0.0;
+                        if (heights.HeightAt(w.xLow + (i + 0.5) * w.cell, w.yLow + (j + 0.5) * w.cell, height))
+                            w.partTops[static_cast<size_t>(j) * w.nx + i] = static_cast<float>(height);
+                    }
+                }
+            }
 
             // Where the tool's centre may go at all: the area, and for roughing past
             // its open edges by the linear extension (parts still keep it out below).
@@ -843,6 +857,28 @@ namespace camcore
         const double pitch = w.pitch;
         const std::vector<double>& levels = w.levels;
 
+        // Rest Machining: the highest stock the earlier operations left over each cell.
+        const bool rest = settings.restMachining;
+        const RemainingStock* pRemaining = input.remainingStock;
+        if (rest && pRemaining == nullptr)
+            return Failure("Rest Machining needs to know what the earlier operations left.");
+        std::vector<float> restTop;
+        if (rest)
+        {
+            restTop.resize(cells);
+            for (int j = 0; j < ny; ++j)
+            {
+                const double y = w.yLow + j * gridCell;
+                for (int i = 0; i < nx; ++i)
+                {
+                    const double x = w.xLow + i * gridCell;
+                    restTop[static_cast<size_t>(j) * nx + i] =
+                        pRemaining->HighestIn(x, y, x + gridCell * 0.999, y + gridCell * 0.999);
+                }
+            }
+        }
+        std::vector<std::vector<char>> restCellsAt(levels.size());
+
         std::vector<char> outsideArea(cells);
         for (size_t q = 0; q < cells; ++q)
             outsideArea[q] = w.inArea[q] ? 0 : 1;
@@ -896,6 +932,44 @@ namespace camcore
                 previousLabels.assign(cells, -1);
                 continue;
             }
+
+            // Rest Machining: the cells of the area with stock left above this level,
+            // leaving what's meant to stay on the parts (and a little for the size of
+            // the simulation's cells), and where the tool can reach any of them.
+            std::vector<char> cutZone;
+            if (rest)
+            {
+                std::vector<char> partHere(cells);
+                for (size_t q = 0; q < cells; ++q)
+                    partHere[q] = w.partTops[q] > z + kHeightTolerance ? 1 : 0;
+                bool anyPart = false;
+                const std::vector<float> fromRawPart = DistanceFrom(partHere, nx, ny, gridCell, anyPart);
+                const float keepOff = static_cast<float>(w.s + settings.restMinimum + 1.5 * pRemaining->cell);
+
+                std::vector<char>& restCells = restCellsAt[li];
+                restCells.assign(cells, 0);
+                for (size_t q = 0; q < cells; ++q)
+                    restCells[q] = (w.inPickedArea[q] && restTop[q] > z + settings.restMinimum &&
+                                    (!anyPart || fromRawPart[q] >= keepOff))
+                                       ? 1
+                                       : 0;
+                bool anyRest = false;
+                const std::vector<float> fromRest = DistanceFrom(restCells, nx, ny, gridCell, anyRest);
+                cutZone.assign(cells, 0);
+                bool anyZone = false;
+                for (size_t q = 0; q < cells; ++q)
+                {
+                    cutZone[q] = (free[q] && anyRest && fromRest[q] <= w.radius) ? 1 : 0;
+                    anyZone = anyZone || cutZone[q];
+                }
+                if (!anyZone)
+                {
+                    previousLabels.assign(cells, -1);
+                    continue;
+                }
+            }
+            const std::vector<char>& mayCut = rest ? cutZone : free;
+
             bool anyEdge = false;
             std::vector<float>& fromFreeEdge = freeFields[li];
             fromFreeEdge = DistanceFrom(notFree, nx, ny, gridCell, anyEdge);
@@ -940,7 +1014,7 @@ namespace camcore
                     for (size_t q = 0; q < cells; ++q)
                     {
                         grid.free[q] = (labels[q] == c) ? 1 : 0;
-                        grid.material[q] = w.inPickedArea[q] ? 1 : 0;
+                        grid.material[q] = (rest ? restCellsAt[li][q] != 0 : w.inPickedArea[q] != 0) ? 1 : 0;
                     }
                     AdaptiveSettings adaptive;
                     adaptive.toolRadius = w.radius;
@@ -948,6 +1022,7 @@ namespace camcore
                     adaptive.climb = settings.direction != CutDirection::Conventional;
                     adaptive.ramp = settings.rampEntry;
                     adaptive.simplify = input.simplifyTolerance;
+                    adaptive.wallLaps = !rest;      // a lap of the walls would recut what's already clean
                     regions[static_cast<size_t>(base + c)].adaptive = AdaptiveClear(std::move(grid), adaptive).cuts;
                 }
                 previousLabels = labels;
@@ -971,7 +1046,7 @@ namespace camcore
                         reverse = flip;
                     if (reverse)
                         std::reverse(loop.begin(), loop.end());
-                    for (Piece& piece : ClipContour(loop, w, free, clip))
+                    for (Piece& piece : ClipContour(loop, w, mayCut, clip || rest))
                         pieces.push_back(std::move(piece));
                 }
                 flip = !flip;
@@ -1055,7 +1130,7 @@ namespace camcore
                 const double sample = gridCell / 2.0;
                 const auto inside = [&](const Vec3& p) {
                     size_t q = 0;
-                    return w.CellAt(p, q) && free[q] != 0;
+                    return w.CellAt(p, q) && mayCut[q] != 0;
                 };
                 for (int r = 0; r <= intervals; ++r)
                 {
@@ -1098,6 +1173,16 @@ namespace camcore
 
             for (Piece& piece : pieces)
             {
+                // Rest Machining: scraps of a cut aren't worth going down for.
+                if (rest)
+                {
+                    double length = 0.0;
+                    for (size_t k = 1; k < piece.points.size(); ++k)
+                        length += std::hypot(piece.points[k].x - piece.points[k - 1].x,
+                                             piece.points[k].y - piece.points[k - 1].y);
+                    if (length < w.radius)
+                        continue;
+                }
                 size_t q = 0;
                 if (!piece.points.empty() && w.CellAt(piece.points.front(), q) && labels[q] >= 0)
                     piece.component = labels[q];
@@ -1148,6 +1233,7 @@ namespace camcore
             const double z = levels[region.level];
             const double above = (region.parent >= 0) ? levels[regions[static_cast<size_t>(region.parent)].level]
                                                       : (region.level > 0 ? levels[region.level - 1] : w.top);
+            const double regionTop = above;
             // At rapid to the approach distance above the level above (the top of the
             // material still to cut here), then at the plunge feed.
             const double enter = (std::min)(above + settings.approachDistance, w.clearance);
@@ -1171,10 +1257,49 @@ namespace camcore
             }
             const std::vector<float>& field = freeFields[region.level];
 
-            // A move stays down if it's short and stays where the tool may be.
+            // Rest Machining: the stock at this level the tool hasn't reached yet, and
+            // whether the tool's edge, at p, is on any of it.
+            std::vector<char> uncut;
+            if (rest)
+                uncut = restCellsAt[region.level];
+            const auto markCut = [&](const Vec3& a, const Vec3& b) {
+                const int reach = static_cast<int>(std::ceil(w.radius / gridCell));
+                const double length = std::hypot(b.x - a.x, b.y - a.y);
+                const int steps = (std::max)(1, static_cast<int>(std::ceil(length / gridCell)));
+                for (int k = 0; k <= steps; ++k)
+                {
+                    const double f = static_cast<double>(k) / steps;
+                    const double x = a.x + (b.x - a.x) * f, y = a.y + (b.y - a.y) * f;
+                    const int ci = static_cast<int>(std::floor((x - w.xLow) / gridCell));
+                    const int cj = static_cast<int>(std::floor((y - w.yLow) / gridCell));
+                    for (int j = (std::max)(0, cj - reach); j <= (std::min)(ny - 1, cj + reach); ++j)
+                    {
+                        for (int i = (std::max)(0, ci - reach); i <= (std::min)(nx - 1, ci + reach); ++i)
+                        {
+                            if (std::hypot(i - ci, j - cj) * gridCell <= w.radius)
+                                uncut[static_cast<size_t>(j) * nx + i] = 0;
+                        }
+                    }
+                }
+            };
+            const auto edgeOnUncut = [&](double x, double y) {
+                for (int a = 0; a < 48; ++a)
+                {
+                    const double angle = a * 2.0 * 3.14159265358979323846 / 48;
+                    size_t q = 0;
+                    if (w.CellAt({ x + w.radius * std::cos(angle), y + w.radius * std::sin(angle), z }, q) && uncut[q])
+                        return true;
+                }
+                return false;
+            };
+
+            // A move stays down if it's short and stays where the tool may be. Rest
+            // Machining's cuts are scattered, so it also stays down further, up to a
+            // few tool diameters, where the whole tool passes over nothing still to cut.
             const auto canStayDown = [&](const Vec3& from, const Vec3& to) {
                 const double length = std::hypot(to.x - from.x, to.y - from.y);
-                if (length > 3.0 * pitch)
+                const bool shortMove = length <= 3.0 * pitch;
+                if (!shortMove && !(rest && length <= 8.0 * w.radius))
                     return false;
                 const int samples = (std::max)(1, static_cast<int>(std::ceil(length / (gridCell / 2.0))));
                 for (int k = 0; k <= samples; ++k)
@@ -1184,6 +1309,9 @@ namespace camcore
                     if (!w.CellAt({ from.x + (to.x - from.x) * f, from.y + (to.y - from.y) * f, z }, q) ||
                         field[q] < t0)
                         return false;
+                    if (rest && !shortMove &&
+                        edgeOnUncut(from.x + (to.x - from.x) * f, from.y + (to.y - from.y) * f))
+                        return false;       // would feed through stock still to cut: lift instead
                 }
                 return true;
             };
@@ -1195,13 +1323,32 @@ namespace camcore
             const bool climb = settings.direction != CutDirection::Conventional;
             const double slope = std::tan((std::max)(0.1, ramp.rampAngle) * 3.14159265358979323846 / 180.0);
             const auto enterPiece = [&](const Piece& piece, const Vec3& start) {
-                const double depth = above - z;
+                // Rest Machining: the top of what's actually under the tool here.
+                double entryTop = regionTop;
+                if (rest)
+                {
+                    float highest = std::numeric_limits<float>::lowest();
+                    const int reach = static_cast<int>(std::ceil(w.radius / gridCell));
+                    const int ci = static_cast<int>(std::floor((start.x - w.xLow) / gridCell));
+                    const int cj = static_cast<int>(std::floor((start.y - w.yLow) / gridCell));
+                    for (int j = (std::max)(0, cj - reach); j <= (std::min)(ny - 1, cj + reach); ++j)
+                    {
+                        for (int i = (std::max)(0, ci - reach); i <= (std::min)(nx - 1, ci + reach); ++i)
+                        {
+                            if (std::hypot(i - ci, j - cj) * gridCell <= w.radius + gridCell)
+                                highest = (std::max)(highest, restTop[static_cast<size_t>(j) * nx + i]);
+                        }
+                    }
+                    entryTop = (std::min)(regionTop, (std::max)(z, static_cast<double>(highest)));
+                }
+                const double entryRapid = (std::min)(entryTop + settings.approachDistance, w.clearance);
+                const double depth = entryTop - z;
                 const auto comeDownAbove = [&](const Vec3& p) {
                     writer.Lift();
                     writer.Add(MoveKind::Rapid, { p.x, p.y, w.clearance }, 0.0);
-                    if (enter < w.clearance - 1e-9 && enter > above + 1e-9)
-                        writer.Add(MoveKind::Rapid, { p.x, p.y, enter }, 0.0);
-                    writer.Add(MoveKind::Feed, { p.x, p.y, above }, feeds.plunge);
+                    if (entryRapid < w.clearance - 1e-9 && entryRapid > entryTop + 1e-9)
+                        writer.Add(MoveKind::Rapid, { p.x, p.y, entryRapid }, 0.0);
+                    writer.Add(MoveKind::Feed, { p.x, p.y, entryTop }, feeds.plunge);
                     writer.SyncTo(writer.At());     // started, as Enter would mark it
                 };
                 if (depth > 1e-9 && ramp.kind == EntryKind::Helix)
@@ -1224,7 +1371,7 @@ namespace camcore
                         const Vec3 centre{ start.x + gx * radius, start.y + gy * radius, z };
                         if (roomAt(centre.x, centre.y) < radius - 0.5 * gridCell)     // the start is on it
                             continue;
-                        const Vec3 first{ start.x, start.y, above };
+                        const Vec3 first{ start.x, start.y, entryTop };
                         comeDownAbove(first);
                         AppendHelix(result.toolpath, first, centre, z, ramp.rampAngle, feeds.engage, climb);
                         writer.SyncTo(result.toolpath.moves.back().to);
@@ -1283,7 +1430,7 @@ namespace camcore
                         for (size_t k = 1; k < track.size(); ++k)
                         {
                             done += std::hypot(track[k].x - track[k - 1].x, track[k].y - track[k - 1].y);
-                            const double height = above - depth * (std::min)(1.0, done / needed);
+                            const double height = entryTop - depth * (std::min)(1.0, done / needed);
                             writer.Add(MoveKind::Feed, { track[k].x, track[k].y, height }, feeds.engage);
                         }
                         writer.Add(MoveKind::Feed, start, feeds.engage);    // exactly at the level
@@ -1291,7 +1438,7 @@ namespace camcore
                         return;
                     }
                 }
-                writer.Enter(start, enter, feeds.plunge);
+                writer.Enter(start, entryRapid, feeds.plunge);
                 ++result.plungeEntries;
             };
 
@@ -1320,16 +1467,26 @@ namespace camcore
                     down = true;
                 }
                 for (size_t p = 1; p < points.size(); ++p)
+                {
                     writer.Add(MoveKind::Feed, points[p], feeds.cut);
+                    if (rest)
+                        markCut(points[p - 1], points[p]);
+                }
                 if (piece.closed)
+                {
                     writer.Add(MoveKind::Feed, start, feeds.cut);
+                    if (rest)
+                        markCut(points.back(), start);
+                }
                 if (writer.Count() > kMostMoves)
                     return Failure("The toolpath would be too long. Make the stepdown or stepover larger.");
             }
             writer.Lift();
         }
         if (!writer.Started())
-            return Failure("There's nothing to cut: the tool doesn't fit anywhere in the area.");
+            return Failure(rest ? "There's nothing left to cut: the earlier operations have cleared everything this "
+                                  "tool can reach."
+                                : "There's nothing to cut: the tool doesn't fit anywhere in the area.");
 
         result.ok = true;
         return result;

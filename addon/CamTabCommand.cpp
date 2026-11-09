@@ -113,14 +113,22 @@ namespace
         return path.filename().wstring();
     }
 
+    // The window a message box belongs to, so it stays in front and blocks it: the
+    // one the user is working in. Alibre's handle isn't its top-level window.
+    HWND MessageOwner()
+    {
+        HWND active = ::GetActiveWindow();
+        return (active != nullptr) ? active : theApp.m_hAlibreWnd;
+    }
+
     int AskYesNo(const std::wstring& question)
     {
-        return ::MessageBoxW(theApp.m_hAlibreWnd, question.c_str(), L"CAMForAlibre", MB_YESNO | MB_ICONQUESTION);
+        return ::MessageBoxW(MessageOwner(), question.c_str(), L"CAMForAlibre", MB_YESNO | MB_ICONQUESTION);
     }
 
     void ShowError(const std::wstring& message)
     {
-        ::MessageBoxW(theApp.m_hAlibreWnd, message.c_str(), L"CAMForAlibre", MB_OK | MB_ICONERROR);
+        ::MessageBoxW(MessageOwner(), message.c_str(), L"CAMForAlibre", MB_OK | MB_ICONERROR);
     }
 
     // "Set Origin 2", using the lowest number no step already has.
@@ -393,7 +401,7 @@ void CCamTabCommand::WarnIfUnsaved()
 
     if (m_camPath.empty())
     {
-        ::MessageBoxW(theApp.m_hAlibreWnd,
+        ::MessageBoxW(MessageOwner(),
                       L"The assembly was never saved, so its unsaved CAM changes can't be kept.",
                       L"CAMForAlibre", MB_OK | MB_ICONWARNING);
         Log(L"[tab] unsaved changes lost: the assembly has no file");
@@ -883,11 +891,12 @@ void CCamTabCommand::LoadJobTemplate()
     bool replace = true;
     if (!m_job.sequence.empty())
     {
-        const int answer = AfxMessageBox(
+        const int answer = ::MessageBoxW(
+            MessageOwner(),
             L"This job already has steps.\n\n"
             L"Yes replaces the job's setup and all its steps with the template.\n"
             L"No adds the template's steps after the job's, keeping the job's setup.",
-            MB_YESNOCANCEL | MB_ICONQUESTION);
+            L"CAMForAlibre", MB_YESNOCANCEL | MB_ICONQUESTION);
         if (answer == IDCANCEL)
             return;
         replace = answer == IDYES;
@@ -934,7 +943,7 @@ void CCamTabCommand::DeleteStock()
     if (!CanEditSequence() || FocusOpenDialog() || !HasStock())
         return;
     const std::wstring question = L"Delete the " + FromUtf8(camcore::StockKindTitle(m_job.stock.kind)) + L"?";
-    if (AfxMessageBox(question.c_str(), MB_YESNO | MB_ICONQUESTION) != IDYES)
+    if (AskYesNo(question) != IDYES)
         return;
     ApplyStock(camcore::Stock());
 }
@@ -1595,6 +1604,100 @@ void CCamTabCommand::ClearToolpaths(const std::vector<StepRef>& refs)
     ShowStatus();
 }
 
+bool CCamTabCommand::MakeSimOperation(const StepRef& ref, camcore::SimOperation& operation) const
+{
+    const camcore::SequenceStep* pStep = const_cast<CCamTabCommand*>(this)->FindStep(ref);
+    if (pStep == nullptr)
+        return false;
+    const size_t active = camcore::ActiveOriginIndex(m_job, ref.step);
+    const camcore::FrameResult frame = (active != camcore::kNoStepIndex)
+                                           ? camcore::BuildFrame(m_job.sequence[active].origin)
+                                           : camcore::FrameResult();
+    const camcore::Tool* pTool = camcore::FindToolById(m_library, pStep->toolId);
+    if (pStep->toolpath.moves.empty() || !frame.ok || pTool == nullptr)
+        return false;
+
+    operation.name = pStep->name;
+    const camcore::Tool tool = camcore::ToolInMillimetres(*pTool);
+    char diameter[32];
+    std::snprintf(diameter, sizeof(diameter), "%g", std::round(tool.diameter * 1000.0) / 1000.0);
+    operation.tool = "T" + std::to_string(pTool->number) + " " + pTool->name + " (" +
+                     camcore::ToolTypeTitle(tool.type) + ", " + diameter + " mm)";
+    operation.profile = camcore::ProfileOf(tool);
+    operation.neck = camcore::NeckOf(tool);
+    operation.shank = camcore::ShankOf(tool);
+    operation.holder = camcore::HolderOf(tool, m_machine.holderDiameter, m_machine.holderDepth);
+    operation.frame = frame.frame;
+    operation.toolpath = pStep->toolpath;
+    return true;
+}
+
+bool CCamTabCommand::ComputeRemainingStock(const StepRef& target, const camcore::Frame& frame, double toolRadius,
+                                           camcore::RemainingStock& remaining, std::string& problem)
+{
+    if (!HasStock())
+    {
+        problem = "Rest Machining needs a stock, to work out what's left of it.";
+        return false;
+    }
+    std::vector<camcore::LineSegment> edges;
+    camcore::StockBox box;
+    std::wstring stockProblem;
+    std::vector<camcore::Vec3> points;
+    if (!ReadStockShape(m_job.stock, edges, box, stockProblem, &points))
+    {
+        problem = "The stock can't be read. " + ToUtf8(stockProblem);
+        return false;
+    }
+    if (m_job.stock.kind != camcore::StockKind::Imported)
+        points.clear();
+
+    // Everything before this operation, in the sequence's order.
+    std::vector<camcore::SimOperation> operations;
+    for (size_t s = 0; s <= target.step && s < m_job.sequence.size(); ++s)
+    {
+        const camcore::SequenceStep& step = m_job.sequence[s];
+        if (step.suppressed)
+            continue;
+        for (size_t c = 0; c < step.children.size(); ++c)
+        {
+            if (s == target.step && c >= target.child)
+                break;
+            const camcore::SequenceStep& child = step.children[c];
+            if (child.suppressed || !camcore::IsOperation(child.type))
+                continue;
+            camcore::SimOperation operation;
+            if (!MakeSimOperation(StepRef{ s, c }, operation))
+            {
+                problem = "Rest Machining follows the operations before it, and " + child.name +
+                          " has no toolpath yet. Generate it first.";
+                return false;
+            }
+            operations.push_back(std::move(operation));
+        }
+    }
+
+    if (m_pProgress != nullptr)
+        m_pProgress->Update(-1.0, L"Simulating earlier operations");
+
+    // Fine enough to see what a smaller tool can take, but not finer than a whole-stock simulation.
+    const double cell = (std::max)(camcore::AutoDivideCell(box), (std::min)(0.25, (std::max)(0.05, toolRadius / 8.0)));
+    const ULONGLONG start = GetTickCount64();
+    camcore::Simulation simulation;
+    simulation.Start(box, points, operations, camcore::SimResolution{ true, cell }, m_machine.rapidRate);
+    while (!simulation.Finished())
+    {
+        const size_t moved = simulation.RunToEnd();
+        simulation.ClearWarning();      // a collision is the simulation's to report, not Generate's
+        if (moved == 0 && !simulation.Finished())
+            break;
+    }
+    remaining = camcore::RemainingStockHeights(simulation.Stock(), frame);
+    Log(L"[generate] rest machining: %zu earlier operations at %g mm cells in %llu ms", operations.size(), cell,
+        GetTickCount64() - start);
+    return true;
+}
+
 void CCamTabCommand::Simulate(const StepRef& scope)
 {
     SimulateOperations(OperationsIn(scope, false));
@@ -1637,30 +1740,12 @@ void CCamTabCommand::SimulateOperations(std::vector<StepRef> refs)
         const camcore::SequenceStep* pStep = FindStep(ref);
         if (pStep == nullptr || !camcore::IsOperation(pStep->type))
             continue;
-        const std::wstring name = FromUtf8(pStep->name);
-        const size_t active = camcore::ActiveOriginIndex(m_job, ref.step);
-        const camcore::FrameResult frame = (active != camcore::kNoStepIndex)
-                                               ? camcore::BuildFrame(m_job.sequence[active].origin)
-                                               : camcore::FrameResult();
-        const camcore::Tool* pTool = camcore::FindToolById(m_library, pStep->toolId);
-        if (pStep->toolpath.moves.empty() || !frame.ok || pTool == nullptr)
+        camcore::SimOperation operation;
+        if (!MakeSimOperation(ref, operation))
         {
-            leftOut += (leftOut.empty() ? L"" : L", ") + name;
+            leftOut += (leftOut.empty() ? L"" : L", ") + FromUtf8(pStep->name);
             continue;
         }
-        camcore::SimOperation operation;
-        operation.name = pStep->name;
-        const camcore::Tool tool = camcore::ToolInMillimetres(*pTool);
-        char diameter[32];
-        std::snprintf(diameter, sizeof(diameter), "%g", std::round(tool.diameter * 1000.0) / 1000.0);
-        operation.tool = "T" + std::to_string(pTool->number) + " " + pTool->name + " (" +
-                         camcore::ToolTypeTitle(tool.type) + ", " + diameter + " mm)";
-        operation.profile = camcore::ProfileOf(tool);
-        operation.neck = camcore::NeckOf(tool);
-        operation.shank = camcore::ShankOf(tool);
-        operation.holder = camcore::HolderOf(tool, m_machine.holderDiameter, m_machine.holderDepth);
-        operation.frame = frame.frame;
-        operation.toolpath = pStep->toolpath;
         operations.push_back(std::move(operation));
     }
     if (operations.empty())
@@ -1974,7 +2059,7 @@ void CCamTabCommand::GenerateTargets(const std::vector<StepRef>& targets)
     m_sequenceStatus = summary;
     ShowStatus();
     if (!problems.empty())
-        ::MessageBoxW(theApp.m_hAlibreWnd, (summary + L"\n" + problems).c_str(), L"CAMForAlibre", MB_OK | MB_ICONWARNING);
+        ::MessageBoxW(MessageOwner(), (summary + L"\n" + problems).c_str(), L"CAMForAlibre", MB_OK | MB_ICONWARNING);
 }
 
 std::vector<StepRef> CCamTabCommand::OperationsIn(const StepRef& scope, bool forPost) const
@@ -2547,7 +2632,13 @@ bool CCamTabCommand::GenerateOperationMoves(const StepRef& target, std::string& 
         }
         else
         {
+            camcore::RemainingStock remainingStock;
+            if (operation.type == camcore::StepType::WaterlineRoughing && operation.waterlineRoughing.restMachining &&
+                pTool != nullptr && !ComputeRemainingStock(target, frame.frame, tool.diameter / 2.0, remainingStock, problem))
+                return false;
+
             camcore::WaterlineRoughToolpathInput waterlineInput;
+            waterlineInput.remainingStock = &remainingStock;
             waterlineInput.simplifyTolerance = kDenseSimplify;
             waterlineInput.operation = &operation;
             waterlineInput.tool = (pTool != nullptr) ? &tool : nullptr;
@@ -2660,7 +2751,13 @@ bool CCamTabCommand::GenerateOperationMoves(const StepRef& target, std::string& 
         if (!gatherAreas("Pocketing"))
             return false;
 
+        camcore::RemainingStock remainingStock;
+        if (operation.pocketing.restMachining && pTool != nullptr &&
+            !ComputeRemainingStock(target, frame.frame, tool.diameter / 2.0, remainingStock, problem))
+            return false;
+
         camcore::PocketToolpathInput pocketInput;
+        pocketInput.remainingStock = &remainingStock;
         pocketInput.simplifyTolerance = kDenseSimplify;
         pocketInput.operation = &operation;
         pocketInput.tool = (pTool != nullptr) ? &tool : nullptr;

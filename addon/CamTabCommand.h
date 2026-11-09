@@ -211,6 +211,13 @@ private:
     void WarnIfUnsaved();
     void MarkJobChanged();
     void ReloadTools();         // the job's machine, its tools, and the materials
+
+    // An operation with a toolpath, ready for the simulation. False if it can't run.
+    bool MakeSimOperation(const StepRef& ref, camcore::SimOperation& operation) const;
+    // Rest Machining: cuts the stock with the operations before this one, and what's
+    // left along the frame's Z.
+    bool ComputeRemainingStock(const StepRef& target, const camcore::Frame& frame, double toolRadius,
+                               camcore::RemainingStock& remaining, std::string& problem);
     void UpdateTreeWarnings();  // the red exclamation marks on nodes with a problem
     void ReadJobFile();
     void ShowSequence();

@@ -31,7 +31,7 @@ namespace camcore
     // Version 2 added Set Origin steps and groups to the sequence.
     // Version 13 added arc moves in the ZX and YZ planes.
     // Version 14 added helix entries (Entry/Exit's Helix, Waterline Roughing's entry).
-    constexpr int kCamFormatVersion = 14;
+    constexpr int kCamFormatVersion = 15;
 
     // Which assembly a job belongs to. The GUID comes from the assembly file,
     // and is empty if it couldn't be read.

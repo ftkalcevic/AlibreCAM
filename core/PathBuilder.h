@@ -33,6 +33,10 @@ namespace camcore
             m_helixRoom = std::move(room);
         }
 
+        // Where a plain arrival (no entry motion) stops rapiding and starts feeding down;
+        // without one, the clearance plane.
+        void SetArrivalHeight(std::function<double(const Vec3&)> height) { m_arrivalHeight = std::move(height); }
+
         // The Z that cuts, plunges and leads go to.
         void SetCutZ(double z) { m_cutZ = z; }
         double CutZ() const { return m_cutZ; }
@@ -69,6 +73,7 @@ namespace camcore
         double m_toolRadius = 0.0;
         bool m_helixAnticlockwise = true;
         std::function<double(const Vec3&)> m_helixRoom;
+        std::function<double(const Vec3&)> m_arrivalHeight;
 
         Toolpath& m_toolpath;
         const FeedSettings& m_feeds;

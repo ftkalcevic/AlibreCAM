@@ -28,6 +28,8 @@ namespace camcore
         std::vector<std::string> problems;
         if (!std::isfinite(settings.stockToLeave))
             problems.push_back("The stock to leave must be a number.");
+        if (settings.restMachining && (!(settings.restMinimum >= 0.0) || !std::isfinite(settings.restMinimum)))
+            problems.push_back("The minimum material must be 0 or more.");
         if (PocketUsesAngle(settings.cutType) && !std::isfinite(settings.cutAngle))
             problems.push_back("The angle of cuts must be a number.");
 

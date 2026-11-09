@@ -841,6 +841,10 @@
   <dd>Adaptive clearing only. Where there's no air to start from, the tool goes down a helix of this diameter (its centre's path), as a percentage of the tool's diameter, at the roomiest place, then spreads out from there. Where there isn't room for a helix at least a tenth of the tool's radius, it plunges straight down instead. 80% by default; 0 to 200.</dd>
   <dt>Ramp Angle (deg)</dt>
   <dd>Adaptive clearing only. How steeply the helix goes down, in degrees from horizontal, at the engage feed; it then goes once more round at the level. 2 degrees by default; more than 0 and at most 45.</dd>
+  <dt>Rest Machining</dt>
+  <dd>Cuts only the stock the operations before this one left, such as the corners a bigger tool couldn't reach, instead of cutting the whole pocket again, with the cut type, stepover and direction chosen here. Generate first simulates every earlier operation that isn't suppressed, in the sequence's order, so it needs a stock, and each of those operations needs a toolpath (it names any that hasn't one). Generate this operation again if an earlier one changes. Off by default.</dd>
+  <dt>Minimum Material</dt>
+  <dd>Only with Rest Machining. Stock thinner than this, in mm, is left alone, so the tool doesn't chase the fine steps of the simulation's cells. On the pocket's walls this is on top of the Stock to Leave. 0.1 mm by default.</dd>
 </dl>
 </section>
 
@@ -903,6 +907,10 @@
   <dd>The helix's diameter (its centre's path), as a percentage of the tool's diameter: for the Helix entry, and for adaptive clearing's helix where it has no air to start from (at the roomiest place, then spreading out from there; a plunge where there isn't room for one a tenth of the tool's radius). 80% by default; 0 to 200.</dd>
   <dt>Ramp Angle (deg)</dt>
   <dd>How steeply the helix or ramp goes down, in degrees from horizontal, at the engage feed. 2 degrees by default; more than 0 and at most 45.</dd>
+  <dt>Rest Machining</dt>
+  <dd>Cuts only the stock the operations before this one left, such as the corners a bigger tool couldn't reach, instead of cutting the whole area again. Generate first simulates every earlier operation that isn't suppressed, in the sequence's order, so it needs a stock, and each of those operations needs a toolpath (it names any that hasn't one). Generate this operation again if an earlier one changes. The tool's own settings on this tab apply as usual, and each cut comes down from just above the stock that's really under it. Off by default.</dd>
+  <dt>Minimum Material</dt>
+  <dd>Only with Rest Machining. Stock thinner than this, in mm, is left alone, so the tool doesn't chase the fine steps of the simulation's cells. On the sides of parts this is on top of the Stock to Leave. Set it no finer than the simulation can see, about 0.1 mm. 0.1 mm by default.</dd>
 </dl>
 </section>
 

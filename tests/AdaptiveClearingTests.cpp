@@ -453,6 +453,8 @@ TEST_CASE("adaptive clearing's settings save and load, and are off in older file
     rough.waterlineRoughing.rampEntry.helixPercent = 50.0;
     rough.waterlineRoughing.rampEntry.kind = EntryKind::Ramp;
     rough.waterlineRoughing.slopeFrom = 30.0;
+    rough.waterlineRoughing.restMachining = true;
+    rough.waterlineRoughing.restMinimum = 0.3;
     rough.waterlineRoughing.slopeTo = 75.0;
     pocket.entryExit.entry = EntryMode::Helix;
     pocket.entryExit.helixPercent = 60.0;
@@ -474,6 +476,10 @@ TEST_CASE("adaptive clearing's settings save and load, and are off in older file
     CHECK(back[2].waterlineRoughing.rampEntry.helixPercent == 50.0);
     CHECK(back[2].waterlineRoughing.rampEntry.kind == EntryKind::Ramp);
     CHECK(back[2].waterlineRoughing.slopeFrom == 30.0);
+    CHECK(back[2].waterlineRoughing.restMachining);
+    CHECK_FALSE(back[0].pocketing.restMachining);
+    CHECK(back[2].waterlineRoughing.restMinimum == 0.3);
+    CHECK_FALSE(back[0].waterlineRoughing.restMachining);
     CHECK(back[2].waterlineRoughing.slopeTo == 75.0);
     CHECK(back[0].waterlineFinishing.slopeFrom == 0.0);     // the defaults when not set
     CHECK(back[0].entryExit.entry == EntryMode::Helix);

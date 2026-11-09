@@ -84,6 +84,11 @@ namespace camcore
         // the plunge feed.
         double approachDistance = 2.0;
 
+        // Waterline Roughing: cut only the stock the operations before this one
+        // left, ignoring anything thinner than the minimum.
+        bool restMachining = false;
+        double restMinimum = 0.1;
+
         // Waterline and Parallel Finishing: cut only where the surface's slope (the
         // tool tip's height's, in degrees from horizontal) is From to To, so the two
         // can share a part: waterline the steep walls, parallel the gentle slopes.

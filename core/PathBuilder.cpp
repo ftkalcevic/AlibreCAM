@@ -140,6 +140,12 @@ namespace camcore
     void PathBuilder::ArriveAt(const Vec3& point)
     {
         TransferTo(point);
+        if (m_arrivalHeight)
+        {
+            const double height = m_arrivalHeight(point);
+            if (height < m_clearance - 1e-9 && height > m_cutZ + 1e-9)
+                Add(MoveKind::Rapid, { point.x, point.y, height }, 0.0);
+        }
         Add(MoveKind::Feed, { point.x, point.y, m_cutZ }, m_feeds.plunge);
     }
 

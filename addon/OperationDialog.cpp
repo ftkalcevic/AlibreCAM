@@ -2121,6 +2121,7 @@ BEGIN_MESSAGE_MAP(CWaterlineRoughingPage, COperationPage)
     ON_BN_CLICKED(IDC_WL_STEP_DISTANCE_RADIO, &CWaterlineRoughingPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_WL_SCALLOP_RADIO, &CWaterlineRoughingPage::OnChoiceChanged)
     ON_BN_CLICKED(IDC_ADAPTIVE_USE, &CWaterlineRoughingPage::OnChoiceChanged)
+    ON_BN_CLICKED(IDC_WL_REST, &CWaterlineRoughingPage::OnChoiceChanged)
     ON_CBN_SELCHANGE(IDC_WL_ENTRY, &CWaterlineRoughingPage::OnChoiceChanged)
 END_MESSAGE_MAP()
 
@@ -2148,6 +2149,8 @@ void CWaterlineRoughingPage::Load(const SequenceStep& step)
     SetNumber(IDC_WATERLINE_STOCK, w.stockToLeave);
     SetNumber(IDC_WATERLINE_EXTENSION, w.extension);
     SetNumber(IDC_WL_APPROACH, w.approachDistance);
+    CheckDlgButton(IDC_WL_REST, w.restMachining ? BST_CHECKED : BST_UNCHECKED);
+    SetNumber(IDC_WL_REST_MIN, w.restMinimum);
     CheckRadioButton(IDC_WL_PART_OFFSET, IDC_WL_LINEAR,
                      w.pattern == WaterlinePattern::PartOffset ? IDC_WL_PART_OFFSET
                      : w.pattern == WaterlinePattern::Linear   ? IDC_WL_LINEAR
@@ -2180,6 +2183,9 @@ bool CWaterlineRoughingPage::Save(SequenceStep& step, std::wstring& problems)
     ReadNumber(IDC_WATERLINE_STOCK, L"The stock to leave", w.stockToLeave, found);
     ReadNumber(IDC_WATERLINE_EXTENSION, L"The linear extension", w.extension, found);
     ReadNumber(IDC_WL_APPROACH, L"The approach distance", w.approachDistance, found);
+    w.restMachining = IsDlgButtonChecked(IDC_WL_REST) == BST_CHECKED;
+    if (w.restMachining)
+        ReadNumber(IDC_WL_REST_MIN, L"The minimum material", w.restMinimum, found);
     w.pattern = IsDlgButtonChecked(IDC_WL_PART_OFFSET) == BST_CHECKED ? WaterlinePattern::PartOffset
                 : IsDlgButtonChecked(IDC_WL_LINEAR) == BST_CHECKED    ? WaterlinePattern::Linear
                                                                       : WaterlinePattern::StockOffset;
@@ -2230,6 +2236,8 @@ bool CWaterlineRoughingPage::Save(SequenceStep& step, std::wstring& problems)
     saved.stockToLeave = w.stockToLeave;
     saved.extension = w.extension;
     saved.approachDistance = w.approachDistance;
+    saved.restMachining = w.restMachining;
+    saved.restMinimum = w.restMinimum;
     saved.pattern = w.pattern;
     saved.direction = w.direction;
     saved.start = w.start;
@@ -2257,6 +2265,9 @@ void CWaterlineRoughingPage::UpdateFields()
     GetDlgItem(IDC_WL_STEP_PERCENT)->EnableWindow(IsDlgButtonChecked(IDC_WL_STEP_PERCENT_RADIO) == BST_CHECKED);
     GetDlgItem(IDC_WL_STEP_DISTANCE)->EnableWindow(IsDlgButtonChecked(IDC_WL_STEP_DISTANCE_RADIO) == BST_CHECKED);
     GetDlgItem(IDC_WL_SCALLOP)->EnableWindow(IsDlgButtonChecked(IDC_WL_SCALLOP_RADIO) == BST_CHECKED);
+
+    for (int id : { IDC_WL_REST_MIN, IDC_WL_REST_MIN_LABEL })
+        GetDlgItem(id)->EnableWindow(IsDlgButtonChecked(IDC_WL_REST) == BST_CHECKED);
 
     // Adaptive clearing has its own pattern.
     const bool adaptive =
@@ -2747,6 +2758,7 @@ BEGIN_MESSAGE_MAP(CPocketingPage, COperationPage)
     ON_BN_CLICKED(IDC_POCK_STEP_PERCENT_RADIO, &CPocketingPage::OnStepoverChanged)
     ON_BN_CLICKED(IDC_POCK_STEP_DISTANCE_RADIO, &CPocketingPage::OnStepoverChanged)
     ON_BN_CLICKED(IDC_ADAPTIVE_USE, &CPocketingPage::OnCutTypeChanged)
+    ON_BN_CLICKED(IDC_WL_REST, &CPocketingPage::OnCutTypeChanged)
 END_MESSAGE_MAP()
 
 CPocketingPage::CPocketingPage(COperationDlg* pOwner)
@@ -2789,6 +2801,8 @@ void CPocketingPage::Load(const SequenceStep& step)
     SetNumber(IDC_POCK_STEP_PERCENT, stepover.percent);
     SetNumber(IDC_POCK_STEP_DISTANCE, stepover.distance);
     LoadAdaptive(pocketing.adaptive, pocketing.rampEntry);
+    CheckDlgButton(IDC_WL_REST, pocketing.restMachining ? BST_CHECKED : BST_UNCHECKED);
+    SetNumber(IDC_WL_REST_MIN, pocketing.restMinimum);
     UpdateFields();
 }
 
@@ -2812,6 +2826,9 @@ bool CPocketingPage::Save(SequenceStep& step, std::wstring& problems)
     else
         ReadNumber(IDC_POCK_STEP_DISTANCE, L"The stepover distance", pocketing.stepover.distance, found);
     SaveAdaptive(pocketing.adaptive, pocketing.rampEntry, found);
+    pocketing.restMachining = IsDlgButtonChecked(IDC_WL_REST) == BST_CHECKED;
+    if (pocketing.restMachining)
+        ReadNumber(IDC_WL_REST_MIN, L"The minimum material", pocketing.restMinimum, found);
 
     if (found.empty())
     {
@@ -2860,6 +2877,9 @@ void CPocketingPage::UpdateFields()
     const bool percent = IsDlgButtonChecked(IDC_POCK_STEP_DISTANCE_RADIO) != BST_CHECKED;
     GetDlgItem(IDC_POCK_STEP_PERCENT)->EnableWindow(percent);
     GetDlgItem(IDC_POCK_STEP_DISTANCE)->EnableWindow(!percent);
+
+    for (int id : { IDC_WL_REST_MIN, IDC_WL_REST_MIN_LABEL })
+        GetDlgItem(id)->EnableWindow(IsDlgButtonChecked(IDC_WL_REST) == BST_CHECKED);
 
     // Adaptive clearing has its own pattern.
     ShowAdaptive({ IDC_POCK_OFFSET, IDC_POCK_LINEAR, IDC_POCK_SPIRAL, IDC_POCK_RADIAL, IDC_POCK_MIXED, IDC_POCK_ANGLE,

@@ -838,6 +838,106 @@ namespace camcore
         return SweepTool<false>(const_cast<VoxelStock&>(stock), profile, from, to, axis, false, stopAtFirst);
     }
 
+    float RemainingStock::HighestIn(double x0, double y0, double x1, double y1) const
+    {
+        const int i0 = (std::max)(0, static_cast<int>(std::floor((x0 - xLow) / cell)));
+        const int j0 = (std::max)(0, static_cast<int>(std::floor((y0 - yLow) / cell)));
+        const int i1 = (std::min)(nx - 1, static_cast<int>(std::floor((x1 - xLow) / cell)));
+        const int j1 = (std::min)(ny - 1, static_cast<int>(std::floor((y1 - yLow) / cell)));
+        float highest = std::numeric_limits<float>::lowest();
+        for (int j = j0; j <= j1; ++j)
+        {
+            for (int i = i0; i <= i1; ++i)
+                highest = (std::max)(highest, top[static_cast<size_t>(j) * nx + i]);
+        }
+        return highest;
+    }
+
+    RemainingStock RemainingStockHeights(const VoxelStock& stock, const Frame& frame)
+    {
+        RemainingStock map;
+        map.cell = stock.Cell();
+        if (stock.SizeX() <= 0 || stock.SizeY() <= 0 || stock.SizeZ() <= 0)
+            return map;
+
+        // The grid over the stock's corners in the frame.
+        double low[2] = { 0.0, 0.0 }, high[2] = { 0.0, 0.0 };
+        const Vec3 near0 = stock.Centre(0, 0, 0);
+        const Vec3 far0 = stock.Centre(stock.SizeX() - 1, stock.SizeY() - 1, stock.SizeZ() - 1);
+        for (int corner = 0; corner < 8; ++corner)
+        {
+            const Vec3 p = WorldToFrame(frame, { (corner & 1) ? far0.x : near0.x, (corner & 2) ? far0.y : near0.y,
+                                                 (corner & 4) ? far0.z : near0.z });
+            for (int axis = 0; axis < 2; ++axis)
+            {
+                const double v = axis == 0 ? p.x : p.y;
+                low[axis] = corner == 0 ? v : (std::min)(low[axis], v);
+                high[axis] = corner == 0 ? v : (std::max)(high[axis], v);
+            }
+        }
+        map.xLow = low[0] - map.cell;
+        map.yLow = low[1] - map.cell;
+        map.nx = static_cast<int>(std::ceil((high[0] - low[0]) / map.cell)) + 3;
+        map.ny = static_cast<int>(std::ceil((high[1] - low[1]) / map.cell)) + 3;
+        const float none = std::numeric_limits<float>::lowest();
+        map.top.assign(static_cast<size_t>(map.nx) * map.ny, none);
+
+        const auto stamp = [&](int i, int j, int k) {
+            const Vec3 p = WorldToFrame(frame, stock.Centre(i, j, k));
+            const int u = static_cast<int>(std::floor((p.x - map.xLow) / map.cell));
+            const int v = static_cast<int>(std::floor((p.y - map.yLow) / map.cell));
+            if (u < 0 || v < 0 || u >= map.nx || v >= map.ny)
+                return;
+            float& top = map.top[static_cast<size_t>(v) * map.nx + u];
+            top = (std::max)(top, static_cast<float>(p.z));
+        };
+
+        // Looking straight down a column only its highest cell matters.
+        const bool upright = frame.zAxis.z > 1.0 - 1e-9;
+        for (int j = 0; j < stock.SizeY(); ++j)
+        {
+            for (int i = 0; i < stock.SizeX(); ++i)
+            {
+                for (int w = stock.WordsZ() - 1; w >= 0; --w)
+                {
+                    std::uint64_t bits = stock.Word(i, j, w);
+                    bool found = false;
+                    for (int b = 63; b >= 0 && bits != 0; --b)
+                    {
+                        if ((bits >> b) & 1u)
+                        {
+                            stamp(i, j, w * 64 + b);
+                            bits &= ~(std::uint64_t(1) << b);
+                            found = true;
+                            if (upright)
+                                break;
+                        }
+                    }
+                    if (found && upright)
+                        break;
+                }
+            }
+        }
+
+        // Turned to the stock's grid, some cells catch no centre: they take a neighbour's.
+        const bool aligned = upright && (std::fabs(frame.xAxis.x) > 1.0 - 1e-9 || std::fabs(frame.xAxis.y) > 1.0 - 1e-9);
+        if (!aligned)
+        {
+            const std::vector<float> before = map.top;
+            for (int v = 1; v + 1 < map.ny; ++v)
+            {
+                for (int u = 1; u + 1 < map.nx; ++u)
+                {
+                    const size_t q = static_cast<size_t>(v) * map.nx + u;
+                    if (before[q] != none)
+                        continue;
+                    map.top[q] = (std::max)({ before[q - 1], before[q + 1], before[q - map.nx], before[q + map.nx] });
+                }
+            }
+        }
+        return map;
+    }
+
     SimCylinder NeckOf(const Tool& tool)
     {
         SimCylinder neck;

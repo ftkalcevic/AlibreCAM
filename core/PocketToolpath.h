@@ -6,6 +6,7 @@
 #pragma once
 
 #include "ProfileToolpath.h"
+#include "Simulation.h"     // RemainingStock
 
 namespace camcore
 {
@@ -27,6 +28,10 @@ namespace camcore
         // The stock's highest point along the frame's Z, when there's a stock.
         bool haveStockMaxZ = false;
         double stockMaxZ = 0.0;
+
+        // With Rest Machining: what the operations before this one left, along this
+        // operation's Z.
+        const RemainingStock* remainingStock = nullptr;
     };
 
     // Each closed outline is a pocket of its own: the area inside it, the tool

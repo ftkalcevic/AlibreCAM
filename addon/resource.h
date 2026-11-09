@@ -416,6 +416,9 @@
 #define IDC_TOOL_DRAWING                13487
 #define IDC_FEEDS_TO_TOOL               13488
 #define IDC_CHOOSE_MATERIAL_LIST        13489
+#define IDC_WL_REST                     13490
+#define IDC_WL_REST_MIN                 13491
+#define IDC_WL_REST_MIN_LABEL           13492
 #define IDC_WL_STEPDOWN_GROUP           13442
 #define IDC_WL_ORDER_GROUP              13443
 #define IDC_WL_LEVELS_GROUP             13444
@@ -459,7 +462,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        13049
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         13490
+#define _APS_NEXT_CONTROL_VALUE         13493
 #define _APS_NEXT_SYMED_VALUE           13010
 #endif
 #endif

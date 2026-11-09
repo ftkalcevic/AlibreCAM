@@ -1089,6 +1089,8 @@ namespace camcore
                 { "finishFlats", w.finishFlats },
                 { "optimiseStepover", w.optimiseStepover },
                 { "approachDistance", w.approachDistance },
+                { "restMachining", w.restMachining },
+                { "restMinimum", w.restMinimum },
                 { "slopeFrom", w.slopeFrom },
                 { "slopeTo", w.slopeTo }
             };
@@ -1138,6 +1140,8 @@ namespace camcore
                    ReadOptionalBool(item, "finishFlats", w.finishFlats) &&
                    ReadOptionalBool(item, "optimiseStepover", w.optimiseStepover) &&
                    ReadOptionalNumber(item, "approachDistance", w.approachDistance) &&
+                   ReadOptionalBool(item, "restMachining", w.restMachining) &&
+                   ReadOptionalNumber(item, "restMinimum", w.restMinimum) &&
                    ReadOptionalNumber(item, "slopeFrom", w.slopeFrom) && ReadOptionalNumber(item, "slopeTo", w.slopeTo) &&
                    ReadAdaptive(item, w.adaptive, w.rampEntry);
         }
@@ -1239,6 +1243,8 @@ namespace camcore
                 { "stepover", WriteSize(pocketing.stepover) }
             };
             WriteAdaptive(item, pocketing.adaptive, pocketing.rampEntry);
+            item["restMachining"] = pocketing.restMachining;
+            item["restMinimum"] = pocketing.restMinimum;
             return item;
         }
 
@@ -1250,6 +1256,9 @@ namespace camcore
             if (item == step.end())
                 return true;
             if (!item->is_object())
+                return false;
+            if (!ReadOptionalBool(*item, "restMachining", pocketing.restMachining) ||
+                !ReadOptionalNumber(*item, "restMinimum", pocketing.restMinimum))
                 return false;
 
             const auto cutType = item->find("cutType");

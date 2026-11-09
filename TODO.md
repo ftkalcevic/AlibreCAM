@@ -23,7 +23,8 @@ these belong in the spec (`docs\SPEC.md`) once they're made.
 - 🔴 Show some summary information under each op, eg tool
 - 🔴 More details in tool
 - New dialogs should inherit speed/feeds for the last (?)  copy/paste(?)
-- Rest machining: clear only what a bigger tool left, from the simulated stock or a previous tool's diameter
+- Rest machining: built for Waterline Roughing and Pocketing. Still to do: Facing, and pencil passes for finishing
+- Issue: rest machining still retracts too often between cuts on the same level (Frank's report after Pocketing was added; to be dealt with later)
 - More posts (GRBL, Mach3/4, UCCNC, Masso)
 - Undo in the CAM tree
 - Inch display units

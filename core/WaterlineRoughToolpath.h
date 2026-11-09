@@ -10,6 +10,7 @@
 #include "Boundary.h"
 #include "CamJob.h"
 #include "PlungeRoughToolpath.h"    // ProfileChain, the area and the parts' heights
+#include "Simulation.h"             // RemainingStock
 #include "SurfaceGeometry.h"
 #include "Toolpath.h"
 #include "ToolLibrary.h"
@@ -44,6 +45,10 @@ namespace camcore
         std::vector<std::vector<Vec3>> faces;
         std::vector<ProfileChain> outlines;
         std::vector<Vec3> partTriangles;            // the parts, three points to a triangle, in the frame
+
+        // Waterline Roughing with Rest Machining: what the operations before this one
+        // left, along this operation's Z.
+        const RemainingStock* remainingStock = nullptr;
 
         // Parallel Finishing with a ball mill only, both optional: the part face
         // each triangle is on (-1 for none), and the closest point on a face's

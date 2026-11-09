@@ -48,6 +48,11 @@ namespace camcore
         // pattern, helixing into closed areas.
         bool adaptive = false;
         RampEntry rampEntry;
+
+        // Cut only the stock the operations before this one left, ignoring anything
+        // thinner than the minimum.
+        bool restMachining = false;
+        double restMinimum = 0.1;
     };
 
     // The direction the cut type actually uses: Spiral can't be Mixed.

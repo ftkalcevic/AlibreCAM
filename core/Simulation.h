@@ -188,6 +188,23 @@ namespace camcore
         bool Present() const { return length > 0.0 && radius > 0.0; }
     };
 
+    // What's left of the stock seen along a frame's Z: for each cell of a grid in
+    // the frame's XY, the height of the highest remaining cell's centre, for rest
+    // machining. A cell with no stock over it reads as the lowest float.
+    struct RemainingStock
+    {
+        double xLow = 0.0;
+        double yLow = 0.0;
+        double cell = 1.0;
+        int nx = 0;
+        int ny = 0;
+        std::vector<float> top;
+
+        // The highest stock over a rectangle of the frame's XY.
+        float HighestIn(double x0, double y0, double x1, double y1) const;
+    };
+    RemainingStock RemainingStockHeights(const VoxelStock& stock, const Frame& frame);
+
     // The neck (a reduced neck tool's cutting diameter from its flute length up
     // to its neck length; none without a reduced neck), the shank (from the neck
     // length, or the flute length, up to the overall length, at the shank

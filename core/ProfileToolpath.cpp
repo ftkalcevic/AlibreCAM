@@ -9,6 +9,7 @@
 #include "AdaptiveClearing.h"
 #include "FacingToolpath.h"
 #include "PathBuilder.h"
+#include "PlungeRoughToolpath.h"
 #include "PocketToolpath.h"
 
 namespace camcore
@@ -1242,6 +1243,59 @@ namespace camcore
             bool awayFromLoop = false;  // away is left of the loop's own way (true), or fixed
         };
 
+        // The parts of the pieces where inZone holds at their points, sampled every
+        // step; arcs stay arcs. Runs shorter than shortest are left out.
+        template <typename InZone>
+        std::vector<PocketPiece> ClipPieces(const std::vector<PocketPiece>& pieces, InZone inZone, double step,
+                                            double shortest)
+        {
+            std::vector<PocketPiece> clipped;
+            for (const PocketPiece& piece : pieces)
+            {
+                PocketPiece current;
+                current.away = piece.away;
+                current.awayFromLoop = piece.awayFromLoop;
+                const auto finish = [&]() {
+                    if (!current.segs.empty() && RunLength(current.segs) >= shortest)
+                        clipped.push_back(current);
+                    current.segs.clear();
+                };
+                for (const Seg& s : piece.segs)
+                {
+                    const int samples = (std::max)(1, static_cast<int>(std::ceil(SegLength(s) / step)));
+                    int first = -1;     // the sample this stretch of the segment started at
+                    for (int k = 0; k <= samples; ++k)
+                    {
+                        const bool in = inZone(PointAt(s, static_cast<double>(k) / samples));
+                        if (in && first < 0)
+                        {
+                            if (k > 0)
+                                finish();
+                            first = k;
+                        }
+                        if ((!in || k == samples) && first >= 0)
+                        {
+                            const int last = in ? k : k - 1;
+                            if (last > first)
+                            {
+                                Seg part = s;
+                                part.a = PointAt(s, static_cast<double>(first) / samples);
+                                part.b = PointAt(s, static_cast<double>(last) / samples);
+                                current.segs.push_back(part);
+                            }
+                            if (!in)
+                                finish();
+                            first = -1;
+                        }
+                    }
+                    if (!inZone(PointAt(s, 1.0)))
+                        finish();
+                }
+                finish();
+            }
+            return clipped;
+        }
+
         std::vector<Seg> ReverseSegs(const std::vector<Seg>& segs)
         {
             std::vector<Seg> reversed;
@@ -1334,8 +1388,65 @@ namespace camcore
         }
 
         // Cuts the pieces at one level, staying down between them when it's safe.
+        // Rest Machining: the stock at one level the tool hasn't reached yet.
+        struct RestTracker
+        {
+            double xLow = 0.0, yLow = 0.0, cell = 1.0, radius = 1.0;
+            int nx = 0, ny = 0;
+            std::vector<unsigned char> uncut;
+
+            void MarkCut(const Vec3& p)
+            {
+                const int ci = static_cast<int>(std::lround((p.x - xLow) / cell));
+                const int cj = static_cast<int>(std::lround((p.y - yLow) / cell));
+                const int reach = static_cast<int>(std::ceil(radius / cell));
+                for (int j = (std::max)(0, cj - reach); j <= (std::min)(ny - 1, cj + reach); ++j)
+                {
+                    for (int i = (std::max)(0, ci - reach); i <= (std::min)(nx - 1, ci + reach); ++i)
+                    {
+                        if (std::hypot(i - ci, j - cj) * cell <= radius)
+                            uncut[static_cast<size_t>(j) * nx + i] = 0;
+                    }
+                }
+            }
+
+            void MarkCut(const Seg& s)
+            {
+                const int steps = (std::max)(1, static_cast<int>(std::ceil(SegLength(s) / cell)));
+                for (int k = 0; k <= steps; ++k)
+                    MarkCut(PointAt(s, static_cast<double>(k) / steps));
+            }
+
+            bool EdgeOnUncut(const Vec3& p) const
+            {
+                for (int a = 0; a < 48; ++a)
+                {
+                    const double angle = a * 2.0 * kPi / 48;
+                    const int i = static_cast<int>(std::lround((p.x + radius * std::cos(angle) - xLow) / cell));
+                    const int j = static_cast<int>(std::lround((p.y + radius * std::sin(angle) - yLow) / cell));
+                    if (i >= 0 && j >= 0 && i < nx && j < ny && uncut[static_cast<size_t>(j) * nx + i] != 0)
+                        return true;
+                }
+                return false;
+            }
+
+            // Whether a straight move at the level passes over nothing still to cut.
+            bool Clear(const Vec3& a, const Vec3& b) const
+            {
+                const double length = DistanceXY(a, b);
+                const int steps = (std::max)(1, static_cast<int>(std::ceil(length / (cell / 2.0))));
+                for (int k = 0; k <= steps; ++k)
+                {
+                    const double f = static_cast<double>(k) / steps;
+                    if (EdgeOnUncut({ a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f, a.z }))
+                        return false;
+                }
+                return true;
+            }
+        };
+
         void CutPieces(PathBuilder& path, const std::vector<PocketPiece>& pieces, double z,
-                       const std::vector<Seg>& outline, double wall, double furthest)
+                       const std::vector<Seg>& outline, double wall, double furthest, RestTracker* pRest = nullptr)
         {
             auto awayAt = [](const PocketPiece& piece, const Vec3& tangent) {
                 return piece.awayFromLoop ? LeftOf(tangent) * (piece.away.x) : piece.away;
@@ -1351,7 +1462,13 @@ namespace camcore
                 const Vec3 start{ first.a.x, first.a.y, z };
                 const Vec3 tangent = TangentAt(first, 0.0);
 
-                if (down && SafeLink(outline, wall, at, start, furthest))
+                // Rest Machining's cuts are scattered, so it stays down further, up to a
+                // few tool diameters, where the whole tool passes over nothing still to cut.
+                const bool staysDown =
+                    down && (SafeLink(outline, wall, at, start, furthest) ||
+                             (pRest != nullptr && SafeLink(outline, wall, at, start, 8.0 * pRest->radius) &&
+                              pRest->Clear(at, start)));
+                if (staysDown)
                 {
                     if (DistanceXY(at, start) > kTiny)
                         path.Cut(start);
@@ -1369,6 +1486,8 @@ namespace camcore
                         path.ArcTo(s.b, s.c, !s.ccw);
                     else
                         path.Cut(s.b);
+                    if (pRest != nullptr)
+                        pRest->MarkCut(s);
                 }
                 const Seg& last = piece.segs.back();
                 at = { last.b.x, last.b.y, z };
@@ -1669,6 +1788,100 @@ namespace camcore
             std::vector<Seg> outline;
             std::vector<PocketPiece> pieces;
             std::vector<AdaptiveCut> adaptive;      // with Use Adaptive Clearing, then a lap of the wall
+
+            // Rest Machining: what's left to cut differs at each level.
+            struct RestLevel
+            {
+                std::vector<PocketPiece> pieces;
+                std::vector<AdaptiveCut> adaptive;
+                std::vector<unsigned char> restCells;
+            };
+            std::vector<RestLevel> restLevels;
+            double restXLow = 0.0, restYLow = 0.0, restCell = 1.0;
+            int restNx = 0, restNy = 0;
+            std::vector<float> restTop;
+        };
+        const bool rest = settings.restMachining;
+        const RemainingStock* pRemaining = input.remainingStock;
+        if (rest && pRemaining == nullptr)
+            return Failure("Rest Machining needs to know what the earlier operations left.");
+        const double toolRadius = input.tool->diameter / 2.0;
+
+        // Rest Machining: each level's stock still to cut in this pocket, and the
+        // pattern kept to where the tool can reach it.
+        const auto prepareRest = [&](Pocket& pocket, const Path& outline) {
+            double xLow = 0.0, xHigh = 0.0, yLow = 0.0, yHigh = 0.0;
+            PathExtent(outline, { 1.0, 0.0, 0.0 }, xLow, xHigh);
+            PathExtent(outline, { 0.0, 1.0, 0.0 }, yLow, yHigh);
+            const double cell = AdaptiveCell(input.tool->diameter, stepover, xHigh - xLow, yHigh - yLow);
+            const AdaptiveGrid base = AdaptiveGridFromOutlines({ outline }, cell, wall, toolRadius);
+            const size_t cells = base.material.size();
+
+            std::vector<double> squared(cells);
+            for (size_t q = 0; q < cells; ++q)
+                squared[q] = base.material[q] ? 1e12 : 0.0;
+            SquaredDistanceTransform(squared, base.nx, base.ny);
+
+            pocket.restXLow = base.xLow;
+            pocket.restYLow = base.yLow;
+            pocket.restCell = cell;
+            pocket.restNx = base.nx;
+            pocket.restNy = base.ny;
+            pocket.restTop.resize(cells);
+            for (int j = 0; j < base.ny; ++j)
+            {
+                for (int i = 0; i < base.nx; ++i)
+                {
+                    const Vec3 c = base.Centre(i, j);
+                    pocket.restTop[base.Index(i, j)] =
+                        pRemaining->HighestIn(c.x - cell / 2.0, c.y - cell / 2.0, c.x + cell / 2.0, c.y + cell / 2.0);
+                }
+            }
+
+            // Stock meant to stay on the wall doesn't count.
+            const double keepOff = (std::max)(0.0, settings.stockToLeave) + settings.restMinimum + 1.5 * pRemaining->cell;
+            pocket.restLevels.resize(levels.size());
+            for (size_t l = 0; l < levels.size(); ++l)
+            {
+                Pocket::RestLevel& level = pocket.restLevels[l];
+                level.restCells.assign(cells, 0);
+                std::vector<double> fromRest(cells, 1e12);
+                bool any = false;
+                for (size_t q = 0; q < cells; ++q)
+                {
+                    if (base.material[q] && pocket.restTop[q] > levels[l].z + settings.restMinimum &&
+                        std::sqrt(squared[q]) * cell >= keepOff)
+                    {
+                        level.restCells[q] = 1;
+                        fromRest[q] = 0.0;
+                        any = true;
+                    }
+                }
+                if (!any)
+                    continue;
+                SquaredDistanceTransform(fromRest, base.nx, base.ny);
+
+                if (settings.adaptive)
+                {
+                    AdaptiveGrid grid = base;
+                    grid.material = level.restCells;
+                    AdaptiveSettings adaptive;
+                    adaptive.toolRadius = toolRadius;
+                    adaptive.optimalLoad = stepover;
+                    adaptive.climb = settings.direction != CutDirection::Conventional;
+                    adaptive.ramp = settings.rampEntry;
+                    adaptive.wallLaps = false;
+                    adaptive.simplify = input.simplifyTolerance;
+                    level.adaptive = AdaptiveClear(std::move(grid), adaptive).cuts;
+                }
+                const auto inZone = [&](const Vec3& p) {
+                    const int i = static_cast<int>(std::lround((p.x - base.xLow) / cell));
+                    const int j = static_cast<int>(std::lround((p.y - base.yLow) / cell));
+                    return i >= 0 && j >= 0 && i < base.nx && j < base.ny &&
+                           std::sqrt(fromRest[base.Index(i, j)]) * cell <= toolRadius;
+                };
+                level.pieces = ClipPieces(pocket.pieces, inZone, cell / 2.0, toolRadius);
+            }
         };
         std::vector<Pocket> pockets;
         const CutDirection direction = PocketDirection(settings);
@@ -1706,6 +1919,8 @@ namespace camcore
                     AdaptiveClear(AdaptiveGridFromOutlines({ outline }, cell, wall, adaptive.toolRadius), adaptive).cuts;
                 pocket.pieces = OffsetPieces({ rings.front() }, true,
                                              adaptive.climb ? CutDirection::Climb : CutDirection::Conventional);
+                if (rest)
+                    prepareRest(pocket, outline);
                 pockets.push_back(std::move(pocket));
                 continue;
             }
@@ -1724,6 +1939,8 @@ namespace camcore
                 pocket.pieces = OffsetPieces(rings, fromInside, direction);
                 break;
             }
+            if (rest)
+                prepareRest(pocket, outline);
             pockets.push_back(std::move(pocket));
         }
 
@@ -1744,7 +1961,7 @@ namespace camcore
                 writing.feeds = pOperation->feeds;
                 writing.climb = settings.direction != CutDirection::Conventional;
                 writing.rampAngle = settings.rampEntry.rampAngle;
-                WriteAdaptiveCuts(pocket.adaptive, writing, result.toolpath);
+                WriteAdaptiveCuts(rest ? pocket.restLevels[l].adaptive : pocket.adaptive, writing, result.toolpath);
             }
             PathBuilder path(result.toolpath, pOperation->feeds, clearance, levels[l].z);
             path.SetEntryExit(&entryExit, entryExit.eachCutLevel || l == 0,
@@ -1753,7 +1970,37 @@ namespace camcore
             const std::vector<Seg>& outline = pocket.outline;
             path.SetHelix(input.tool->diameter / 2.0, direction != CutDirection::Conventional,
                           [&outline, wall](const Vec3& p) { return DistanceToSegs(outline, p) - wall; });
-            CutPieces(path, pocket.pieces, levels[l].z, pocket.outline, wall, furthest);
+            if (!rest)
+            {
+                CutPieces(path, pocket.pieces, levels[l].z, pocket.outline, wall, furthest);
+                return;
+            }
+
+            // From just above the stock that's really under the tool.
+            path.SetArrivalHeight([&pocket, toolRadius, clearance](const Vec3& p) {
+                const int reach = static_cast<int>(std::ceil(toolRadius / pocket.restCell));
+                const int ci = static_cast<int>(std::lround((p.x - pocket.restXLow) / pocket.restCell));
+                const int cj = static_cast<int>(std::lround((p.y - pocket.restYLow) / pocket.restCell));
+                float highest = std::numeric_limits<float>::lowest();
+                for (int j = (std::max)(0, cj - reach); j <= (std::min)(pocket.restNy - 1, cj + reach); ++j)
+                {
+                    for (int i = (std::max)(0, ci - reach); i <= (std::min)(pocket.restNx - 1, ci + reach); ++i)
+                        highest = (std::max)(highest, pocket.restTop[static_cast<size_t>(j) * pocket.restNx + i]);
+                }
+                return (std::min)(static_cast<double>(highest) + 2.0, clearance);
+            });
+            const Pocket::RestLevel& level = pocket.restLevels[l];
+            RestTracker tracker;
+            tracker.xLow = pocket.restXLow;
+            tracker.yLow = pocket.restYLow;
+            tracker.cell = pocket.restCell;
+            tracker.radius = toolRadius;
+            tracker.nx = pocket.restNx;
+            tracker.ny = pocket.restNy;
+            tracker.uncut = level.restCells;
+            if (settings.adaptive)
+                std::fill(tracker.uncut.begin(), tracker.uncut.end(), static_cast<unsigned char>(0));   // already cleared
+            CutPieces(path, level.pieces, levels[l].z, pocket.outline, wall, furthest, &tracker);
         };
         if (pOperation->cutLevels.order == CutLevelOrder::LevelFirst)
         {
@@ -1774,7 +2021,9 @@ namespace camcore
 
         result.ok = !result.toolpath.moves.empty();
         if (!result.ok)
-            result.problem = "Nothing fits in the pocket.";
+            result.problem = rest ? "There's nothing left to cut: the earlier operations have cleared everything this "
+                                    "tool can reach."
+                                  : "Nothing fits in the pocket.";
         return result;
     }
 }
