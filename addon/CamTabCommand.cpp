@@ -65,6 +65,11 @@ namespace
         IDC_CAM_HELP,
         IDC_CAM_SHOW_STOCK,
         IDC_CAM_SHOW_ORIGIN,
+        IDC_CAM_LOAD,
+        IDC_CAM_SAVE_TEMPLATE,
+        IDC_CAM_LOAD_TEMPLATE,
+        IDC_CAM_FILE_BAR,
+        IDC_CAM_REFRESH_BAR,
 
         // Tree menu commands
         ID_CAM_ADD_ORIGIN,
@@ -578,6 +583,7 @@ void CCamTabCommand::ReadJobFile()
     m_job = camcore::Job();
     m_job.assembly = current.identity;
     m_unsavedChanges = false;
+    m_camFileChosen = false;
     SetSaveBlocked(false);
 
     if (current.path.empty())
@@ -665,13 +671,13 @@ void CCamTabCommand::SaveJobFile()
         return;
     }
 
-    if (current.path.empty())
+    if (current.path.empty() && !m_camFileChosen)
     {
         SetStatus(L"Save the assembly first, so the .cam file has somewhere to go.");
         return;
     }
 
-    const fs::path target = camcore::CamPathForAssembly(current.path);
+    const fs::path target = m_camFileChosen ? m_camPath : camcore::CamPathForAssembly(current.path);
     const std::wstring fileName = FileName(target);
 
     // The assembly may have been saved somewhere new since this job was opened.
@@ -699,6 +705,167 @@ void CCamTabCommand::SaveJobFile()
     m_camPath = target;
     m_unsavedChanges = false;
     SetStatus(L"Saved " + fileName + L".");
+}
+
+void CCamTabCommand::LoadOtherJobFile()
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    if (FocusOpenDialog())
+        return;
+
+    AssemblyInfo current;
+    bool haveAssembly = false;
+    try
+    {
+        haveAssembly = ReadAssemblyInfo(GetSession(), current);
+    }
+    catch (const _com_error& error)
+    {
+        Log(L"[tab] could not find the session: hr=0x%08X", static_cast<unsigned>(error.Error()));
+    }
+    if (!haveAssembly)
+    {
+        SetStatus(L"Could not read the assembly, so nothing was loaded.");
+        return;
+    }
+
+    if (m_unsavedChanges && AskYesNo(L"Discard the unsaved CAM changes?") != IDYES)
+        return;
+
+    const std::wstring folder = m_camPath.empty() ? std::wstring() : m_camPath.parent_path().wstring();
+    CFileDialog dialog(TRUE, L"cam", nullptr, OFN_FILEMUSTEXIST | OFN_HIDEREADONLY,
+                       L"CAM jobs (*.cam)|*.cam|All files (*.*)|*.*||", m_pWnd);
+    if (!folder.empty())
+        dialog.m_ofn.lpstrInitialDir = folder.c_str();
+    if (dialog.DoModal() != IDOK)
+        return;
+
+    // Nothing changes unless the file can be used.
+    const fs::path path = static_cast<LPCWSTR>(dialog.GetPathName());
+    const std::wstring fileName = FileName(path);
+    const camcore::LoadResult loaded = camcore::LoadJob(path);
+    if (loaded.status != camcore::LoadStatus::Ok)
+    {
+        ShowError(L"Could not open " + fileName + L". " + FromUtf8(loaded.message));
+        return;
+    }
+
+    bool linked = true;
+    if (camcore::CompareIdentity(loaded.job.assembly, current.identity) == camcore::IdentityMatch::Different)
+    {
+        if (AskYesNo(fileName + L" was made for a different assembly (" + FromUtf8(loaded.job.assembly.name) +
+                     L").\n\nUse it with this assembly anyway?\n\n"
+                     L"Yes links it to this assembly the next time you save.") != IDYES)
+            return;
+        linked = false;
+    }
+
+    m_job = loaded.job;
+    m_job.assembly = current.identity;
+    m_camPath = path;
+    m_camFileChosen = true;
+    m_unsavedChanges = false;
+    SetSaveBlocked(false);
+    SetStatus((linked ? L"Loaded " : L"Using ") + fileName + (linked ? L"." : L". Save to link it to this assembly."));
+    ReloadTools();
+    m_selected = m_job.sequence.empty() ? StepRef() : StepRef{ 0 };
+    ShowSequence();
+    ReadModelSize();
+    RebuildScene();
+}
+
+void CCamTabCommand::SaveJobTemplate()
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    if (!CanEditSequence() || FocusOpenDialog())
+        return;
+
+    const std::wstring suggested = (m_camPath.empty() ? std::wstring(L"Template") : m_camPath.stem().wstring()) +
+                                   L".camtemplate";
+    const std::wstring folder = TemplatesFolder().wstring();
+    CFileDialog dialog(FALSE, L"camtemplate", suggested.c_str(),
+                       OFN_OVERWRITEPROMPT | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST,
+                       L"CAM templates (*.camtemplate)|*.camtemplate|All files (*.*)|*.*||", m_pWnd);
+    dialog.m_ofn.lpstrInitialDir = folder.c_str();
+    if (dialog.DoModal() != IDOK)
+        return;
+
+    const fs::path path = static_cast<LPCWSTR>(dialog.GetPathName());
+    const std::wstring fileName = FileName(path);
+
+    // Never over a damaged file, or one from a newer build.
+    std::error_code ignored;
+    if (fs::exists(path, ignored))
+    {
+        const camcore::LoadResult existing = camcore::LoadJob(path);
+        if (existing.status != camcore::LoadStatus::Ok)
+        {
+            ShowError(fileName + L" wasn't replaced, as it can't be read as a template. " +
+                      FromUtf8(existing.message));
+            return;
+        }
+    }
+
+    const camcore::SaveResult saved = camcore::SaveJob(camcore::JobAsTemplate(m_job), path);
+    if (!saved.ok)
+    {
+        const std::wstring message = L"Could not save " + fileName + L". " + FromUtf8(saved.message);
+        SetStatus(message);
+        ShowError(message);
+        return;
+    }
+    SetStatus(L"Saved the template " + fileName + L".");
+}
+
+void CCamTabCommand::LoadJobTemplate()
+{
+    AFX_MANAGE_STATE(AfxGetStaticModuleState());
+
+    if (!CanEditSequence() || FocusOpenDialog())
+        return;
+
+    const std::wstring folder = TemplatesFolder().wstring();
+    CFileDialog dialog(TRUE, L"camtemplate", nullptr, OFN_FILEMUSTEXIST | OFN_HIDEREADONLY,
+                       L"CAM templates (*.camtemplate)|*.camtemplate|All files (*.*)|*.*||", m_pWnd);
+    dialog.m_ofn.lpstrInitialDir = folder.c_str();
+    if (dialog.DoModal() != IDOK)
+        return;
+
+    const fs::path path = static_cast<LPCWSTR>(dialog.GetPathName());
+    const std::wstring fileName = FileName(path);
+    const camcore::LoadResult loaded = camcore::LoadJob(path);
+    if (loaded.status != camcore::LoadStatus::Ok)
+    {
+        ShowError(L"Could not open " + fileName + L". " + FromUtf8(loaded.message));
+        return;
+    }
+
+    bool replace = true;
+    if (!m_job.sequence.empty())
+    {
+        const int answer = AfxMessageBox(
+            L"This job already has steps.\n\n"
+            L"Yes replaces the job's setup and all its steps with the template.\n"
+            L"No adds the template's steps after the job's, keeping the job's setup.",
+            MB_YESNOCANCEL | MB_ICONQUESTION);
+        if (answer == IDCANCEL)
+            return;
+        replace = answer == IDYES;
+    }
+
+    const size_t firstNew = replace ? 0 : m_job.sequence.size();
+    const bool otherMachine = !replace && loaded.job.machineId != m_job.machineId;
+    camcore::ApplyJobTemplate(m_job, loaded.job, replace);
+    ReloadTools();
+    m_selected = (firstNew < m_job.sequence.size()) ? StepRef{ firstNew } : StepRef();
+    ShowSequence();
+    ReadModelSize();
+    RebuildScene();
+    MarkJobChanged();
+    SetStatus(std::wstring(replace ? L"Loaded the template " : L"Added the template ") + fileName +
+              (otherMachine ? L". It was made on another machine, so check its tools." : L". Pick each operation's features."));
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -3628,12 +3795,17 @@ BEGIN_MESSAGE_MAP(CCamTabWnd, CWnd)
     ON_WM_SIZE()
     ON_WM_TIMER()
     ON_BN_CLICKED(IDC_CAM_SAVE, &CCamTabWnd::OnSave)
+    ON_BN_CLICKED(IDC_CAM_LOAD, &CCamTabWnd::OnLoad)
+    ON_BN_CLICKED(IDC_CAM_SAVE_TEMPLATE, &CCamTabWnd::OnSaveTemplate)
+    ON_BN_CLICKED(IDC_CAM_LOAD_TEMPLATE, &CCamTabWnd::OnLoadTemplate)
     ON_BN_CLICKED(IDC_CAM_REFRESH, &CCamTabWnd::OnRefresh)
     ON_BN_CLICKED(IDC_CAM_FOREGROUND, &CCamTabWnd::OnForeground)
     ON_BN_CLICKED(IDC_CAM_SHOW_TOOLPATHS, &CCamTabWnd::OnShowToolpaths)
     ON_BN_CLICKED(IDC_CAM_SHOW_STOCK, &CCamTabWnd::OnShowStock)
     ON_BN_CLICKED(IDC_CAM_SHOW_ORIGIN, &CCamTabWnd::OnShowOrigin)
     ON_NOTIFY(TBN_GETINFOTIP, IDC_CAM_TOOLBAR, &CCamTabWnd::OnToolbarTip)
+    ON_NOTIFY(TBN_GETINFOTIP, IDC_CAM_FILE_BAR, &CCamTabWnd::OnToolbarTip)
+    ON_NOTIFY(TBN_GETINFOTIP, IDC_CAM_REFRESH_BAR, &CCamTabWnd::OnToolbarTip)
     ON_NOTIFY(TBN_GETINFOTIP, IDC_CAM_SETTINGS_BAR, &CCamTabWnd::OnToolbarTip)
     ON_BN_CLICKED(IDC_CAM_SETTINGS, &CCamTabWnd::OnSettings)
     ON_BN_CLICKED(IDC_CAM_HELP, &CCamTabWnd::OnHelp)
@@ -3703,9 +3875,30 @@ int CCamTabWnd::OnCreate(LPCREATESTRUCT pCreate)
     m_status.Create(L"", WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX, CRect(0, 0, 10, 10), this, IDC_CAM_STATUS);
     m_status.SetFont(pFont);
 
-    m_refresh.Create(L"Refresh view", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, CRect(0, 0, 10, 10), this,
-                     IDC_CAM_REFRESH);
-    m_refresh.SetFont(pFont);
+    // Save, load and the templates, with refresh at the right, above the view toggles.
+    m_fileBar.Create(WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_TOOLTIPS | CCS_NODIVIDER | CCS_NORESIZE |
+                         CCS_NOPARENTALIGN,
+                     CRect(0, 0, 10, 10), this, IDC_CAM_FILE_BAR);
+    TBBUTTON fileButtons[4] = {};
+    const int fileCommands[4] = { IDC_CAM_SAVE, IDC_CAM_LOAD, IDC_CAM_SAVE_TEMPLATE, IDC_CAM_LOAD_TEMPLATE };
+    for (int i = 0; i < 4; ++i)
+    {
+        fileButtons[i].iBitmap = 6 + i;
+        fileButtons[i].idCommand = fileCommands[i];
+        fileButtons[i].fsState = TBSTATE_ENABLED;
+        fileButtons[i].fsStyle = BTNS_BUTTON;
+    }
+    m_fileBar.AddButtons(4, fileButtons);
+
+    m_refreshBar.Create(WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_TOOLTIPS | CCS_NODIVIDER | CCS_NORESIZE |
+                            CCS_NOPARENTALIGN,
+                        CRect(0, 0, 10, 10), this, IDC_CAM_REFRESH_BAR);
+    TBBUTTON refreshButton = {};
+    refreshButton.iBitmap = 10;
+    refreshButton.idCommand = IDC_CAM_REFRESH;
+    refreshButton.fsState = TBSTATE_ENABLED;
+    refreshButton.fsStyle = BTNS_BUTTON;
+    m_refreshBar.AddButtons(1, &refreshButton);
 
     // The view toggles: small image buttons, pushed in while on, each with a tooltip.
     m_toolbar.Create(WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_TOOLTIPS | CCS_NODIVIDER | CCS_NORESIZE |
@@ -3740,8 +3933,6 @@ int CCamTabWnd::OnCreate(LPCREATESTRUCT pCreate)
     m_settingsBar.AddButtons(2, right);
 
 
-    m_save.Create(L"Save", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, CRect(0, 0, 10, 10), this, IDC_CAM_SAVE);
-    m_save.SetFont(pFont);
 
     // The view size, and the text and icons at it.
     const camcore::ProgramSettingsLoadResult loaded = camcore::LoadProgramSettings(ProgramSettingsPath());
@@ -3784,27 +3975,27 @@ void CCamTabWnd::LayoutControls(int cx, int cy)
 
     const double scale = camcore::ViewTextScale(m_settings.viewSize);
     const int margin = 4;
-    const int buttonHeight = static_cast<int>(23 * scale + 0.5);
     const int statusHeight = static_cast<int>(60 * scale + 0.5);
     const int width = (cx > margin * 2) ? cx - margin * 2 : 1;
 
-    // The toolbars across the top (help and the gear at the right), then the tree, the
-    // status, and the buttons at the bottom.
+    // The file toolbar across the top (refresh at the right), the view toolbars (help and
+    // the gear at the right), then the tree and the status.
     const int icon = camcore::ViewIconSize(m_settings.viewSize);
     const int toolbarHeight = icon + 8;
     const int gearWidth = (icon + 8) * 2 + 2;     // help and the gear
-    const int treeY = margin + toolbarHeight + margin;
-    const int saveY = cy - margin - buttonHeight;
-    const int refreshY = saveY - margin - buttonHeight;
-    const int statusY = refreshY - margin - statusHeight;
+    const int toolbarY = margin + toolbarHeight + margin;
+    const int treeY = toolbarY + toolbarHeight + margin;
+    const int statusY = cy - margin - statusHeight;
     const int treeHeight = statusY - margin - treeY;
 
-    m_toolbar.MoveWindow(margin, margin, (width > gearWidth) ? width - gearWidth : 1, toolbarHeight);
-    m_settingsBar.MoveWindow(margin + width - gearWidth, margin, gearWidth, toolbarHeight);
+    const int refreshWidth = icon + 8 + 2;
+    m_fileBar.MoveWindow(margin, margin, (width > refreshWidth) ? width - refreshWidth : 1, toolbarHeight);
+    m_refreshBar.MoveWindow(margin + width - refreshWidth, margin, refreshWidth, toolbarHeight);
+
+    m_toolbar.MoveWindow(margin, toolbarY, (width > gearWidth) ? width - gearWidth : 1, toolbarHeight);
+    m_settingsBar.MoveWindow(margin + width - gearWidth, toolbarY, gearWidth, toolbarHeight);
     m_tree.MoveWindow(margin, treeY, width, (treeHeight > 40) ? treeHeight : 40);
     m_status.MoveWindow(margin, statusY, width, statusHeight);
-    m_refresh.MoveWindow(margin, refreshY, width, buttonHeight);
-    m_save.MoveWindow(margin, saveY, width, buttonHeight);
 }
 
 void CCamTabWnd::OnSize(UINT type, int cx, int cy)
@@ -3845,6 +4036,24 @@ void CCamTabWnd::OnSave()
 {
     if (m_pTab != nullptr)
         m_pTab->SaveJobFile();
+}
+
+void CCamTabWnd::OnLoad()
+{
+    if (m_pTab != nullptr)
+        m_pTab->LoadOtherJobFile();
+}
+
+void CCamTabWnd::OnSaveTemplate()
+{
+    if (m_pTab != nullptr)
+        m_pTab->SaveJobTemplate();
+}
+
+void CCamTabWnd::OnLoadTemplate()
+{
+    if (m_pTab != nullptr)
+        m_pTab->LoadJobTemplate();
 }
 
 void CCamTabWnd::OnRefresh()
@@ -3897,8 +4106,7 @@ void CCamTabWnd::ApplyViewSize()
                                          (logFont.lfHeight < 0 ? -0.5 : 0.5));
     m_font.DeleteObject();
     m_font.CreateFontIndirect(&logFont);
-    for (CWnd* pControl : { static_cast<CWnd*>(&m_tree), static_cast<CWnd*>(&m_status), static_cast<CWnd*>(&m_refresh),
-                            static_cast<CWnd*>(&m_save) })
+    for (CWnd* pControl : { static_cast<CWnd*>(&m_tree), static_cast<CWnd*>(&m_status) })
         pControl->SetFont(&m_font);
 
     // The icons, drawn at each size rather than stretched.
@@ -3919,7 +4127,7 @@ void CCamTabWnd::ApplyViewSize()
     else
         Log(L"[tab] could not load the %d pixel tree images", icon);
 
-    for (CToolBarCtrl* pBar : { &m_toolbar, &m_settingsBar })
+    for (CToolBarCtrl* pBar : { &m_toolbar, &m_settingsBar, &m_fileBar, &m_refreshBar })
     {
         pBar->SetImageList(&m_toolbarImages);
         pBar->SetBitmapSize(CSize(icon, icon));
@@ -3973,6 +4181,11 @@ void CCamTabWnd::OnToolbarTip(NMHDR* pNotify, LRESULT* pResult)
                           : (pTip->iItem == IDC_CAM_HELP)           ? L"Help"
                           : (pTip->iItem == IDC_CAM_SHOW_STOCK)     ? L"Show stock"
                           : (pTip->iItem == IDC_CAM_SHOW_ORIGIN)    ? L"Show origin"
+                          : (pTip->iItem == IDC_CAM_SAVE)           ? L"Save"
+                          : (pTip->iItem == IDC_CAM_LOAD)           ? L"Load"
+                          : (pTip->iItem == IDC_CAM_SAVE_TEMPLATE)  ? L"Save Template"
+                          : (pTip->iItem == IDC_CAM_LOAD_TEMPLATE)  ? L"Load Template"
+                          : (pTip->iItem == IDC_CAM_REFRESH)        ? L"Refresh"
                                                                     : L"";
     if (pTip->pszText != nullptr && pTip->cchTextMax > 0)
         wcsncpy_s(pTip->pszText, pTip->cchTextMax, text, _TRUNCATE);
@@ -4836,5 +5049,5 @@ void CCamTabWnd::SetStatusText(const std::wstring& text)
 
 void CCamTabWnd::EnableSave(bool enable)
 {
-    m_save.EnableWindow(enable ? TRUE : FALSE);
+    m_fileBar.EnableButton(IDC_CAM_SAVE, enable ? TRUE : FALSE);
 }

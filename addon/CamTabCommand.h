@@ -58,6 +58,9 @@ public:
     // Called by the tab window once it's on screen, so a load can show a prompt.
     void LoadJobFile();
     void SaveJobFile();
+    void LoadOtherJobFile();        // the Load button: chooses a .cam file
+    void SaveJobTemplate();
+    void LoadJobTemplate();
 
     // The machine, its tools, and the job's material. tab is a CMachineDlg::Tab.
     void OpenMachineDialog(int tab);
@@ -253,6 +256,7 @@ private:
 
     camcore::Job m_job;
     std::filesystem::path m_camPath;
+    bool m_camFileChosen = false;   // Load chose m_camPath, so Save goes there, not beside the assembly
 
     // Set when a file exists that saving would wrongly overwrite: one from a
     // newer build, a damaged one, or one for a different assembly.
@@ -367,6 +371,9 @@ protected:
     afx_msg void OnSize(UINT type, int cx, int cy);
     afx_msg void OnTimer(UINT_PTR id);
     afx_msg void OnSave();
+    afx_msg void OnLoad();
+    afx_msg void OnSaveTemplate();
+    afx_msg void OnLoadTemplate();
     afx_msg void OnRefresh();
     afx_msg void OnForeground();
     afx_msg void OnShowToolpaths();
@@ -420,7 +427,6 @@ private:
     CCamTabCommand* m_pTab;
     CTreeCtrl m_tree;
     CStatic m_status;
-    CButton m_refresh;
     CToolBarCtrl m_toolbar;         // view toggles above the tree
     CToolBarCtrl m_settingsBar;     // the gear, at the right
     CImageList m_toolbarImages;
@@ -428,7 +434,8 @@ private:
     CFont m_font;                   // the tab's text, at the view size
     camcore::ProgramSettings m_settings;
     bool m_settingsWritable;        // false if the file is damaged or newer, so it isn't overwritten
-    CButton m_save;
+    CToolBarCtrl m_fileBar;         // save, load and the templates, at the top
+    CToolBarCtrl m_refreshBar;      // refresh, at the top right
     HTREEITEM m_hMachine;
     HTREEITEM m_hTools;
     HTREEITEM m_hMaterial;

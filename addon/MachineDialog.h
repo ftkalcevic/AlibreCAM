@@ -16,6 +16,7 @@
 
 // %APPDATA%\CAMForAlibre\machines\. Creates the folder if needed.
 std::filesystem::path MachinesFolder();
+std::filesystem::path TemplatesFolder();
 
 // %APPDATA%\CAMForAlibre\materials.json.
 std::filesystem::path MaterialsPath();

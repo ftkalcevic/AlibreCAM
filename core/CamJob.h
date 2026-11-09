@@ -233,6 +233,16 @@ namespace camcore
     // sequence, or in the group for an operation.
     bool DuplicateStep(Job& job, size_t step, size_t operation, size_t& newIndex);
 
+    // A job as a template: the whole setup and sequence, without any operation's
+    // picked features or anything generated, and belonging to no assembly.
+    Job JobAsTemplate(const Job& job);
+
+    // Puts a template's steps, with new IDs and without its operations' features or
+    // anything generated, into a job. Replacing takes the template's setup and
+    // sequence in place of the job's; otherwise its steps go after the job's, whose
+    // setup stays. The job keeps its assembly either way.
+    void ApplyJobTemplate(Job& job, const Job& jobTemplate, bool replace);
+
     // True if two steps have the same saved settings, ignoring the toolpath and
     // boundary that Generate makes from them.
     bool SameSettings(const SequenceStep& a, const SequenceStep& b);

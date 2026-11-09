@@ -2178,6 +2178,50 @@ namespace camcore
         return true;
     }
 
+    namespace
+    {
+        void StripForTemplate(SequenceStep& step)
+        {
+            step.features.clear();
+            step.toolpath = Toolpath();
+            step.boundaries.clear();
+            for (SequenceStep& child : step.children)
+                StripForTemplate(child);
+        }
+
+        void GiveNewIds(SequenceStep& step)
+        {
+            step.id = NewStableId();
+            for (SequenceStep& child : step.children)
+                GiveNewIds(child);
+        }
+    }
+
+    Job JobAsTemplate(const Job& job)
+    {
+        Job result = job;
+        result.assembly = AssemblyIdentity();
+        for (SequenceStep& step : result.sequence)
+            StripForTemplate(step);
+        return result;
+    }
+
+    void ApplyJobTemplate(Job& job, const Job& jobTemplate, bool replace)
+    {
+        Job incoming = JobAsTemplate(jobTemplate);
+        for (SequenceStep& step : incoming.sequence)
+            GiveNewIds(step);
+
+        if (replace)
+        {
+            incoming.assembly = job.assembly;
+            job = std::move(incoming);
+            return;
+        }
+        for (SequenceStep& step : incoming.sequence)
+            job.sequence.push_back(std::move(step));
+    }
+
     IdentityMatch CompareIdentity(const AssemblyIdentity& a, const AssemblyIdentity& b)
     {
         if (a.guid.empty() || b.guid.empty())

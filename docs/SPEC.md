@@ -1,4 +1,4 @@
-> Exported from the Claude doc "Alibre CAM Add-on: Version 1 Specification" on 4 November 2026 (rev 229).
+> Exported from the Claude doc "Alibre CAM Add-on: Version 1 Specification" on 4 November 2026 (rev 231).
 > The Claude doc is the master copy: https://claude.ai/artifact/JZEKmxczFdEn2eV32A5acB
 > The two diagrams are redrawn here in Mermaid, because they don't export from the doc.
 > Update this copy after spec changes, or note here if it becomes the master.
@@ -325,7 +325,7 @@ CAM data is saved in a separate `.cam` file next to the assembly, such as `Brack
 - **Windows file association:** Other software also uses `.cam`, so version 1 doesn't register the extension. Files are opened through the add-on.
 - **Format:** Each file includes a format version number so older files can be migrated. Version 2 added `Set Origin` steps, which store their picks with persistent keys plus the options. Groups store their operations in order. The frame is recalculated on loading rather than stored. Version 3 added arcs: a toolpath move can be an arc in its origin's XY (a feed with a centre and a direction), and a facing boundary vertex can start an arc (with its centre and axis). Version 2 files load as they are.
 - **Future changes:** All saving and loading go through a single storage layer, so the data can move into the assembly later without rewriting the CAM logic.
-- **Saving:** A Save button on the CAM tab writes the file, separately from saving the assembly. It writes a temporary file first, so a failed save leaves the existing file as it was.
+- **Saving:** A Save button on the CAM tab writes the file, separately from saving the assembly. It writes a temporary file first, so a failed save leaves the existing file as it was. The CAM tab has a row of image buttons with tooltips at its top (decided): Save, Load, Save Template, Load Template, and Refresh at the right. Load opens a different .cam file, and later saves go to that file; reopening the assembly loads its own file beside it. A template (.camtemplate, in the .cam format with no assembly, kept in %APPDATA%\CAMForAlibre\templates\) holds the whole setup and sequence without operations' picked features or anything generated. Load Template prompts to replace the job's setup and steps, or to append the template's steps and keep the job's setup.
 - **Protected files:** A file from a newer build or one that can't be read isn't opened, and saving stays off so it can't be overwritten.
 - **Different assembly:** If the stored GUID doesn't match, the add-on asks before using the file. Answering No leaves the file alone and turns saving off.
 - **Unsaved changes:** Saving stays manual. Closing the tab or the assembly with unsaved changes asks whether to save them. Alibre can't cancel the close from here, so the choice is only Yes or No. If the assembly was never saved, a warning says the changes can't be kept.

@@ -57,6 +57,7 @@
   <h2>CAMForAlibre</h2>
   <a href="#top">Introduction</a>
   <a href="#cam-tab">CAM tab</a>
+  <a class="sub" href="#cam-file-buttons">Buttons</a>
   <a class="sub" href="#cam-toolbar">Toolbar</a>
   <a class="sub" href="#cam-tree">Tree</a>
   <a class="sub" href="#cam-menus">Right-click menus</a>
@@ -102,12 +103,27 @@
 <h1 id="top">CAMForAlibre Help</h1>
 <p class="muted">A CAM add-on for Alibre Design assemblies.</p>
 <p>CAMForAlibre adds a CAM tab to the Design Explorer of an assembly. In it you build a sequence of operations that machine the assembly's parts, generate a toolpath for each, see the toolpaths in the view, and post them as G-code for your machine. Toolpaths are 3+2 indexed: each Set Origin step can tilt or move the origin, and operations run under the origin above them.</p>
-<p>The job is kept in a <code>.cam</code> file beside the assembly, with the same name. It's saved only when you press Save, and you're warned about unsaved changes when the assembly closes. All lengths are in millimetres, and Z is measured along the active origin's Z axis, pointing out of the material.</p>
+<p>The job is kept in a <code>.cam</code> file beside the assembly, with the same name, unless you press Load to use a different file. It's saved only when you press Save, and you're warned about unsaved changes when the assembly closes. All lengths are in millimetres, and Z is measured along the active origin's Z axis, pointing out of the material.</p>
 <p>Press <strong>?</strong> on the CAM tab's toolbar, or at the bottom left of a dialog, to open this page at the section for it.</p>
 
 <section id="cam-tab">
 <h2>CAM tab</h2>
-<p>The CAM tab is the add-on's home. Open it from the CAM command in an assembly. It holds a toolbar, the CAM tree, a status area, and the Refresh view and Save buttons. Toolpaths and origins are drawn in the view while the tab has focus, and hidden when it doesn't.</p>
+<p>The CAM tab is the add-on's home. Open it from the CAM command in an assembly. It holds a row of buttons, a toolbar, the CAM tree and a status area. Toolpaths and origins are drawn in the view while the tab has focus, and hidden when it doesn't.</p>
+
+<h3 id="cam-file-buttons">Buttons</h3>
+<p>The top row of image buttons. Hold the mouse over one to see its name. The two with an orange T are the template buttons.</p>
+<dl>
+  <dt>Save (disk)</dt>
+  <dd>Saves the job to its <code>.cam</code> file: the one beside the assembly, or the file chosen with Load.</dd>
+  <dt>Load (open folder)</dt>
+  <dd>Opens a different <code>.cam</code> file for this assembly, warning first about unsaved changes. Save then goes to that file. The next time the assembly is opened, its own <code>.cam</code> file beside it is loaded again. A file made for a different assembly is only used if you say so.</dd>
+  <dt>Save Template (disk with a T)</dt>
+  <dd>Saves the job's whole setup (machine, material, stock, selected tool) and its steps with all their settings to a template file, without the features picked for each operation or any generated toolpath. It starts in <code>%APPDATA%\CAMForAlibre\templates\</code>, so templates are there for every job. Set Origin steps and a Part Box stock's parts stay as picked in this assembly, so check them when the template is used on another one.</dd>
+  <dt>Load Template (folder with a T)</dt>
+  <dd>Brings a template into the job. If the job already has steps, you choose: <strong>Yes</strong> replaces the job's setup and all its steps with the template; <strong>No</strong> adds the template's steps after the job's and keeps the job's setup; Cancel does nothing. Then pick each operation's features. The job isn't saved until you press Save.</dd>
+  <dt>Refresh (two green arrows)</dt>
+  <dd>Draws the toolpaths and origin again. Use it after a native Alibre command, such as Measure, has ended the CAM display.</dd>
+</dl>
 
 <h3 id="cam-toolbar">Toolbar</h3>
 <dl>
@@ -198,14 +214,10 @@
   <dd>Writes the toolpaths of a folder or every operation as a program for the machine, through the <a href="#post">Post</a> dialog. Every operation must have been generated first.</dd>
 </dl>
 
-<h3 id="cam-buttons">Status and buttons</h3>
+<h3 id="cam-buttons">Status</h3>
 <dl>
   <dt>Status</dt>
   <dd>Messages from the last action, such as Generate's results and problems.</dd>
-  <dt>Refresh view</dt>
-  <dd>Draws the toolpaths and origin again. Use it after a native Alibre command, such as Measure, has ended the CAM display.</dd>
-  <dt>Save</dt>
-  <dd>Saves the job to its <code>.cam</code> file beside the assembly.</dd>
 </dl>
 </section>
 

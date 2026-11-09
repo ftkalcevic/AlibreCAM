@@ -932,3 +932,78 @@ TEST_CASE("stable IDs are long and unique")
     CHECK(NewStableId().size() == 32);
     CHECK(NewStableId() != NewStableId());
 }
+
+TEST_CASE("a job as a template keeps the setup and leaves out features and toolpaths")
+{
+    Job job;
+    job.assembly.name = "Bracket";
+    job.assembly.guid = "guid";
+    job.machineId = "machine";
+    job.materialId = "material";
+    job.stock.kind = StockKind::Box;
+
+    SequenceStep origin;
+    origin.type = StepType::SetOrigin;
+    origin.id = "o";
+    origin.name = "Origin";
+
+    SequenceStep facing;
+    facing.type = StepType::Facing;
+    facing.id = "f";
+    facing.name = "Facing";
+    facing.toolId = "tool";
+    facing.features.emplace_back();
+    facing.toolpath.moves.emplace_back();
+    facing.boundaries.emplace_back();
+
+    SequenceStep folder;
+    folder.type = StepType::Group;
+    folder.id = "g";
+    folder.name = "Folder";
+    folder.children.push_back(facing);
+
+    job.sequence = { origin, folder };
+
+    const Job made = JobAsTemplate(job);
+    CHECK(made.assembly.name.empty());
+    CHECK(made.assembly.guid.empty());
+    CHECK(made.machineId == "machine");
+    CHECK(made.materialId == "material");
+    CHECK(made.stock.kind == StockKind::Box);
+    REQUIRE(made.sequence.size() == 2);
+    CHECK(made.sequence[0].name == "Origin");
+    REQUIRE(made.sequence[1].children.size() == 1);
+    CHECK(made.sequence[1].children[0].toolId == "tool");
+    CHECK(made.sequence[1].children[0].features.empty());
+    CHECK(made.sequence[1].children[0].toolpath.moves.empty());
+    CHECK(made.sequence[1].children[0].boundaries.empty());
+    CHECK(job.sequence[1].children[0].features.size() == 1);    // the job itself is untouched
+
+    SUBCASE("replacing takes its setup and keeps the assembly")
+    {
+        Job other;
+        other.assembly.name = "Other";
+        other.machineId = "old";
+        ApplyJobTemplate(other, job, true);
+        CHECK(other.assembly.name == "Other");
+        CHECK(other.machineId == "machine");
+        REQUIRE(other.sequence.size() == 2);
+        CHECK(other.sequence[1].id != "g");
+        CHECK(other.sequence[1].children[0].id != "f");
+        CHECK(other.sequence[1].children[0].features.empty());
+    }
+
+    SUBCASE("appending keeps the setup and adds the steps after")
+    {
+        Job other;
+        other.machineId = "old";
+        other.sequence = { origin };
+        ApplyJobTemplate(other, job, false);
+        CHECK(other.machineId == "old");
+        CHECK(other.stock.kind == StockKind::None);
+        REQUIRE(other.sequence.size() == 3);
+        CHECK(other.sequence[0].id == "o");
+        CHECK(other.sequence[1].id != "o");     // its own copy of the origin
+        CHECK(other.sequence[2].children[0].features.empty());
+    }
+}

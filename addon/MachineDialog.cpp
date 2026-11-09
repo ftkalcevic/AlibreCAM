@@ -95,6 +95,14 @@ fs::path MachinesFolder()
     return folder;
 }
 
+fs::path TemplatesFolder()
+{
+    const fs::path folder = AppDataFolder() / L"templates";
+    std::error_code ignored;
+    fs::create_directories(folder, ignored);
+    return folder;
+}
+
 fs::path MaterialsPath()
 {
     return AppDataFolder() / L"materials.json";

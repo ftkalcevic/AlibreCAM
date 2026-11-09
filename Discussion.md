@@ -9629,6 +9629,110 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Tests pass
 
+### 🤖 Claude
+
+> Great, the tool drawing is marked as tested in `CLAUDE.md`. Both it and the reduced neck work are still uncommitted, ready for you to commit.
+
+## 2026-11-09
+
+### 🧑 Frank · 16:37
+
+> Move the "Refresh view" and "Save" buttons from the bottom of the CAM tab to a new row of buttons above the current row.
+> The new row of buttons should have "Save", "Load", "Save Template", "Load Template", and "Refresh" on the right.
+
+### 🤖 Claude
+
+> Questions:
+> - On the CAM tab's new button row, what should Load do? (Today the job loads by itself from the .cam file beside the assembly, and there is no Load button.)
+>   - Choose a .cam file (Recommended): Opens a file dialog, starting at the assembly's folder. Warns first if there are unsaved changes. A .cam made for a different assembly gets the existing different-assembly prompt.
+>   - Reload this job's file: No file dialog: discards unsaved changes, after a warning, and reads the .cam beside the assembly again.
+> - What should a CAM template (Save Template / Load Template) hold?
+>   - Sequence, no geometry (Recommended): Folders, operations and their settings and tools, plus Set Origin steps with their offsets. Picked features, origin picks and toolpaths are left out, so you pick those again on the new assembly.
+>   - Operations only: Folders and operations with their settings and tools. Set Origin steps are left out too.
+>   - Whole setup too: As the first option, plus the job's machine, material and stock settings.
+> - What should Load Template do when the job already has operations?
+>   - Add to the end (Recommended): The template's steps go after the current Operations, and nothing existing is lost.
+>   - Replace the sequence: After a warning, the current Operations and their toolpaths are removed and the template's steps take their place.
+> - Where should template files be kept?
+>   - Shared templates folder (Recommended): File dialogs start in %APPDATA%\CAMForAlibre\templates\, so templates are available to every job, and you can still browse elsewhere.
+>   - Beside the assembly: File dialogs start in the assembly's folder.
+
+### 🧑 Frank · 16:41
+
+> Answers:
+> - On the CAM tab's new button row, what should Load do? (Today the job loads by itself from the .cam file beside the assembly, and there is no Load button.)
+>   **Loads a different .cam file.  Subsequent saves, saves to this new file.  This allows us to have different cam file to the default.**
+> - What should a CAM template (Save Template / Load Template) hold?
+>   **The whole setup, excluding selected features from operations and the generated toolpath.**
+> - What should Load Template do when the job already has operations?
+>   **Prompt, to either replace, or append.**
+> - Where should template files be kept?
+>   **Shared templates folder (Recommended)**
+
+### 🤖 Claude
+
+> The button row and templates are written. One of my new tests used a wrong field name, so I'm fixing that, then rebuilding and installing.
+
+> The new button row is built and installed: Save, Load, Save Template and Load Template on the left, Refresh on the right, above the toolbar. The old buttons at the bottom are gone. `CamCoreTests` passes in Debug and Release, but none of this has been tried in Alibre, and nothing is committed.
+>
+> **How the buttons work**
+> - **Load:** picks a different `.cam` file, and later saves go to that file. It warns first if there are unsaved changes, and a file that can't be opened changes nothing.
+> - **Reopening the assembly:** this goes back to its own `.cam` file beside it. The chosen file isn't remembered.
+> - **Save Template:** saves the whole setup and all the steps, without each operation's picked features or any toolpaths. Files are `.camtemplate`, and the dialog starts in `%APPDATA%\CAMForAlibre\templates\`.
+> - **Load Template:** if the job has steps it asks: Yes replaces, No appends, Cancel does nothing. The job then counts as unsaved.
+>
+> **Choices I made that you can change**
+> - Appending adds only the steps and keeps the job's own machine, material and stock. If the template came from another machine, the status line tells you to check its tools.
+> - An empty job takes the template without asking.
+> - The buttons are as wide as their text and all narrow together if the tab is too narrow, so on a very narrow tab the labels may clip.
+>
+> **One thing to watch:** you asked to exclude only the operations' features, so Set Origin picks and a Part Box stock's chosen parts stay in the template. On a different assembly those picks point at the original model. They may fail, and could in principle land on the wrong geometry, so check them. If you'd rather have them cleared, it's a small change.
+>
+> **To test**
+> 1. Check the row's layout at normal width and with the tab narrowed, and that the tree and status now reach the bottom.
+> 2. Load a different `.cam`, change something and Save. That file should change and the default one shouldn't.
+> 3. Close and reopen the assembly. The default `.cam` should load.
+> 4. Try Load with unsaved changes, and with a file made for another assembly.
+> 5. Save a template, then Load Template with Yes, then with No, then with Cancel. Check the operations come in with empty feature lists and no toolpaths.
+> 6. Load a template in a job with no steps, and on a different assembly. Check how Set Origin behaves.
+> 7. Help has changed: there's a new Buttons section on the CAM tab. Check it reads correctly.
+
+### 🧑 Frank · 17:01
+
+> Test passed.  Can you change the buttons to bitmap buttons and create suitable bitmaps.
+
+### 🤖 Claude
+
+> The five icons are drawn and look right at all three sizes. One leftover reference to the old Save button broke the build, so I'm fixing that.
+
+> The top row is now image buttons, built in Debug and Release with `CamCoreTests` passing, but it **isn't installed** because the administrator prompt was cancelled. I've checked the icons as images at all three sizes, but they haven't been seen in Alibre. I've marked the row itself as tested in `CLAUDE.md`, and nothing is committed.
+>
+> **The buttons**
+> - **Save:** a blue floppy disk.
+> - **Load:** an open yellow folder.
+> - **Save Template and Load Template:** the same two with an orange "T" badge in the corner.
+> - **Refresh:** two green circling arrows, at the right.
+>
+> They're built the same way as the toolbar below them, so they follow the Small, Medium and Large view size and show their names as tooltips. The narrow-tab clipping I mentioned before no longer applies, as the row is only icons. Save still greys out when saving is blocked. The Buttons section of the help and the spec (both copies, rev 231) are updated.
+>
+> **To test, once it's installed**
+> 1. Check the five icons look right and the row sits above the view toggles.
+> 2. Hover over each for its tooltip, then click each to check it still does its job.
+> 3. Change the CAM View Size in Settings through Small, Medium and Large. The icons should resize and nothing should overlap.
+> 4. Open the help's Buttons section and check it reads correctly.
+
+### 🧑 Frank · 17:19
+
+> Install it
+
+### 🤖 Claude
+
+> It's installed, and the installed add-on and help both match this build. Start Alibre and go through the four tests from my last message.
+
+### 🧑 Frank · 17:20
+
+> test passed
+
 ---
 
 # Side conversation
