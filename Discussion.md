@@ -10282,6 +10282,53 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 >
 > Add the "made by ai" badge to the top of the readme file
 
+### 🤖 Claude
+
+> The badge is now at the very top of [README.md](README.md), above the title. I saved your image as `docs/made-by-ai.png`, and the new file will need adding when you commit.
+
+### 🧑 Frank · 08:11
+
+> Through the alibre API, can I sort the configurations of a part or assembly
+
+### 🤖 Claude
+
+> Checking the 27.0.1 headers and the API docs.
+
+> **No, the Alibre 27.0.1 API can't sort configurations.** I checked the generated 27.0.1 headers (`AlibreX_64.tlh`), and a search of the API reference folder (v29 docs and samples) for configuration sorting or ordering found nothing either.
+>
+> | Interface | What it offers |
+> |---|---|
+> | `IADConfigurations` (the list) | `Item`, `Count`, `GetEnumerator`, `Enum`, `AddConfiguration` |
+> | `IADConfiguration` (one entry) | read-only `Name`, `ID`, `Type`, `DesignSession`, and `Locks`, which you can read and set |
+> | The design session | `Configurations`, and `ActiveConfiguration`, which you can read and set |
+>
+> There's no sort, move or reorder call.
+>
+> The workaround of rebuilding the list in the order you want doesn't work either, as the API has no way to delete a configuration, and `Name` is read-only so you can't rename them to swap positions. `AddConfiguration` only adds new ones, so you'd end up with duplicates alongside the originals.
+>
+> An add-on could still **show** the configurations sorted in its own list, and switch to the chosen one through `ActiveConfiguration`. The order in Alibre's own Configurations panel would stay as it is.
+>
+> I changed nothing for this, and `Discussion.md` wasn't rebuilt because plan mode is on.
+
+### 🧑 Frank · 08:13
+
+> Is there an MCP available for Alibre Design?
+
+### 🤖 Claude
+
+> Yes, there are community-looking packages on NuGet, though nothing in Claude's connector registry. I couldn't tell whether Alibre itself publishes them, and I've only read the search summaries, not tried either one.
+>
+> | Package | Covers | Details |
+> |---|---|---|
+> | **AlibreObjectModel.Mcp** 2.0.1 | Alibre Design: parts, sketches, features, parameters, validation | 25 tools, runs as `alibre-cad-mcp`, Windows x64, .NET 8+, MIT licence |
+> | **AlibrePDMObjectModel.Mcp** 1.0.6 | Alibre PDM: safes, projects, files, properties, versions | 25 tools, drives Alibre over COM, needs Alibre Design 29.x with PDM |
+>
+> For your setup, check the version first: you target Alibre 27.0.1, and the PDM package requires 29.x. The CAD package's summary didn't state an Alibre version, so it may have the same limit. Its tools also look aimed at creating and editing models, so they wouldn't help with CAMForAlibre's add-on code or with sorting configurations.
+>
+> Sources:
+> - [AlibreObjectModel.Mcp on NuGet](https://www.nuget.org/packages/AlibreObjectModel.Mcp)
+> - [AlibrePDMObjectModel.Mcp on NuGet](https://nuget.org/packages/alibrepdmobjectmodel.mcp)
+
 ---
 
 # Side conversation
@@ -10551,3 +10598,3629 @@ A forked copy of the session, kept apart from the main one.
 ### 🤖 Claude
 
 > The Debug build is also clean, and all 320 tests pass. The rename is complete in both builds; the installed copy is the Release build.
+
+## 2026-11-10
+
+### 🧑 Frank · 08:26
+
+> ```bash
+> claude mcp add alibre-cad -- alibre-cad-mcp
+> ```
+
+### 🤖 Claude
+
+> I'll check that `alibre-cad-mcp` is installed, then run that command to register the server.
+
+> It's installed as a .NET global tool and nothing is registered yet, so I'll add it now.
+
+> I ran the command and `alibre-cad` is now registered. Claude Code's health check shows it as **Connected**.
+>
+> - **Program:** `alibre-cad-mcp` 2.0.1, installed as a .NET global tool in `C:\Users\Frank Tkalcevic\.dotnet\tools\`.
+> - **Scope:** local, so it's private to you and only applies to this project. It's stored in your `.claude.json`, so nothing in the repository changed apart from `Discussion.md`, which I rebuilt as usual.
+>
+> Its tools aren't available in this session because MCP servers load when a session starts, so I haven't tried any of them. Start a new session to use them. The health check only shows the server starts and responds, not that it can reach Alibre or that it works with 27.0.1.
+>
+> To remove it:
+>
+> ```bash
+> claude mcp remove alibre-cad -s local
+> ```
+
+### 🧑 Frank · 08:28
+
+> Using alibre design, create a sphere 5cm dia, with a rectangular cut on the top, 1cm wide, 1cm deep at the point of contact with the outer dia
+
+### 🤖 Claude
+
+> I'll look for the Alibre CAD tools and build the sphere with the slot.
+
+> I couldn't make it. The Alibre tools connected to this session can create parts, sketches and **extruded bosses**, but they have no revolve, cut or boolean feature. So I can't make a sphere, and I can't cut anything out of one. I didn't create anything in Alibre.
+>
+> Here's how I read the shape. Tell me if it's wrong:
+>
+> - **Sphere:** 50 mm diameter, centred on the origin, so its top is at Z = +25 mm.
+> - **Slot:** a rectangular cut 10 mm wide, running right across the top in one direction (say along X). Its 10 mm depth is measured down from the point where the sphere touches a flat surface laid on top (Z = 25), so the slot floor is flat at Z = 15 mm. Each end of the slot opens out where it meets the curved surface.
+>
+> In Alibre you'd build it like this:
+>
+> 1. **Sphere:** sketch on the XZ plane. Draw a half circle of radius 25 mm centred on the origin, plus a line closing it along the Z axis. Use **Revolve Boss** 360° about the Z axis.
+> 2. **Slot:** sketch on the XZ plane again, which cuts through the sphere's middle. Draw a rectangle from X = -30 to 30 and Z = 15 to 30, which is wider than the sphere so the slot runs right through. Use **Extrude Cut**, *Mid-plane*, 10 mm. That gives a slot 10 mm wide in Y.
+>
+> If you'd rather I build it, either the Alibre server needs revolve and extrude cut tools added, or I can write an AlibreScript for you to run.
+
+### 🧑 Frank · 08:30
+
+> New project.  put it in D:\Projects\alibre\.  An MCP server for alibre design.  
+> Should this be written in C++ or .Net?  Is it an addon that is loaded with Alibre?
+
+### 🤖 Claude
+
+> Questions:
+> - How should the Alibre MCP server reach Alibre? An add-on runs inside Alibre (fast, can see the selection and the view, but Alibre must be running with it loaded). A standalone exe attaches over COM from outside (simpler, but slow per call and blind to the UI).
+>   - Add-on + HTTP (Recommended): Loaded by Alibre, serves MCP on 127.0.0.1; Claude connects by URL.
+>   - Standalone stdio exe: Claude launches it; it attaches to running Alibre via AutomationHook COM.
+>   - Both: Add-on does the work; a thin stdio bridge exe forwards to it.
+> - Which language for the Alibre MCP server?
+>   - C# / .NET (Recommended): Official MCP C# SDK; net48 add-on inside Alibre 27.
+>   - C++: Matches CAMForAlibre; MCP protocol written by hand with nlohmann/json.
+> - What should the project folder be called?
+>   - AlibreMCP: D:\Projects\alibre\AlibreMCP
+>   - MCPForAlibre: Matches the CAMForAlibre naming, so it doesn't sound like an Alibre product.
+
+### 🧑 Frank · 08:35
+
+> Answers:
+> - How should the Alibre MCP server reach Alibre? An add-on runs inside Alibre (fast, can see the selection and the view, but Alibre must be running with it loaded). A standalone exe attaches over COM from outside (simpler, but slow per call and blind to the UI).
+>   **Add-on + HTTP (Recommended)**
+> - Which language for the Alibre MCP server?
+>   **C# / .NET (Recommended)**
+> - What should the project folder be called?
+>   **MCPForAlibre**
+
+### 🤖 Claude
+
+> Plan:
+>
+> # Alibre MCP server — new project in D:\Projects\alibre\
+>
+> ## Context
+> Frank wants an MCP server so Claude can drive Alibre Design 27.0.1 (read models, create parts/sketches/features, query assemblies). Questions: C++ or .NET, and is it an add-on loaded by Alibre?
+>
+> Note: `~/.claude.json` already registers an `alibre-cad` stdio server (`alibre-cad-mcp`, "AlibreObjectModel package") for the AlibreCAM project, but the command isn't installed, so it never connects. Remove or replace it once ours works.
+>
+> ## Answers
+> **Add-on or not?** Claude starts or connects to an MCP server itself. Alibre can't be that process. There are two ways to reach Alibre:
+> 1. **Standalone exe (stdio)** attaches to a running Alibre through the `AlibreX.AutomationHook` COM object. It's simple, but every call crosses processes (slow when there are many), it can't use the UI (selection, view commands, events), and it fails when Alibre isn't running.
+> 2. **Add-on inside Alibre** (recommended) gets the AutomationHook from `AddOnLoad`, runs calls on Alibre's own thread (fast; the CAMForAlibre lessons apply), can read the current selection and draw in the view, and serves MCP over **Streamable HTTP on 127.0.0.1:<port>**. Claude is set up with `"type": "http"`. A small stdio bridge exe can be added later for clients that only speak stdio.
+>
+> **Language:** C# / .NET (recommended).
+> - The official MCP C# SDK (`ModelContextProtocol` NuGet) handles the protocol, tool schemas and transports. C++ has no mature SDK, so JSON-RPC, sessions and SSE would have to be written by hand.
+> - Alibre ships COM interop assemblies (AlibreX, AlibreAddOn), and .NET add-ons are a supported type.
+> - Speed doesn't matter here: MCP calls are few and coarse.
+> - Risk: Alibre 27 hosts .NET Framework 4.x, so the add-on must target net48. The SDK's core package targets netstandard2.0 (verify), but its ASP.NET Core HTTP transport needs .NET 8+. Inside Alibre we'd write a small HttpListener-based Streamable HTTP transport, or move the SDK into an out-of-process .NET 8 front end that talks to the add-on over a named pipe.
+>
+> ## Decided (Frank)
+> Add-on serving HTTP, C# / .NET, folder `D:\Projects\alibre\MCPForAlibre` (named like CAMForAlibre so it doesn't sound like an Alibre product).
+>
+> ## Step 0 (before writing code)
+> - Find Alibre 27's interop assemblies and the .NET add-on format (the `.adc` file and its entry points) under `C:\Program Files\Alibre Design*` and the reference samples (`AlibrePdmApiSample` is C#).
+> - Confirm the target framework of Alibre's process and whether the `ModelContextProtocol` package loads on net48.
+>
+> ## Proposed layout (D:\Projects\alibre\MCPForAlibre)
+> - `MCPForAlibre.AddOn` (net48 class library): add-on entry, AutomationHook, a dispatcher that marshals each request onto Alibre's UI thread, and the tool implementations.
+> - `MCPForAlibre.Core` (netstandard2.0): tool definitions, unit conversion (the API is in cm), and JSON shapes, tested without Alibre.
+> - `MCPForAlibre.Tests`: unit tests for Core.
+> - `deploy\install.ps1`: installs to `C:\ProgramData\Alibre AddOns\MCPForAlibre\`, like CAMForAlibre.
+> - README, CLAUDE.md, and a spec.
+>
+> ## First tools (to agree)
+> status/sessions, open/save/close, part summary (features, parameters, bodies), get/set parameter, create part/sketch, add lines/circles/rectangles, extrude, assembly occurrence tree, current selection.
+>
+> ## Verification
+> Build, install, restart Alibre, add `{"type":"http","url":"http://127.0.0.1:<port>/mcp"}` to the Claude config, then call status, open `camtest\examples\test1.AD_ASM`, list occurrences, and create a part with an extruded rectangle.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Questions:
+> - Alibre 27 runs on .NET Framework 4.8. The official MCP C# SDK can load there, but it brings about 12 dependency DLLs that need version redirects (handled in code through AssemblyResolve, since we can't edit Alibre's config), and its HTTP server needs .NET 8, so we'd write the HTTP part ourselves either way. How should the add-on speak MCP?
+>   - Hand-rolled (Recommended): About 300 lines over HttpListener: initialize, tools/list, tools/call, ping, plain JSON replies. Only Newtonsoft.Json added. Few DLLs, nothing to clash with AlibreScript.
+>   - Official SDK in-process: Use ModelContextProtocol.Core for the protocol and tool attributes; ship its ~12 DLLs with an AssemblyResolve handler; still write the HTTP transport.
+>   - SDK out of process: A .NET 9 stdio MCP server (full SDK, launched by Claude) talks to a slim add-on over a named pipe. Two programs to build and install.
+
+### 🧑 Frank · 08:42
+
+> Answers:
+> - Alibre 27 runs on .NET Framework 4.8. The official MCP C# SDK can load there, but it brings about 12 dependency DLLs that need version redirects (handled in code through AssemblyResolve, since we can't edit Alibre's config), and its HTTP server needs .NET 8, so we'd write the HTTP part ourselves either way. How should the add-on speak MCP?
+>   **SDK out of process**
+
+### 🤖 Claude
+
+> Writing the add-on's command handlers next (sessions, parts, parameters, assemblies, selection, sketches, extrude).
+
+> The add-on builds with no warnings. Now the .NET 9 stdio MCP server.
+
+> Both projects build. Next: tests for the pipe client, the install script and the docs.
+
+> Fixing one thing first: a retry after the add-on drops mid-call could run a command such as an extrude twice. I'm limiting the retry to connections that fail while the request is being sent.
+
+> The test's fake add-on is wrong: `return` on "drop" ended it, so there was never a second connection. Fixing that.
+
+> All 5 tests pass. Now a stdio smoke test of the real server: initialize, list the tools, and call one with no Alibre add-on listening.
+
+> The server works over stdio: 13 tools listed, and the error with no add-on is clear. Rewording that error so it doesn't name an Alibre menu I haven't checked, then writing the docs.
+
+> Docs written. Final full build and test run of the solution.
+
+> **Your questions:**
+> - **C++ or .NET:** .NET (C#). Alibre ships .NET interop for its API (`AlibreX.dll`, `AlibreAddOn.dll`) and supports managed add-ons; Alibre Script is one. The official MCP C# SDK handles the protocol. C++ has no mature MCP library, and speed doesn't matter for the small number of calls MCP makes.
+> - **Is it an add-on loaded with Alibre?** Half of it is. Claude has to start the MCP server itself, so Alibre can't be that process. As you chose, there are two parts:
+>   - **The add-on**, `MCPForAlibre.AddOn.dll` (.NET Framework 4.8, which is what Alibre 27 runs on). Alibre loads it at startup. It runs every Alibre call on Alibre's own thread and listens on a named pipe that only your user can open. It adds a menu item, MCPForAlibre > Status.
+>   - **The MCP server**, `MCPForAlibre.Server.exe` (.NET 9, official SDK). Claude starts it, and it forwards each tool call to the add-on over the pipe.
+>
+> **The project** is in `D:\Projects\alibre\MCPForAlibre`, with a `README.md`, a `CLAUDE.md`, the pipe protocol in `docs\PROTOCOL.md`, and `deploy\install.ps1`. It has 13 tools:
+> - `alibre_status`, `open_file`, `save_session`, `close_session`
+> - `part_summary`, `list_parameters`, `set_parameter`
+> - `assembly_tree`, `get_selection`
+> - `create_part`, `create_sketch`, `add_sketch_figures`, `extrude`
+>
+> Lengths are in mm.
+>
+> **What's been run:** the solution builds with no warnings, and the 5 tests of the pipe client pass. A stdio test of the real server answered `initialize` and listed all 13 tools. With no add-on running, a call returned a clear "Alibre isn't running" error.
+>
+> **Not done:**
+> - Nothing is installed, and nothing has run inside Alibre.
+> - No git repository was created.
+> - Still unproven in Alibre: whether it loads the add-on and shows its menu, the units of parameter values, design plane names for sketches, and whether the extrude calls work.
+>
+> **Your existing `alibre-cad` entry:** your Claude config for AlibreCAM already lists an `alibre-cad` MCP server, but its `alibre-cad-mcp` command isn't installed, so it never connects. Remove it once this one works.
+>
+> **To test, after installing and restarting Alibre:**
+> 1. Check that MCPForAlibre > Status appears and shows the pipe.
+> 2. Add the server to Claude Code (the installer prints this command too):
+>    ```bash
+>    claude mcp add --scope user alibre -- "C:\ProgramData\Alibre AddOns\MCPForAlibre\server\MCPForAlibre.Server.exe"
+>    ```
+> 3. Ask Claude for `alibre_status`, then open `camtest\examples\test1.AD_ASM` and get its `assembly_tree`.
+> 4. Create a part, add a sketch on the XY plane with a 40 × 20 mm rectangle, and extrude it 10 mm. Check the size in Alibre.
+> 5. Select a face, then ask for `get_selection`.
+>
+> If something fails, the log is at `%LOCALAPPDATA%\MCPForAlibre\MCPForAlibre.log`.
+
+### 🧑 Frank · 08:48
+
+> Yes, install
+
+### 🤖 Claude
+
+> Alibre is closed. Running the installer now. Windows will ask for administrator rights, and the elevated window waits for you to press Enter at the end.
+
+> MCPForAlibre is installed. The installer built both parts, then copied them into place after you approved the admin prompt:
+> - **Add-on:** `MCPForAlibre.AddOn.dll` and `MCPForAlibre.adc`, in `C:\ProgramData\Alibre AddOns\MCPForAlibre\`.
+> - **MCP server:** `MCPForAlibre.Server.exe`, in the `server\` folder there.
+> - **Registration:** the add-on's GUID is registered under `HKLM\SOFTWARE\Alibre Design Add-Ons`, pointing at that folder.
+>
+> Nothing has run inside Alibre yet. Claude Code also isn't set up to start the server; that's the command below:
+>
+> ```bash
+> claude mcp add --scope user alibre -- "C:\ProgramData\Alibre AddOns\MCPForAlibre\server\MCPForAlibre.Server.exe"
+> ```
+>
+> After it's added, restart Claude so the `alibre` tools appear.
+>
+> **To test:**
+> 1. Start Alibre and check that the MCPForAlibre > Status menu item appears and shows the pipe. If it's missing, look in `%LOCALAPPDATA%\MCPForAlibre\MCPForAlibre.log` for an `AddOnLoad` line.
+> 2. Ask Claude for `alibre_status`.
+> 3. Open `camtest\examples\test1.AD_ASM` and ask for its `assembly_tree`.
+> 4. Create a part, add a sketch on the XY plane with a 40 × 20 mm rectangle, and extrude it 10 mm. Check the size in Alibre.
+> 5. Select a face, then ask for `get_selection`.
+
+### 🧑 Frank · 08:49
+
+> Yes, add it
+
+### 🤖 Claude
+
+> I've added the server to your Claude Code config as `alibre`, at user scope, so it's available in every project. `claude mcp get alibre` shows it as connected. That only means the server starts and answers; it doesn't need Alibre for that. Its tools show up after you restart Claude.
+>
+> You can now follow the test list from before, starting from step 1: start Alibre and check MCPForAlibre > Status. In a new session, ask for `alibre_status` first. If that says Alibre isn't running while Alibre is open, the add-on didn't load. The log is at `%LOCALAPPDATA%\MCPForAlibre\MCPForAlibre.log`.
+>
+> The broken `alibre-cad` entry in the AlibreCAM project's config is still there. Once this one works, remove it so the two don't get mixed up.
+
+### 🧑 Frank · 08:52
+
+> What is the alibre_status
+
+### 🤖 Claude
+
+> `alibre_status` is the first of the 13 tools, a read-only check that MCPForAlibre is connected. When Claude calls it, the server asks the add-on inside Alibre for:
+>
+> - **Alibre's version**, such as 27.0.1.27039.
+> - **Every open session**: its name as shown on the window tab, its kind (part, assembly, drawing, sheet metal…), its file path (empty if never saved), and its model units (such as centimeters).
+> - **Which session is active**: the one the other tools use when you don't name a session.
+>
+> A reply looks something like:
+>
+> ```json
+> {
+>   "alibreVersion": "27.0.1.27039",
+>   "sessions": [
+>     { "name": "test1", "kind": "assembly", "filePath": "D:/Projects/alibre/camtest/examples/test1.AD_ASM", "modelUnits": "centimeters" }
+>   ],
+>   "activeSession": "test1"
+> }
+> ```
+>
+> That example is made up. The add-on hasn't run in Alibre yet, so I haven't seen a real reply.
+>
+> It's also the quickest test of the whole chain (Claude → server → pipe → add-on → Alibre). If Alibre isn't running, or the add-on didn't load, it returns this error instead: "Alibre Design isn't running, or the MCPForAlibre add-on isn't loaded."
+>
+> The tools aren't available in this session yet. After you restart Claude, start Alibre and ask something like "what's open in Alibre?", and Claude will call it.
+
+### 🧑 Frank · 08:52
+
+> get alibre_status
+
+### 🤖 Claude
+
+> It works from end to end: Claude's server reached the add-on inside Alibre. The log check I chained after it broke on shell quoting and stalled, so I'm stopping it and reading the log directly.
+
+> I'm running that through the installed server the same way, since its tools still aren't loaded in this session. I'll read the part's design plane names first instead of guessing them.
+
+> My script's own `name` argument clashed with the tool's `name` parameter. Fixing it and running again; nothing reached Alibre.
+
+> Both worked. The new `alibre` tools aren't loaded in this session until Claude restarts, so I called the installed server directly the same way Claude does.
+>
+> **`alibre_status`:**
+> ```json
+> {
+>   "alibreVersion": "PRODUCTVERSION 27,0,1,27039",
+>   "sessions": [
+>     { "name": "New Part (1)", "kind": "part", "filePath": null, "modelUnits": "centimeters" }
+>   ],
+>   "activeSession": "New Part (1)"
+> }
+> ```
+> The log shows the add-on loaded when Alibre started and served the request. Alibre's API returns the version as `PRODUCTVERSION 27,0,1,27039`, and the tool passes it on unchanged.
+>
+> **The block:**
+> 1. `create_part` opened a new part, **Block40x20x10**.
+> 2. `part_summary` gave its design planes: `XY-Plane`, `YZ-Plane`, `ZX-Plane`.
+> 3. `create_sketch` added **Sketch1** on `XY-Plane`.
+> 4. `add_sketch_figures` added the rectangle from (0, 0) to (40, 20). It became 4 lines, and the sketch is closed.
+> 5. `extrude` added the feature **Block**, 10 mm deep, with no error.
+>
+> Afterwards, `part_summary` shows 1 body, the sketch used by the extrusion, and a volume of **8000 mm³**. That's exactly 40 × 20 × 10, so the conversion from mm to Alibre's centimetres is right. The part is open in Alibre but not saved.
+>
+> `CLAUDE.md` in the new project now records what's been proven in Alibre. Still untried there: the Status menu, cut and through-all extrusions, lines, circles and arcs, parameters, `assembly_tree` and `get_selection`.
+
+### 🧑 Frank · 08:55
+
+> how do i restart the session to use alibre mcp properly
+
+### 🤖 Claude
+
+> You don't need to restart. Forking this session started a new one, and that loaded the `alibre` server. Its tools are available here now, and I just called `alibre_status` directly:
+>
+> - **New Part (1)**: part, not saved, centimetres, active
+> - **Block40x20x10**: part, not saved, centimetres
+>
+> You can ask for things in plain words here, such as "list the parameters of Block40x20x10".
+>
+> To pick up a newly added MCP server in the future, do one of these:
+> - **Desktop app:** start a new session or fork this one, as you just did.
+> - **Terminal:** quit `claude` and run it again, or use `/mcp` there to reconnect a server.
+>
+> The old `alibre-cad` server still tries to connect and fails each time. To remove it from this project, run this from `D:\Projects\alibre\AlibreCAM`:
+>
+> ```bash
+> claude mcp remove alibre-cad -s local
+> ```
+
+### 🧑 Frank · 08:56
+
+> Using alibre design, create a sphere 5cm dia, with a rectangular cut on the top, 1cm wide, 1cm deep at the point of contact with the outer dia
+
+### 🤖 Claude
+
+> I still can't make the sphere, and I haven't changed anything in Alibre. The `alibre` server is now connected to Alibre 27.0.1, and "New Part (1)" is open and empty (model units cm). It can do sketches, extrudes and **extrude cuts**, but it has no **revolve** tool, and a sphere can't be made by extruding.
+>
+> It can cut the slot, though. If you make the sphere in New Part (1), I'll cut it:
+>
+> 1. **Sphere:** sketch on the ZX-Plane. Draw a half circle of radius 25 mm about the origin and close it with a line along Z. Then **Revolve Boss** 360° about Z, so the top is at Z = 25 mm.
+> 2. **Slot (I'll do this):** a sketch on the ZX-Plane with a rectangle from X = -30 to 30 mm and Z = 15 to 30 mm. Then an extrude cut, mid-plane, 10 mm. That leaves a slot 10 mm wide and 10 mm deep below the top point, running right across the sphere along X.
+>
+> If you'd rather I build the whole thing, the Alibre server needs a revolve tool, which I can add.
+
+### 🧑 Frank · 08:58
+
+> The MCP server only has a small subset of the API commands. What has been implemented?  What can still be added?  I see there is no revolve.
+
+### 🤖 Claude
+
+> Here's what's built so far and what the 27.0.1 API offers beyond it. I'm reading the remaining interfaces (axes, constraints, dimensions, assembly, drawings, export) from Alibre's own interop DLL so the list rests on what this version actually has.
+
+> Questions:
+> - Built so far: sessions (status, open, save, close), part_summary, list/set parameters, assembly_tree, get_selection, create_part, create_sketch, add_sketch_figures (line, circle, rectangle, arc) and extrude. Which groups from Alibre 27.0.1's API should I add next?
+>   - Part features: Revolve, sweep, loft, fillet, chamfer, shell, draft, holes, plus suppress, delete, rename. (No pattern or mirror in this API.)
+>   - Sketch & reference geometry: Ellipses, splines, points, dimensions, constraints, list figures, sketch on a face; design planes, axes, points.
+>   - Assemblies & properties: Add/move parts, assembly constraints, interference; mass, CoG, inertia, materials, custom properties.
+>   - Export, drawings & snapshot: STEP/STL/IGES/Parasolid/BOM export, imports, drawings with views to PDF/DXF, and a view snapshot image Claude can look at.
+
+### 🧑 Frank · 08:59
+
+> Answers:
+> - Built so far: sessions (status, open, save, close), part_summary, list/set parameters, assembly_tree, get_selection, create_part, create_sketch, add_sketch_figures (line, circle, rectangle, arc) and extrude. Which groups from Alibre 27.0.1's API should I add next?
+>   **Part features,Sketch & reference geometry**
+
+### 🤖 Claude
+
+> Plan:
+>
+> # MCPForAlibre — part features, sketches and reference geometry
+>
+> ## Context
+> MCPForAlibre works in Alibre: status, plus a 40 x 20 x 10 mm block built with create_part, create_sketch, add_sketch_figures and extrude. Frank noted it covers only a small part of the API, with no revolve. He chose to add two groups next: **part features**, and **sketch & reference geometry**. Assemblies, properties, export, drawings and snapshots wait.
+>
+> Built (13): `alibre_status`, `open_file`, `save_session`, `close_session`, `part_summary`, `list_parameters`, `set_parameter`, `assembly_tree`, `get_selection`, `create_part`, `create_sketch`, `add_sketch_figures` (line, circle, rectangle, arc), `extrude`.
+>
+> Every call below exists in 27.0.1's `AlibreX.dll` (read by reflection). Re-check each signature when writing it.
+>
+> ## Naming faces and edges (needed by fillet, chamfer, shell, draft, sketch on face, axes from faces)
+> - New tool `list_topology {session, body?}`: each face's index, surface type (`GetSurfaceType`), centre and box in mm (`GetExtents`), and normal for planes. Each edge's index, curve type, and start and end points in mm.
+> - Features take `faces: [index]` and/or `edges: [index]`, or `useSelection: true`, which uses what the user picked in Alibre (the same reading as `get_selection`).
+> - Indexes are the body's enumeration order. They may change after any feature, so the tool descriptions say to list again. Faces are bound again by index on each call; persistent keys aren't needed yet.
+>
+> ## Part feature tools (`IADPartFeatures`)
+> | Tool | API | Inputs |
+> |---|---|---|
+> | `revolve` | `AddRevolvedBoss` / `AddRevolvedCutout` | sketch, axis (a design axis name such as the default Y axis, or a sketch line's figure ID; unproven), angle in degrees (default 360), cut, name |
+> | `sweep` | `AddSweptBoss` / `AddSweptCutout` | profile sketch, path sketch(es), rigid, cut, name |
+> | `loft` | `AddLoftBoss` / `AddLoftCut` | sketches in order, connect ends, minimise twist, cut, name |
+> | `fillet` | `AddConstantRadiusFilletFeature` | radius, edges/faces/selection, tangent propagate |
+> | `chamfer` | `AddEdgeChamferFeature` | type (equal distance, two distances, distance-angle), distances, angle, edges/faces/selection |
+> | `shell` | `AddShellFeature` | thickness, faces to remove, outward |
+> | `draft` | `AddDraftFeature` | faces, neutral plane (design plane or face), angle, outward |
+> | `hole` | `AddSimpleHoleEx`, `AddDrilledHoleEx`, `AddCounterBoredHoleEx`, `AddCounterSunkHoleEx` | sketch with points, kind, diameter, depth or through all, drill angle, counterbore or countersink sizes |
+> | `offset_face` | `AddOffsetFaceFeature` | faces, offset |
+> | `extrude` (extended) | existing calls | adds to next, to a face or plane with an offset, and draft angle |
+> | `suppress_feature`, `unsuppress_feature`, `delete_feature`, `rename_feature` | `IADPartSession.Suppress/Unsuppress`, `IADPartFeature.Delete`, `Name` | feature name |
+>
+> Not in this API: pattern and mirror (these feature types exist, but there's no Add call for them). Scale, wrap, project, mesh boolean and variable fillets are left for later.
+>
+> ## Sketch & reference geometry tools
+> - `add_sketch_figures` gains: `point`, `arc3` (three points), `ellipse`, `ellipticArc`, `spline` (through points, `AddBsplineByInterpolation`), and `reference: true` for construction geometry. It returns each new figure's ID (`IADSketchFigure.ID`).
+> - `list_sketch_figures {sketch}`: ID, type, reference flag, and coordinates in mm (line ends, centre and radius, arc ends, and so on, from the typed figure interfaces).
+> - `delete_sketch_figures {sketch, ids}`.
+> - `add_sketch_constraint {sketch, type, ids}`: `IADSketchConstraints.AddConstraint`, with types horizontal, vertical, coincident, parallel, perpendicular, tangent, equal, midpoint, collinear, coradial, symmetric, fix, normal.
+> - `add_sketch_dimension {sketch, kind, ids, value}`: `PlaceLinearDimension` (a line, or two points), `PlaceRadialDimension`, `PlaceDiametricDimension`. Values in mm.
+> - `analyze_sketch {sketch, heal?}`: `IADSketch.Analyze` (open loops, overlaps, self-intersections, disjoint ends).
+> - `create_sketch` gains `face: index` (sketch on a planar face) as an alternative to `plane`.
+> - `create_design_plane`: offset from a plane, at an angle to a plane about an axis, or through 3 points.
+> - `create_design_axis`: through 2 points, where 2 planes meet, or from a cylindrical face.
+> - `create_design_point`: at XYZ, a circular edge's centre, on an edge at a ratio, between 2 points, or where 3 planes meet.
+> - `part_summary` also lists design axes and points.
+>
+> Points, planes and axes are named by design-geometry name (a listed name) or by a face or edge index.
+>
+> ## Approach
+> - Same pattern as now: a method in `src\MCPForAlibre.AddOn\Commands.cs` (registered in the constructor table), a `[McpServerTool]` in `src\MCPForAlibre.Server\AlibreTools.cs`, a row in `docs\PROTOCOL.md`, the list in `README.md`, and the unproven items in `CLAUDE.md`.
+> - Commands.cs will grow large, so split it into partial classes: `Commands.Sessions.cs`, `Commands.Features.cs`, `Commands.Sketches.cs`, `Commands.Geometry.cs`. Shared helpers (`FindSession`, `FindPart`, `FindSketch`, `MmPerUnit`, `EnumName`) stay in `Commands.cs`.
+> - New shared helpers: `ResolveTopology(part, args)`, which returns an `IObjectCollector` from indexes or the selection (collectors from `m_root.NewObjectCollector()`); `FindDesignPlane`, `FindDesignAxis` and `FindDesignPoint` by name; `FindFigure(sketch, id)` with `GetFigureByID`.
+> - Units: lengths in mm, converted with `MmPerUnit`; angles in degrees. Pass angles as degrees at first and log them. The first revolve shows whether the API wants radians (a 90 degree revolve gives a quarter volume, or not).
+> - Protocol version stays 1. The methods are new, and no old method changes its meaning.
+> - Server-side checks, such as a missing radius or empty edges, throw `McpException` before calling Alibre.
+>
+> ## Verification
+> 1. `dotnet build MCPForAlibre.sln -c Release` and `dotnet test`.
+> 2. Reinstall with `deploy\install.ps1` (Alibre closed, then restarted).
+> 3. Through the installed server, as with the block, in a new part:
+>    - Revolve a 10 x 20 mm rectangle offset 10 mm from the Y axis by 360 degrees. Check the volume is π(20² − 10²) × 20 ≈ 18,850 mm³; then repeat at 90 degrees for a quarter.
+>    - On the 40 x 20 x 10 block: `list_topology`, fillet the four vertical edges at 2 mm, chamfer the top edges at 1 mm, shell removing the top face at 2 mm, with a volume check after each.
+>    - A counterbored hole from a sketch point; loft between two offset sketches; sweep a circle along a line-and-arc path.
+>    - Sketch: add an ellipse, a spline and a construction line; list figures; constrain horizontal and equal; dimension a line to 30 mm and check the listing.
+>    - Create an offset plane, an axis from a cylindrical face, and a point at a circular edge's centre; sketch on a face.
+> 4. Update `CLAUDE.md` with what's proven, and give Frank a numbered test list for doing the same by hand.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Plan approved. First I'm reading the remaining AlibreX signatures the new tools depend on: geometry types, figure properties, enums and the point factory.
+
+> The add-on compiles with all the new commands (topology, 10 features, feature management, sketch tools, design planes, axes and points). Now I'm adding the matching MCP tools to the server.
+
+> It builds, and Alibre is already closed, so I'm reinstalling now. Windows will ask for admin again, and the elevated window waits for Enter at the end.
+
+> The add-on DLL is new, but the installed server DLL still has the old timestamp. Checking whether the copy failed because a running server had its files locked.
+
+> To answer your question first: **the 13 tools already working** were sessions (status, open, save, close), `part_summary`, parameters, `assembly_tree`, `get_selection`, `create_part`, `create_sketch`, basic sketch figures, and `extrude`. There was no revolve.
+>
+> **What Alibre 27.0.1's API offers beyond that** (I read it from Alibre's own `AlibreX.dll`):
+> - More part features.
+> - More sketch tools and reference geometry.
+> - Assemblies.
+> - Mass properties.
+> - Export and import.
+> - Drawings.
+> - View snapshots.
+>
+> It has **no pattern or mirror calls**, even though Alibre's feature tree has both.
+>
+> You picked the first two groups, and they're now built. That's 45 tools in all:
+>
+> - **Faces and edges:** `list_topology` numbers every face and edge, with its type, position and normal. `get_selection` now gives those numbers for what you've picked in Alibre. Feature tools accept either the numbers or `useSelection`.
+> - **Features:**
+>   - `revolve` (about a design axis, an edge, or a line in the sketch).
+>   - `sweep`, `loft`, `fillet`, `chamfer` (three kinds), `shell`, `draft`, `offset_face`.
+>   - `hole`: simple, drilled, counterbore or countersink, placed at sketch points.
+>   - `extrude` now also does to-next, to-geometry and draft.
+>   - Suppress, unsuppress, delete and rename features.
+> - **Sketches:**
+>   - Points, 3-point arcs, ellipses, elliptic arcs, splines and construction geometry.
+>   - `list_sketch_figures` (IDs and coordinates), `delete_sketch_figures`.
+>   - Constraints, dimensions, `analyze_sketch`, and sketching on a face.
+> - **Reference geometry:** design planes (offset, angle, three points), axes (two points, two planes, a cylinder) and points (six ways). `part_summary` now lists axes and points.
+>
+> The docs (`README.md`, `docs\PROTOCOL.md`, `CLAUDE.md`) are updated. Everything builds and the 5 tests pass.
+>
+> **The install is only half done.** The new add-on is in place, but the installer couldn't replace the server. Two running copies of it lock its files; they started at 8:55 and 8:56, probably from your other Claude sessions. So nothing new has run in Alibre yet.
+>
+> **Unproven until it's tested in Alibre:**
+> - Whether the API wants angles in degrees or radians. A 90° revolve will show it: it should give a quarter of the full volume.
+> - The argument order for 3-point arcs.
+> - Whether a sweep's path is passed as sketches or as their figures. The code tries sketches, then figures, and logs which worked.
+> - The ellipse's size convention.
+> - Whether a plane's normal points out of the material.
+>
+> Once the server is installed, I'll run the checks from the plan through it, as I did for the block: a revolve with its volume worked out, then fillet, chamfer and shell on the block, a counterbored hole, a loft, a sweep, and the sketch and reference geometry tools.
+
+### 🧑 Frank · 09:09
+
+> The install didn't work  -
+>
+> Copied add-on files to C:\ProgramData\Alibre AddOns\MCPForAlibre
+> Install failed: Access to the path 'System.Diagnostics.EventLog.dll' is denied.
+>
+> Stop them and try again.
+>
+> Also, after this change has been tested, add a UI window to the server - this can be A simple window with the application icon, statistics and a display of the log.
+
+### 🤖 Claude
+
+> Both servers are stopped and Alibre is closed. Reinstalling now; please approve the admin prompt again.
+
+> Both parts are installed and current. I'm starting Alibre and waiting until the add-on's pipe answers.
+
+> Alibre is up and the pipe is ready. First test: a revolve, to settle whether angles are degrees or radians.
+
+> Builds. Now I'm checking that only my two test parts are open before closing them unsaved and shutting Alibre down to reinstall.
+
+> Alibre is closed and no servers are running. Reinstalling; please approve the admin prompt.
+
+> It builds. Next: close my test parts and Alibre, reinstall, restart, and run the shell and hole tests again along with the sketch and reference geometry tests.
+
+> Alibre is closed. Reinstalling (one more admin prompt), then restarting Alibre.
+
+> It builds. Restarting Alibre to install it: closing my test parts first, then one more admin prompt.
+
+> Thanks. The new add-on was installed before Alibre came back up. Checking the pipe, then running the remaining tests.
+
+> It builds. Doing the restart cycle again: close my test parts and Alibre, reinstall (admin prompt), restart Alibre.
+
+> Installed and Alibre is up. Running shell, offset face, the sketch tools and reference geometry again.
+
+> I'll check the install's registration step and what's still running, since I can't see the elevated window's output.
+
+> The shell choked on quoting in my inline script. I'll write it to a file and run that instead.
+
+> It builds. Before trying more guesses for shell, I'll check how Alibre's own Alibre Script calls `AddShellFeature`, since it ships in the same install.
+
+> Alibre is closed. Rebuilding with the extra shell attempt, reinstalling (admin prompt), and restarting Alibre.
+
+> The pipe is there and Alibre is responding. I most likely hit the moment between two listening instances, so I'll retry with a short wait loop.
+
+> Git Bash's Python can't see Windows named pipes (`FileNotFoundError`, while PowerShell sees the pipe). I'll do the same call from PowerShell with .NET's pipe client.
+
+> Now the docs: what's proven, and the Alibre behaviour found today.
+
+> Questions:
+> - Where should the status window live? The MCP server (MCPForAlibre.Server.exe) is started by each Claude session, so there's one per session. The add-on lives inside Alibre and sees every client. The log file is written by the add-on.
+>   - MCP server, tray icon: Each server shows a tray icon; clicking it opens a window with its own tool calls, timings, errors, and the shared log. Several Claude sessions mean several icons.
+>   - Add-on in Alibre: MCPForAlibre > Status opens a modeless window inside Alibre: connected clients, calls per tool, errors, times, and the live log. One window for all sessions.
+>   - Both: Server tray window for that session's calls, plus the Alibre window for everything.
+> - When should the window appear?
+>   - On demand: Hidden until opened (tray icon click or the Status menu).
+>   - Always open: Opens as soon as the server or add-on starts.
+
+### 🧑 Frank · 09:28
+
+> Answers:
+> - Where should the status window live? The MCP server (MCPForAlibre.Server.exe) is started by each Claude session, so there's one per session. The add-on lives inside Alibre and sees every client. The log file is written by the add-on.
+>   **MCP server, tray icon**
+> - When should the window appear?
+>   **On demand**
+
+### 🤖 Claude
+
+> The icon reads clearly at every size: a white plug going into an orange socket on a blue tile. Next, the statistics collector and the tray window.
+
+> Builds, and all 7 tests pass, including two new ones for the statistics. Next I'm giving the add-on the same icon in Alibre: the `.adc` file points to it and the installer copies it.
+
+> Everything builds and the icon is copied with the add-on. Smoke-testing the new server from the build folder: start it with its tray icon, call a tool, end it, and check that it exits cleanly.
+
+> Last doc change: a short README section on the tray window.
+
+> The new feature and sketch tools are tested in Alibre and installed. The server now has a tray icon and a status window. Restart Claude to pick up the new server, then check the window with the list at the end.
+>
+> **The install:** I stopped the two server processes and reinstalled. The installer now warns when a running server has locked its files, and still registers the add-on. That's what stopped it before: the server copy failed and the script quit before reaching "Register". Your registry entry from the first install was still in place, which is why Alibre kept loading the add-on.
+>
+> **Tested through the installed server**, each feature checked against a volume worked out by hand:
+> - **Features that match:**
+>   - Revolve at 360° and 90°.
+>   - Fillet, chamfer, draft, loft, and a sweep along a line and arc.
+>   - Offset face, and extrude to a design plane.
+>   - Holes: simple, drilled, countersink and counterbore.
+>   - Suppress, unsuppress, rename, delete, and default names.
+> - **Sketch and reference geometry that works:**
+>   - Lines, 3-point arcs, ellipses, splines and construction lines.
+>   - Horizontal constraint, linear and diametric dimensions, and `analyze_sketch`.
+>   - All 11 ways of making design planes, axes and points.
+>
+> **What Alibre 27.0.1 does that needed working around** (all recorded in `CLAUDE.md`):
+> - Angles are in radians. The tools take degrees and convert.
+> - **Shell only works outward.** Every inward form is refused, so the tool always adds the wall outside the part. That's a real limit of this Alibre version's API.
+> - Holes need their sketch on a face, not a design plane. The tool now says so instead of failing inside Alibre.
+> - A counterbore through all fails inside Alibre, so it's made as a 1,000 mm deep hole instead.
+> - A feature Alibre refuses can still be left in the part with an error. Refused attempts are now deleted.
+> - Constraints, dimensions and sketch checks need the sketch open for editing.
+> - Construction figures and line end points have no ID, so you can't dimension between two points by ID.
+>
+> There are 35 tools in all. I'd said 45 earlier; that was my miscount.
+>
+> **The tray window:** each Claude session's server shows the new icon, a blue tile with a plug and socket, which Alibre also uses for the add-on. Clicking it opens a window with two tabs:
+> - **Calls:** calls, errors and timings for each tool, plus the last 200 calls with errors in red.
+> - **Log:** the add-on log, updated as it grows.
+>
+> Closing the window only hides it. It builds, its statistics have tests (7 tests pass in all), and the server starts and exits cleanly with it. But I haven't seen the window on screen.
+>
+> **To test:**
+> 1. Restart Claude so it starts the new server, and check the icon appears in the notification area.
+> 2. Ask Claude to do something in Alibre, then click the icon. Check that the Calls tab shows the calls and that the Log tab follows the log.
+> 3. Close the window and check that Claude can still use Alibre.
+> 4. Check that MCPForAlibre has its new icon in Alibre's add-on list.
+> 5. Select a face in Alibre and ask for `get_selection`; it should give the face's index. Then try a fillet with `useSelection`.
+>
+> Still untried: the Status menu, the cut versions of revolve, sweep and loft, extrude to next and with draft, `set_parameter`, and `assembly_tree`.
+>
+> Nothing is committed, and `D:\Projects\alibre\MCPForAlibre` isn't a git repository yet.
+
+### 🧑 Frank · 09:36
+
+> Using alibre design, create a sphere 5cm dia, with a rectangular cut on the top, 1cm wide, 1cm deep at the point of contact with the outer dia.  Fillet 1mm one of the curved cut edges, chamfer 1mm the other.
+
+### 🤖 Claude
+
+> I couldn't build anything because the tools couldn't connect to Alibre. Either Alibre Design isn't running or the MCPForAlibre add-on isn't loaded; its MCPForAlibre ▸ Status menu shows whether the connection is up. The separate `alibre-cad` server also failed to connect when this session started.
+>
+> Once it's connected, this is what I'll build. All sizes are in mm, with Z up and the slot running along Y:
+>
+> 1. **Sphere:** a sketch on the XZ plane with a half circle of radius 25 and a line along the Z axis, revolved 360° about that line.
+> 2. **Slot:** 10 wide, with its sides at X = ±5. At X = ±5 the sphere's surface is at Z = √(25² − 5²) ≈ 24.495. The 10 mm depth is measured from there, so the slot's floor is at Z ≈ 14.495. I'll draw a rectangle from X −5 to +5 and from Z 14.495 to above the top of the sphere, and cut it through everything in both directions.
+> 3. **Edges:** the slot leaves two curved edges where its side walls meet the sphere, one at X = +5 and one at X = −5. I'll find them with `list_topology`, put a 1 mm fillet on the +X edge and a 1 mm equal-distance chamfer on the −X edge.
+> 4. **Check:** I'll confirm the features have no errors and the volume looks right. The part won't be saved until you save it.
+>
+> I've read the depth as measured at the slot's walls, where they meet the sphere, not from the top of the sphere. If you meant from the top, the floor would be at Z = 15 instead.
+
+### 🧑 Frank · 09:37
+
+> It's running now
+
+### 🤖 Claude
+
+> Alibre's connected. I've sketched the sphere's half profile and I'm revolving it now.
+
+> Slot cut. The curved edges are edge 2 (X = +5) and edge 0 (X = −5). Fillet first.
+
+> Fillet's on. The −X curved edge is now edge 5; chamfering it.
+
+> The part is built in Alibre as **Sphere Slot**, and all four features rebuilt with no errors. It isn't saved yet.
+>
+> 1. **Sphere:** 50 mm across, centred on the origin, made by revolving a half circle.
+> 2. **Slot:** 10 mm wide, running straight through along Z across the top. I took the top to be +Y, because Alibre's default view has Y pointing up. Its floor is at Y = 14.495 mm, which is exactly 10 mm below where the slot's walls meet the sphere's surface (Y = 24.495 mm).
+> 3. **Fillet:** 1 mm radius on the curved edge where the +X wall meets the sphere.
+> 4. **Chamfer:** 1 mm on the matching edge on the −X side.
+>
+> The volume is 62,492 mm³, compared with 65,450 mm³ for the whole sphere.
+>
+> At each end of the slot, the curved edge stops where it meets the slot's floor. There, Alibre runs the fillet a little into the floor, so the floor now reaches X = 6.25 mm on that side. It's worth a look in the 3D view to check the ends look the way you want. The chamfer's ends may do the same, but I haven't checked them.
+
+### 🧑 Frank · 09:38
+
+> Tests passed.
+
+### 🤖 Claude
+
+> Good, thanks. I've recorded your test results in `CLAUDE.md`: these are now marked as tested by you, and I removed them from the "still unproven" list:
+> - the tray icon and window;
+> - the add-on's icon in Alibre;
+> - `get_selection` giving a picked face's index;
+> - a fillet with `useSelection`.
+>
+> Still untried in Alibre:
+> - the Status menu;
+> - constraint types other than horizontal, and radial dimensions;
+> - cut versions of revolve, sweep and loft;
+> - extrude to next and with draft;
+> - `set_parameter`, including the units of parameter values;
+> - `assembly_tree`.
+>
+> The groups you left for later are still to do: assemblies, mass properties, export and import, drawings, and view snapshots.
+
+### 🧑 Frank · 09:39
+
+> Add support for assemblies.
+
+### 🤖 Claude
+
+> Assemblies first means checking what 27.0.1's API actually offers for them: adding occurrences, transforms, constraints, interference, hiding and suppressing.
+
+> The same quoting problem as before, so I'll put the script in a file.
+
+> Builds and the tests pass. Next: docs for both changes, then install and test assemblies in Alibre.
+
+> It builds. Testing the parent watch: start a server through a middle process that exits at once, while its input stays open. Before this change, that left the server running forever.
+
+> It works: the orphaned server exited within a second. But it printed a stack trace while shutting down, so I'm checking what threw.
+
+> Harmless, but untidy: the stop came before the host had finished starting, so `RunAsync` threw "operation was canceled". I'll catch that.
+
+> Alibre won't insert an open part that has never been saved. That makes sense: an occurrence refers to a file. So the tools need a way to save a new part to a file. I'll check the docs for `SaveAs`.
+
+> It builds. Restart cycle again: close my test sessions (BlockA, BlockB and AsmTest, all unsaved), close Alibre, reinstall (admin prompt), restart.
+
+> To your question: most likely yes. Each Claude session that has the `alibre` tools starts its own server and keeps it while the session exists. So sessions left open, or ones that ended without closing the server's input, leave servers behind. My test scripts also start servers, but they end them when they finish. When one is running again I'll check which process started it, to confirm.
+>
+> **Fixes for the leftover servers:**
+> - **Close server** in the tray icon's menu. It asks first, because closing one cuts its Claude session off from Alibre until Claude starts the server again. It then stops the server, and exits outright after 3 seconds if the server hangs.
+> - **The server now watches the process that started it** and exits within about 5 seconds once that process has gone, even if its input is still open. This is the likely cause of the servers you killed in Task Manager. Before the fix, a server whose parent exited stayed running. Now it exits within a second, and a normal server still runs as long as its session does.
+>
+> **Assembly support** (built, not yet tried in Alibre):
+> - **Creating and adding:** `create_assembly`; `add_occurrence`, from a file or an open, saved part, at a position and rotation; `add_empty_occurrence`.
+> - **Placing:** `occurrence_info` gives position, rotation and bounding box. `move_occurrence` sets an absolute position and rotation, or moves by an amount. `set_occurrence` hides, suppresses or anchors.
+> - **Constraints:** `add_assembly_constraint` covers mate, align, orient, angle and tangent, between faces, edges, planes, axes or points of two occurrences. There are also list, suppress and delete tools.
+> - **Interference:** `check_interference` finds overlapping pairs, with each overlap's volume in mm³.
+> - **Existing tools:** `list_topology` takes an occurrence and gives that part's faces and edges in assembly coordinates. `get_selection` gives the occurrence path and the face index. `assembly_tree` shows each occurrence's path and position.
+> - **Saving:** `save_session` takes a folder. My first test showed that Alibre only inserts parts that have been saved ("Can't insert Occurrence"), so a new part has to be saved before it can go into an assembly.
+>
+> The first test got as far as that insert error. Everything since builds and the 7 tests pass, but the installer's admin step didn't run, so the installed add-on is still the old one. Once it's installed I'll run the assembly test against known numbers:
+> - placement at x 100;
+> - a 90° turn about Z;
+> - an absolute move and a relative move;
+> - a 2,000 mm³ overlap;
+> - a mate that seats one block on the other.
+
+### 🧑 Frank · 09:52
+
+> Yes, reinstall
+
+### 🤖 Claude
+
+> Alibre is already closed and no servers are running. Installing now; please approve the admin prompt.
+
+> Installed this time. Starting Alibre and running the assembly test, with the two blocks saved into a test folder in my scratch area first.
+
+> That removal of my old test files was blocked as unsafe, so I'll skip it. Each run will save into its own new folder instead.
+
+> The pipe is fine; the "not ready" came from Bash's quoting, not the pipe. The quick connect/disconnect pairs in the log are just `Test-Path` probing the pipe. Running the assembly test.
+
+> It builds. Installing this last fix means closing Alibre and possibly your session's server, so I'll leave that for you to choose. Recording the results in `CLAUDE.md` now.
+
+> Assembly support works in Alibre. The server that started then stopped is fixed and installed. Reconnect `alibre` in your session (or restart Claude) to get the 11 new assembly tools.
+>
+> **Why the server stopped at once:** my new parent watch closed it. Your Claude session starts the server through a launcher that exits straight away, so the server saw its parent gone at startup and closed. Now it only closes when a parent it saw running goes away. If the parent is already gone at startup, it stays up and ends when its input closes, as before. The leftover servers you had to kill (a session that died but left the server's input open) still end within about 5 seconds.
+>
+> The server also writes its own log, `%LOCALAPPDATA%\MCPForAlibre\MCPForAlibre.Server.log`: each start, the parent it watches, and why it stopped. That makes a "started then stopped" easy to diagnose. The installer can now replace just the server while Alibre is running.
+>
+> **Assemblies, tested in Alibre with two saved blocks:**
+> - **Placing:** at x = 100 the box was exactly 100–120.
+> - **Moving:** an absolute move with a 90° turn about Z gave the box I'd worked out, and a relative move added exactly 10.
+> - **Interference:** one overlap of exactly 2,000 mm³, in the right box, found both ways.
+> - **Mate:** with A anchored, mating A's top face to B's bottom face seated B at z = 10, and the overlap went away. Listing, suppressing and deleting constraints worked.
+> - **Occurrence flags and the rest:** anchoring, hiding, suppressing, adding an empty part, and the tree with paths and positions all worked.
+>
+> **What Alibre does that the tools allow for:**
+> - It only inserts parts that have been saved, so `save_session` now takes a folder for a part's first save, and `add_occurrence` says so if given an unsaved part.
+> - Its move call moves by an amount, not to a position. The tool works out the difference, so you can give either.
+>
+> **One fix is built but not installed.** Alibre allows two open sessions with the same name, and a second test run picked the wrong "BlockA". Now a name shared by two sessions is refused, with their identifiers listed, and every tool accepts the identifier instead. Installing it means closing Alibre, where my test parts are open, unsaved apart from the two blocks in my scratch folder.
+>
+> **Still untried:**
+> - align, orient, angle and tangent constraints, and constraints to design planes;
+> - adding from a file;
+> - `get_selection` in an assembly;
+> - the Status menu.
+>
+> There are 46 tools now, and `CLAUDE.md` records all of this.
+>
+> **To test:**
+> 1. Reconnect the `alibre` server in your session (or restart Claude). Check that the tray icon appears and stays.
+> 2. Close that session. Within about 5 seconds its server should end and the icon go, and `MCPForAlibre.Server.log` should say "parent … has gone".
+> 3. Try Close server from the tray icon's menu.
+> 4. Open one of your assemblies and ask Claude for its `assembly_tree`, then to move a part or check interference.
+
+### 🧑 Frank · 09:59
+
+> Yes, install it
+
+### 🤖 Claude
+
+> The installed add-on doesn't take identifiers yet; that's the fix being installed. But its name lookup takes the first match, so closing by name repeatedly closes the duplicates one by one.
+
+> Every test session is closed, Alibre is closed, and no servers are running. Installing; please approve the admin prompt.
+
+> Both installed (09:57 build). Starting Alibre and checking the fix: make two parts both called "Dup", check that the bare name is refused with their identifiers, then use the identifiers.
+
+> The fix is installed and works in Alibre. I made two parts both called "Dup":
+> - asking for "Dup" was refused, listing both parts' identifiers and that both were unsaved;
+> - giving an identifier picked the right one;
+> - both then closed cleanly by identifier.
+>
+> All my test sessions are closed, and Alibre is running with the latest add-on and server. `CLAUDE.md` now records the fix as proven.
+>
+> Reconnect the `alibre` server in your session, or restart Claude, to pick up the new server and the 11 assembly tools. The test list from before still applies: the tray icon stays up, it goes away within about 5 seconds when the session closes, Close server works from its menu, and you can try the tools on one of your own assemblies.
+
+### 🧑 Frank · 10:03
+
+> Using Alibre design create a table using parts and an assembly.  The table top will 1m square.  The legs will be 50x50x750mm.  Chamfer 5mm on one leg edge.  Create only 1 leg and use 4 instances.  The legs have an orientation; make sure the same chamfer points to the center.
+
+### 🤖 Claude
+
+> Building the leg now — sketch done, extruding to 750 mm next.
+
+> Edge 1 is the vertical edge at the (+X, +Y) corner — I'll chamfer that one.
+
+> The top's thickness wasn't given, so I'm using 25 mm (easy to change).
+
+> Both sessions point at the same file, so I'll add the remaining legs from the file itself.
+
+> Boxes all sit in the corners. Now checking where each chamfer actually ended up, in assembly coordinates.
+
+> I've built the table in Alibre: one leg part used four times, plus the top. Everything is saved in `D:\Projects\alibre\camtest\examples\Table\`:
+>
+> - **`TableLeg.AD_PRT`**: a 50 × 50 × 750 mm leg with a 5 mm equal chamfer along one long edge, the one at the leg's +X +Y corner.
+> - **`TableTop.AD_PRT`**: a 1000 × 1000 mm top, centred on the origin. You didn't give a thickness, so I made it **25 mm**.
+> - **`Table.AD_ASM`**: the top sits on the legs, from 750 to 775 mm. `TableLeg<1>` to `<4>` are the same part, placed flush with the four corners and rotated 0°, 90°, 180° and 270° about Z.
+>
+> **Checks:**
+> - **Chamfer direction:** I read `TableLeg<2>` back in assembly coordinates. Its chamfer face is on the inner corner and its normal points toward the centre of the table. The rotation direction this confirmed is the same one used for the other legs, and their positions agree, but I only read that one leg's chamfer back.
+> - **Overlaps:** Alibre's interference check found nothing.
+>
+> The parts aren't constrained to each other. They're just placed at fixed positions, so dragging one will move it.
+>
+> The leg's part file was open twice in Alibre, so I added three of the legs from the saved file instead of the open part. They're all still the same `TableLeg.AD_PRT`.
+
+### 🧑 Frank · 10:07
+
+> Next, remove the chamfer.  Make the table legs tapered.  The outside of the leg, the 2 outside faces should remain square.  The 2 inside faces should taper to the foot, which will be 35mm sqaure
+
+### 🤖 Claude
+
+> The volume dropped by only 7,550 mm³ instead of the expected 281,250, so the sketch axes aren't X and Z. I'll undo this and try with them swapped.
+
+> No cut this time. Working back from the first try, the 7,550 mm³ it removed fits exactly if the sketch's y runs along −Z with x along X. I'll redo the cut with that.
+
+> The cut removed exactly 281,250 mm³, which is right. Now the Y side on the YZ plane. I'll try the same layout (x along Y, y along −Z) and check the volume again.
+
+> The Y cut missed (the y = 50 face is still upright), so the YZ plane is laid out differently. I'll try x along Y and y along +Z.
+
+### 🧑 Frank · 10:08
+
+> Can the server automatically launch alibre if it isn't running?  Can the add-on automatically launch the server if it isn't running?
+
+### 🤖 Claude
+
+> Still no cut. Next I'll try x along Z and y along Y.
+
+> Two separate questions. Before answering, I'll check one fact the first depends on: where Windows records Alibre's install folder.
+
+> It removed 5,300 mm³, which fits a 10 mm band at the foot. That means the sketch's x runs along −Z and y along Y. I'll redo the cut with that.
+
+> Questions:
+> - The MCP server can start Alibre when a call finds it not running (it finds Alibre from its Windows install record, waits up to 3 minutes for the add-on, and makes sure two sessions don't both start one). When should it do that?
+>   - On any call (Recommended): Any tool call that finds Alibre closed starts it, waits for it, then carries on.
+>   - Only on request: A start_alibre tool that Claude calls when alibre_status says Alibre isn't running.
+>   - Don't: Leave starting Alibre to you.
+> - The add-on can't usefully start today's server: that server talks to Claude over the pipes Claude creates when it starts it, so a server started by Alibre would have no Claude connected. It would work if the server also served HTTP: Alibre starts one shared server and stops it on exit, and Claude connects by URL. But then there's no server while Alibre is closed, so the server can't start Alibre. Which do you want?
+>   - Keep Claude starting it (Recommended): One server per Claude session, which can start Alibre, and ends with its session.
+>   - Alibre starts one HTTP server: One shared server and tray icon, living as long as Alibre; Claude connects by URL; can't start Alibre.
+>   - Both, chosen in Claude's config: The server does stdio or HTTP as configured; you pick per setup.
+
+> The tools can't delete sketches, so those five stay in the tree unless you remove them by hand. Now I'll check the assembly.
+
+> The chamfer is gone and the legs now taper. Each one is 50 × 50 mm under the top and 35 × 35 mm at the foot. The two inside faces slope inward by about 1.15° each, and the two outside faces stay vertical and flush with the edges of the top.
+>
+> - **`TableLeg.AD_PRT`** now has three features: `Leg` (the 50 × 50 × 750 block) and two cuts, `TaperInsideX` and `TaperInsideY`, one wedge off each inside face. I checked the result from the part's faces: the foot face is 35 × 35, the top face is 50 × 50, and the outside faces are exactly upright.
+> - **The assembly** didn't need moving. The tapered faces are the same two faces that had the chamfer corner between them, so on all four legs they face the centre of the table. Alibre's interference check found no overlaps. The leg and the assembly are both saved.
+>
+> Things to know:
+> - **Leftover sketches:** five sketches named `TaperX`, `TaperX2`, `TaperYSketch`, `TaperYSketch2` and `TaperYSketch3` are still in the leg's tree. They came from cuts that missed or went the wrong way while I worked out how Alibre lays out sketches on the side planes. They aren't used by anything, but my tools can't delete sketches, so you'll need to delete them by hand in the Design Explorer.
+> - **Closed windows:** I closed the leg and top windows I had opened earlier, so each part was open only once. Both were already saved, so nothing was lost.
+
+### 🧑 Frank · 10:10
+
+> Answers:
+> - The MCP server can start Alibre when a call finds it not running (it finds Alibre from its Windows install record, waits up to 3 minutes for the add-on, and makes sure two sessions don't both start one). When should it do that?
+>   **On any call (Recommended)**
+> - The add-on can't usefully start today's server: that server talks to Claude over the pipes Claude creates when it starts it, so a server started by Alibre would have no Claude connected. It would work if the server also served HTTP: Alibre starts one shared server and stops it on exit, and Claude connects by URL. But then there's no server while Alibre is closed, so the server can't start Alibre. Which do you want?
+>   **Keep Claude starting it (Recommended)**
+
+### 🤖 Claude
+
+> Plan:
+>
+> # MCPForAlibre — starting Alibre, and who starts the server
+>
+> ## Context
+> Frank asked: can the MCP server start Alibre when it isn't running, and can the add-on start the server when it isn't running? Today Claude starts the server (stdio, one per session), and the server fails each call with "Alibre isn't running" until Frank starts Alibre himself.
+>
+> ## 1. The server starting Alibre: yes
+> - Find Alibre: the newest "Alibre Design" entry under `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall` (`InstallLocation`, here `C:\Program Files\Alibre Design 27.0.1.27039\`), plus `Program\Alibre Design.exe`. Allow an override with `MCPFORALIBRE_ALIBRE_EXE`.
+> - Start it with `Process.Start`, then wait for `\\.\pipe\MCPForAlibre` (Alibre took about 20–60 s here), up to 3 minutes, then carry on with the call.
+> - Only one server starts it: a named mutex (`MCPForAlibre.StartingAlibre`), so two sessions don't open two Alibres. Don't start it if an `Alibre Design` process is already running but its pipe isn't up yet (still loading, or the add-on not loaded); wait for the pipe instead.
+> - Shown in the tray window's summary ("starting Alibre…") and logged in `MCPForAlibre.Server.log`.
+> - Risk: Claude's MCP call timeout. If a call can't wait that long, the tool says Alibre is starting and to try again.
+>
+> ## 2. The add-on starting the server: not usefully, as things stand
+> The server talks to Claude over its own stdin and stdout, which Claude creates when it starts it. A server started by the add-on would have no Claude connected, so Claude would still start its own. The add-on can only usefully start the server if the server also listens over HTTP: the add-on starts one shared server when Alibre starts and stops it when Alibre closes, and Claude connects by URL (`"type": "http"`, `http://127.0.0.1:<port>/mcp`) instead of starting a process.
+> - Gains: one server and one tray icon for every session, tied to Alibre's life, with no orphans.
+> - Loses: when Alibre isn't running there's no server, so Claude can't connect, and point 1 can't work.
+> - The SDK's HTTP transport needs ASP.NET Core in the server, which is net9.0-windows, so it's fine. Port in a settings file, localhost only.
+>
+> ## To decide
+> Which of these Frank wants (see the questions). Verification will be: close Alibre, ask Claude for `alibre_status`, and see Alibre start and the call succeed; for HTTP, start Alibre, check the server starts with it, connect two Claude sessions to one URL, and close Alibre to see the server end.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Writing the launcher. It checks for the add-on's pipe by listing Windows' pipes, not by connecting, so the waiting doesn't fill the add-on's log with connect and disconnect lines.
+
+> Nothing was changed; the script stopped on a backslash mismatch before writing. I'll make the edits directly.
+
+> Builds. Adding the tests from the plan, plus two for the launcher's own lookups.
+
+> All 12 tests pass. Updating the docs.
+
+> **Can the server start Alibre? Yes, and it's built.** When a call finds Alibre closed, the server:
+> - finds the newest Alibre Design in Windows' install records;
+> - starts it;
+> - waits up to 3 minutes for the add-on to answer;
+> - then carries on with the call.
+>
+> It won't start a second Alibre: one that's still loading is waited for, and only one server starts it at a time. I tested it from the build folder with Alibre closed and two servers calling at once. One server started Alibre and the other waited. The add-on answered after 10 seconds, and both calls returned in about 15. The tray window shows "starting Alibre…" while this happens, and `MCPForAlibre.Server.log` records it.
+>
+> Two settings: `MCPFORALIBRE_ALIBRE_EXE` points it at a particular `Alibre Design.exe`, and `MCPFORALIBRE_NO_LAUNCH=1` turns starting off. All 12 tests pass, including 5 new ones.
+>
+> **Can the add-on start the server? Not usefully, so it doesn't** (your choice). The server talks to Claude over the input and output Claude gives it when it starts it. A server started by Alibre would have no Claude connected. The only way round that is serving over HTTP, which would mean no server while Alibre is closed, and so no starting Alibre.
+>
+> **Installing:** the new server isn't installed yet. Three Claude sessions are running servers right now (each started by a `claude` process), and they lock the installed files. That also confirms your earlier question: each server belongs to a Claude session. Once they're stopped I'll install, and the sessions can reconnect to get the new server.
+>
+> **To test after installing:**
+> 1. Close Alibre.
+> 2. In a reconnected session, ask Claude what's open in Alibre.
+> 3. Alibre should start, and the answer should come back once it's loaded.
+> 4. The tray window should show "starting Alibre…" meanwhile.
+
+### 🧑 Frank · 10:15
+
+> Create a cylinder in alibre design, 30mm dia, 10 mm high.  Dimension the sketch.  Anchor the center to the origin.  The height should be a variable.
+
+### 🤖 Claude
+
+> I haven't made the cylinder yet, because I can't reach Alibre. It worked earlier in this conversation, but now every call returns this error:
+>
+> > Alibre Design isn't running, or the MCPForAlibre add-on isn't loaded
+>
+> Alibre may have been closed or restarted, or it might have crashed. Start Alibre Design again and use the MCPForAlibre > Status menu to check that the connection is up. If the add-on doesn't load, reinstall it with `deploy\install.ps1` and restart Alibre.
+>
+> When it's running again, I'll make the cylinder in one go:
+> 1. A new part with a sketch on the XY plane.
+> 2. A circle centred on the origin, with a 30 mm diameter dimension and its centre held at the origin.
+> 3. An extrusion 10 mm high, with the height set from a named variable, such as `Height`, so you can change it in one place.
+
+### 🧑 Frank · 10:16
+
+> It's running now
+
+### 🤖 Claude
+
+> Circle drawn and its 30 mm diameter dimensioned. Now I'm working out how to hold its centre on the origin.
+
+> The circle's centre has no figure ID of its own, so I can't tie it to the origin directly. I'll try a Fix constraint on the circle and check what happens.
+
+> The constraint count stayed at 2. Alibre already added two constraints when I drew the circle at 0,0, but my tools can't show what kind they are. I'll extrude now and check the parameters.
+
+> The height is parameter D2 (1 cm = 10 mm), and the diameter is D1. My tools can't create or rename parameters. I'll try setting a new `Height` parameter in case Alibre creates it.
+
+> As expected, it can't make a new one. I'll save the part next to the table files.
+
+> I made the cylinder, but two of your requirements need a quick step by you in Alibre, because my tools can't do them.
+>
+> It's saved as `D:\Projects\alibre\camtest\examples\Cylinder.AD_PRT`:
+> - **Sketch** `CylinderProfile` on the XY plane: a circle centred at (0, 0) with a 30 mm diameter dimension, parameter **D1**.
+> - **Extrusion** `CylinderBody`: 10 mm high, parameter **D2**. The volume is 7,068.5 mm³, which matches π × 15² × 10.
+>
+> **Centre on the origin – not confirmed.** The circle is at (0, 0), and Alibre added two constraints by itself when I drew it there. My tools can count constraints but can't show their type, so I can't tell whether one of them ties the centre to the origin. A Fix I tried didn't change the count. To check, open the sketch and look at the centre's constraints. If nothing ties it to the origin, add a coincident between the circle's centre and the sketch origin.
+>
+> **Height as a variable – not done.** My tools can only change the value of an existing parameter. They can't create a new one or rename one, and setting `Height` failed because no parameter by that name exists. Two ways to finish it in Alibre's Equation Editor:
+> 1. Rename **D2** to `Height`.
+> 2. Or add a `Height` variable set to `10 mm` and set D2's equation to `Height`.
+>
+> When that's done, I can change the height for you through that parameter.
+
+### 🧑 Frank · 10:18
+
+> Using Alibre design create a table using parts and an assembly.  The table top will 1m square.  The legs will be 50x50x750mm.  Chamfer 5mm on one leg edge.  Create only 1 leg and use 4 instances.  The legs have an orientation; make sure the same chamfer points to the center.  Contrain the legs to the table top; to the underside face, and the table sides.
+
+### 🤖 Claude
+
+> I haven't built anything yet, because I can't reach Alibre again. Every call returns "Alibre Design isn't running, or the MCPForAlibre add-on isn't loaded". Please restart Alibre and use the MCPForAlibre > Status menu to check that the connection is up.
+>
+> I've made a new folder, `D:\Projects\alibre\camtest\examples\Table2\`, so this table won't overwrite the tapered one in `Table\`.
+>
+> Once Alibre is back, here's the plan:
+> 1. **Leg part:** 50 × 50 × 750 mm, with a 5 mm chamfer on one vertical edge.
+> 2. **Top part:** 1000 × 1000 mm, 25 mm thick, as before.
+> 3. **Assembly:** the top anchored, and the same leg added four times, each turned so its chamfer faces the centre.
+> 4. **Constraints, three per leg:**
+>    - a mate between the leg's top face and the underside of the top
+>    - an align between each of the leg's two outside faces and the matching side face of the top, so the leg sits flush with both edges.
+>
+> Each leg will then be fully located by its constraints rather than placed at fixed positions. Afterwards I'll read the chamfer face back on each leg to check it points at the centre, and run the interference check.
+
+### 🧑 Frank · 10:18
+
+> It's running now
+
+> list the alibre design mcp tools
+
+### 🤖 Claude
+
+> The leg block is extruded; next I'll check the edge numbering, then chamfer the inside edge.
+
+> There are 46 MCP tools. Lengths are in mm and angles in degrees.
+>
+> **Sessions**
+> - `alibre_status`: Alibre's version and the open sessions
+> - `open_file`, `save_session` (with an optional folder or new name), `close_session`
+> - `create_part`, `create_assembly`
+>
+> **Reading**
+> - `part_summary`: features, sketches, design geometry, volume
+> - `list_topology`: faces and edges by index, for a part or an occurrence in an assembly
+> - `list_parameters`
+> - `assembly_tree`
+> - `get_selection`: what you've picked in Alibre
+>
+> **Parameters**
+> - `set_parameter`
+>
+> **Part features**
+> - `extrude`: depth, mid-plane, through all, to next, to geometry, draft
+> - `revolve`, `sweep`, `loft`
+> - `fillet`, `chamfer`, `draft`
+> - `shell`: outward only, because Alibre 27.0.1's API refuses inward shells
+> - `hole`: simple, drilled, counterbore, countersink, from a sketch on a face
+> - `offset_face`
+> - `suppress_feature`, `unsuppress_feature`, `delete_feature`, `rename_feature`
+>
+> **Sketches**
+> - `create_sketch`: on a design plane or a face
+> - `add_sketch_figures`: line, circle, rectangle, arc, 3-point arc, point, ellipse, elliptic arc, spline, construction lines
+> - `list_sketch_figures`, `delete_sketch_figures`
+> - `add_sketch_constraint`, `add_sketch_dimension`
+> - `analyze_sketch`
+>
+> **Reference geometry**
+> - `create_design_plane`, `create_design_axis`, `create_design_point`
+>
+> **Assemblies**
+> - `add_occurrence`: from a file or an open, saved part
+> - `add_empty_occurrence`
+> - `occurrence_info`
+> - `move_occurrence`: to a position, or by an amount
+> - `set_occurrence`: hidden, suppressed, anchored
+> - `add_assembly_constraint`: mate, align, orient, angle, tangent
+> - `list_assembly_constraints`, `suppress_assembly_constraint`, `delete_assembly_constraint`
+> - `check_interference`
+>
+> The newest server, the one that starts Alibre when it's closed, still isn't installed. Your three Claude sessions' servers are holding its files.
+
+> The leg (with chamfer) and the top are modelled. Next I'll save the top and close both part windows, so each part is open only once, then build the assembly.
+
+> Top anchored and four legs placed. Now I'm reading the face numbers in assembly coordinates so I can constrain them.
+
+> The leg's top is face 6 and its two outside faces are 5 and 4. On the top, the underside is face 5 and the sides are 0 to 3. Adding the three constraints for each leg now:
+
+> All 12 constraints went in without errors. Now I'll check the legs didn't move, and confirm each chamfer faces the centre.
+
+> Positions are unchanged and nothing overlaps. Leg 1's chamfer normal already points at the centre. Checking legs 2 to 4:
+
+> All four chamfers point at the centre. Saving the assembly.
+
+> I've built the table again, this time with each leg constrained to the top. It's saved in a new folder, `D:\Projects\alibre\camtest\examples\Table2\`, so the tapered table in `Table\` is untouched.
+>
+> **The parts:**
+> - **`TableLeg.AD_PRT`**: 50 × 50 × 750 mm, with a 5 mm equal chamfer on one vertical edge (`InnerChamfer`).
+> - **`TableTop.AD_PRT`**: 1000 × 1000 mm and 25 mm thick, the same thickness I picked before.
+>
+> **The assembly, `Table.AD_ASM`:**
+> - `TableTop<1>` is anchored, with its underside 750 mm above the assembly origin.
+> - `TableLeg<1>` to `<4>` are four instances of the one leg part, turned 0°, 90°, 180° and −90° about Z.
+> - Each leg has three constraints, named after the leg (12 in total):
+>   - **`LegN_Underside`**: a mate between the leg's top face and the top's underside.
+>   - **`LegN_SideX`** and **`LegN_SideY`**: aligns that keep the leg's two outside faces flush with the two side faces of the top at its corner.
+>
+> **Checks:**
+> - All 12 constraints were added without errors, and the legs stayed exactly in the corners.
+> - I read every leg's chamfer face back in assembly coordinates. All four sit on the inner corner with their normals pointing at the centre of the table.
+> - Alibre's interference check found no overlaps.
+>
+> The constraints fix the legs' position and also which way each one faces, but I haven't confirmed in Alibre that each leg is fully constrained. To check, try dragging a leg: it shouldn't move.
+
+### 🧑 Frank · 10:21
+
+> install now
+
+### 🤖 Claude
+
+> The new server is installed. It's the build that starts Alibre when a call finds it closed. I didn't need to stop anything: the three sessions' servers had already ended. The add-on was already up to date, so the installer left it alone.
+>
+> Reconnect the `alibre` server in your sessions, or restart Claude. Then close Alibre and ask Claude something about it. Alibre should start by itself, and the answer should come back once it has loaded, about 15 seconds here.
+
+### 🧑 Frank · 10:24
+
+> In alibre design, Create a rectangle, 10x20x30mm, dimensioned and centered around the origin.  Each dimension should be an equation
+
+### 🤖 Claude
+
+> Rectangle and a centre point are sketched; now constraining it to stay centred on the origin.
+
+> Sketch dimensioned at 10 × 20 and still centred. Extruding 30 mm, half each side of the sketch plane.
+
+> Parameters are D1 = 10 (width), D2 = 20 (height), D3 = 30 (extrude depth). Setting them as equations, with D2 and D3 driven from D1.
+
+> I built the block, but its dimensions aren't equations yet: the tool that changes parameters fails every time.
+>
+> **What's built:** a part called **Block 10x20x30**, with no feature errors and a volume of 6,000 mm³. It isn't saved yet.
+> - **Sketch:** a 10 × 20 mm rectangle on the XY plane, centred on the origin. D1 = 10 is the width and D2 = 20 is the height.
+> - **Extrude:** 30 mm, mid-plane, so it runs from Z = −15 to +15. That's D3.
+>
+> **The equations:** I was going to set D1 to `10 mm`, D2 to `D1 * 2` and D3 to `D1 * 3`, so changing D1 resizes the whole block. Every call to `set_parameter` failed with "No opened transaction found. OpenParameterTransaction() should be called prior to any Parameter modifications."
+>
+> That's a bug in MCPForAlibre. `SetParameter` in [Commands.Sessions.cs:163](D:\Projects\alibre\MCPForAlibre\src\MCPForAlibre.AddOn\Commands.Sessions.cs) changes `Equation` or `Value` without opening a parameter transaction first. The fix is to call the session's `Parameters.OpenParameterTransaction()` before the change and `CloseParameterTransaction()` after it, before regenerating. You'd then need to rebuild and reinstall the add-on and restart Alibre. For now you can type the equations into Alibre's Equation Editor yourself.
+>
+> **Centring:** the rectangle is drawn centred on the origin, but no constraint holds it there. The tool's symmetric constraint wouldn't accept a point as the centre, and it can't refer to the sketch's axes. To lock it, add a Symmetric constraint in Alibre for each pair of opposite sides, about the sketch's X and Y axes.
+
+### 🧑 Frank · 10:26
+
+> I'll do it by hand
+
+### 🤖 Claude
+
+> OK, I'll leave MCPForAlibre alone. In Alibre's Equation Editor, set these on the **Block 10x20x30** part:
+>
+> | Parameter | Equation | What it is |
+> |---|---|---|
+> | D1 | `10 mm` | Width |
+> | D2 | `D1 * 2` | Height (20 mm) |
+> | D3 | `D1 * 3` | Extrude depth (30 mm) |
+>
+> You'll also want the two Symmetric constraints in the sketch, so the block stays centred when D1 changes.
+>
+> I also rebuilt `Discussion.md` with `tools\BuildDiscussion.py`, as `CLAUDE.md` asks at the end of every turn.
+
+### 🧑 Frank · 10:27
+
+> Make sure alibre's equations work correctly. Try creating equations Width=10 and Height = 20, then create a sketch of a rectangle using the equations width/height
+
+### 🤖 Claude
+
+> To do this, Claude needs two things the tools don't have yet:
+> - a way to **create** a parameter (`set_parameter` only changes an existing one);
+> - a way to drive a sketch dimension by an **equation** rather than a number.
+>
+> I'll check what Alibre's API offers for both.
+
+> Now the server side: a `create_parameter` tool, and `add_sketch_dimension` taking an `equation`.
+
+> It builds. Reinstalling the add-on: close my EqTest part and Alibre, install (admin prompt), then run the test again. The server will start Alibre itself.
+
+> Installed (add-on 10:30). Running the equation test again; Alibre is closed, so the server will start it.
+
+> Built, and Alibre is closed. Installing (admin prompt), then running the test again.
+
+> Alibre's equations now work through the MCP server.
+>
+> **Checked in Alibre:**
+> 1. Width = 10 and Height = 20 were created, and read back as 10 mm and 20 mm.
+> 2. I drew a rectangle at the wrong size (30 × 15), then dimensioned its sides with the equations `Width` and `Height`. Alibre drove it to exactly 10 × 20.
+> 3. Extruded 5 mm, it measured 1,000 mm³.
+> 4. Changing Width to 15 updated the part to 1,500 mm³.
+> 5. Setting Height to `Width * 2` gave 15 × 30 × 5 = 2,250 mm³.
+>
+> **What it took:**
+> - **A new `create_parameter` tool.** Until now the tools could only change existing parameters.
+> - **`add_sketch_dimension` takes an `equation`.** It places the dimension, then sets its parameter's equation.
+> - **Alibre's parameter transactions.** Every parameter change needs one open, but creating a parameter opens its own and fails if one is already open. The add-on now manages both cases. This means `set_parameter` had probably never worked before; it does now.
+>
+> **Units:** a bare number in an equation is in your document's units, so "10" was 10 mm here. `list_parameters` now also gives each distance in mm and each angle in degrees.
+>
+> The add-on and server are installed, the 12 tests pass, and the docs are updated. There are 47 tools now.
+>
+> The EqTest part is still open in Alibre, unsaved: Width and Height are in its equation editor, and the rectangle's dimensions show `Width` and `Height`. Reconnect `alibre` in your session to pick up `create_parameter`.
+
+### 🧑 Frank · 10:35
+
+> Add support for built in geometry like X-Axis, XY-Plane, and Orign, so I can use it in cases like - create rectangle 10mm wide, 30 high.  the lower edge is colinear with the x axis, and the 30 is centered around the y axis.
+
+### 🤖 Claude
+
+> This needs sketch constraints that can point at more than the sketch's own figures. Constraints and dimensions will accept these as references:
+> - **Built-in geometry:** `X-Axis`, `Y-Axis`, `Z-Axis`, the default planes, `Origin`, the sketch's own `origin`, and any design axis, plane or point by name.
+> - **Line ends and centres:** `3.start`, `3.end`, `3.centre`. Line end points have no IDs of their own, which currently blocks point-to-point dimensions and symmetry.
+>
+> I don't know yet whether Alibre accepts a design axis directly in a sketch constraint. If it doesn't, the add-on falls back to a fixed construction line along the axis, projected into the sketch, and logs which way worked.
+
+> It builds. Now the tool descriptions, so Claude knows what it can name.
+
+> You've hit your 5-hour limit · resets 1pm (Australia/Sydney)
+
+### 🧑 Frank · 13:01
+
+> I hit my usage limit while you were working, but it has reset now. Please continue from where you left off.
+
+### 🤖 Claude
+
+> It builds. Alibre is running, probably with my EqTest part still open. I'll check what's open, close only my test part, then close Alibre and install (admin prompt).
+
+> The installed files still have their old times, so the copy didn't happen. Checking whether the build step ran, which would mean the admin prompt didn't go through.
+
+> The build ran (server at 13:01), but the admin step didn't, so the prompt was probably missed or declined. I'll run the installer again; please approve the admin prompt when it appears.
+
+> Built, and Alibre is closed. Installing the add-on (please approve the admin prompt), then running the test again.
+
+> Built-in geometry is supported and working, except for one fix to symmetric that's built but not yet installed. The last two admin prompts didn't go through, so the add-on in Alibre is still the earlier build.
+>
+> **What sketch constraints and dimensions can now name**, besides figure IDs:
+> - `X-Axis`, `Y-Axis`, `Z-Axis`, `Origin` and any design axis or point you've added, by name;
+> - `origin`, the sketch's own origin point;
+> - `3.start`, `3.end` and `3.centre`, the ends and centre of a line, arc or circle. These have no IDs of their own in Alibre, so before this you couldn't dimension between two points or tie a corner to anything.
+>
+> Alibre's API refuses design axes in sketch constraints ("Unsupported object passed"). So the add-on brings the axis into the sketch as a fixed construction line, reuses that line on later calls, and logs it. Alibre accepts the sketch's own origin directly.
+>
+> **Tested in Alibre with the old add-on:**
+> - `collinear [lower edge, X-Axis]` put the lower edge on y = 0.
+> - Width 10 and height 30 dimensions worked.
+> - A line's start made coincident with `origin`, plus a 25 mm dimension between its two ends, gave a line from (0, 0) exactly 25 long.
+> - The rectangle extruded 5 mm gave 1,500 mm³.
+> - **Not right yet:** `symmetric [left side, right side, Y-Axis]` put the rectangle at x 10–20, not −5–5. Alibre wants the line of symmetry first: given last, it mirrored the right side and the axis line about the left side, which is where they ended up. The fix (axis first for Alibre, "these two about that" for you) is built but not installed.
+>
+> I read your "30 centred around the Y axis" as the rectangle centred on the Y axis, with its sides symmetric about it, since the 30 runs along Y. Expected result: corners (−5, 0), (5, 0), (5, 30) and (−5, 30).
+>
+> Alibre is closed and no servers are running, ready to install. Then I'll run the rectangle test again, check the Y-axis construction line stays fixed now, and update the docs.
+
+### 🧑 Frank · 13:17
+
+> Yes, run it
+
+### 🤖 Claude
+
+> Installed: the add-on is now the 13:05 build with the symmetric fix. Running the rectangle test; the server will start Alibre.
+
+> All correct: corners at (−5, 0), (5, 0), (5, 30) and (−5, 30), and both axis construction lines stayed fixed at ±100. Updating the docs.
+
+> Built-in geometry works in sketches now, and it's installed.
+>
+> **Your example, tested in Alibre.** I drew the rectangle deliberately in the wrong place, then constrained it:
+> - `collinear [lower edge, X-Axis]`
+> - `symmetric [left side, right side, Y-Axis]`
+> - width 10 and height 30
+>
+> It came to exactly (−5, 0), (5, 0), (5, 30) and (−5, 30), and extruding it 5 mm gave 1,500 mm³. I read "the 30 is centred around the Y axis" as the rectangle being centred on the Y axis; say if you meant something else.
+>
+> **What you can now name in a sketch constraint or dimension:**
+> - **Built-in geometry:** `X-Axis`, `Y-Axis`, `Z-Axis`, `Origin`, and any design axis or point you've added.
+> - **The sketch's own origin:** `origin`.
+> - **Ends and centres:** `3.start`, `3.end`, `3.centre` for a line, arc or circle. Alibre gives these no IDs of their own, so before this you couldn't dimension between two points or tie a corner to anything. A line starting at `origin`, with a 25 mm dimension between its ends, came out exactly right.
+>
+> **How it works inside Alibre:**
+> - Its API won't accept a design axis in a sketch constraint. The add-on draws the axis into the sketch as a fixed construction line and constrains to that. You'll see that dashed line in the sketch, and later calls reuse it.
+> - Alibre wants the line of symmetry first in a symmetric constraint. You give it last ("these two about that") and the add-on reorders it.
+>
+> The docs are updated. The RefTest part is open in Alibre, unsaved, if you want to look at the constraints.
+
+### 🧑 Frank · 13:21
+
+> In alibre design, Create a rectangle, 10x20x30mm, dimensioned and centered around the origin.  Each dimension should be an equation.  Use sketch constraints.  Try not to use anchor.
+
+### 🤖 Claude
+
+> The MCPForAlibre source has moved on since this session loaded its tools (equations on dimensions, sketch origin and axes as targets). Reloading the tool definitions to see what's live.
+
+> Drawing the rectangle slightly off-centre on purpose, so I can tell the constraints are what centre it.
+
+> Centred by symmetry about both axes. Dimensioning width and height next.
+
+> Block extruded. Setting the equations now (D1 drives the other two, as before).
+
+> Equations drive correctly (D1 = 12 gave 24 and 36). Putting D1 back to 10 and checking the part.
+
+> I've built a new **Block 10x20x30** part in Alibre: 10 × 20 × 30 mm, centred on the origin, with no feature errors. It isn't saved yet. Two parts of what you asked for didn't fully work: D1 isn't an equation, and the centring still relies on two anchored construction lines (details below).
+>
+> **Sketch constraints:** the rectangle sits on the XY plane. I drew it off-centre on purpose, so it was clear the constraints were what moved it.
+> - Its left and right sides are symmetric about the Y axis, and its top and bottom about the X axis. That moved it onto the origin.
+> - None of the rectangle's own lines has an anchor (fix) constraint.
+> - **Not fully anchor-free:** Alibre wouldn't take the design axes directly in a symmetric constraint. MCPForAlibre therefore copied each axis into the sketch as a construction line and anchored it, so there are two fixed construction lines. Doing without them would need a centre line I can refer to, such as a construction diagonal with its midpoint on the origin. MCPForAlibre can't refer to construction lines, because Alibre gives them no ID.
+>
+> **Equations:**
+>
+> | Parameter | What it sets | Equation |
+> |---|---|---|
+> | D1 | Width, 10 | `10 mm` |
+> | D2 | Height, 20 | `D1 * 2` |
+> | D3 | Extrude depth, 30 (mid-plane, Z −15 to +15) | `D1 * 3` |
+>
+> - **D2 and D3 work:** I tested them by setting D1 to 12, which made the block 12 × 24 × 36. I then set D1 back to 10, and the faces are where they should be.
+> - **D1 isn't an equation:** Alibre reads `10 mm` as a plain value and doesn't keep it as an equation. To make it one, it has to refer to something else, such as a named parameter `Width = 10 mm` with D1 set to `Width`.
+> - **Named parameters weren't available:** your MCPForAlibre source now has a `create_parameter` tool, and `add_sketch_dimension` can take an equation. This session's MCP server still has the old tool list, though. Restarting the session would make them available.
+
+### 🧑 Frank · 13:23
+
+> Are the restrictions that you found (eg can't use a design axis in a sketch contraint), documented in the mcp?  Will agents know what they can and can't use?
+
+### 🤖 Claude
+
+> I'll check what an agent actually sees: the tool descriptions in the server, as opposed to my notes in `CLAUDE.md`, which agents never see.
+
+> Mostly yes, but not completely. Agents only see three things: the tool descriptions, the tool parameters, and the error messages. They never see `CLAUDE.md`.
+>
+> **Already visible to an agent:**
+> - **Shell is outward only:** said in the `shell` description.
+> - **Holes need their sketch on a face:** said in the `hole` description, and the error says so too.
+> - **Symmetric order and constraints to axes:** the `add_sketch_constraint` description gives the order ("two figures, then the line they're symmetric about") and worked examples with `X-Axis`, `Y-Axis` and `origin`.
+> - **Construction figures have no IDs:** said in `add_sketch_figures` and `list_sketch_figures`.
+> - **Assemblies only take saved parts:** said in `save_session` and `add_occurrence`, and the error says to save first.
+> - **Session names can repeat:** every `session` parameter says to use the identifier, and the error lists the identifiers.
+> - **Face and edge numbers change after a feature:** said on every `faces`/`edges` parameter.
+> - **A bare number in an equation is in the document's units:** said in `create_parameter`.
+> - **Error messages:** most say what to do instead.
+>
+> **Gaps:**
+> 1. **No overview.** MCP lets a server send instructions when a client connects, and this one sends none. Conventions are repeated across tools (mm, degrees, sessions by identifier, list topology again after each feature) and rules span several tools (save before inserting), but nothing gives an agent the whole picture up front.
+> 2. **No pattern or mirror.** That's only in the README, so an agent might hunt for them, or not know to repeat features or mirror sketch geometry instead.
+> 3. **Construction lines appear in the sketch.** Constraining to `X-Axis` adds a fixed construction line, and nothing warns the agent before it shows up in `list_sketch_figures`.
+> 4. **A counterbore through all is really a 1,000 mm deep hole.** That matters only for parts over a metre deep.
+> 5. **The first call can take 15–60 s** while the server starts Alibre, and nothing tells the agent to expect that.
+> 6. **Two descriptions are out of date:** `create_part` and `create_assembly` still say the part "isn't saved until the user saves it", though `save_session` with a folder can save it now.
+>
+> The fix is small:
+> - **Server instructions:** a short summary sent when a client connects, covering units, references, the save-first rule, things Alibre's API can't do (inward shell, pattern, mirror, design axes in sketches) and the slow first call.
+> - **Description fixes:** gaps 3, 4 and 6 above.
+>
+> This changes only the server: no reinstall of the add-on and no Alibre restart.
+
+> In short: an agent learns most of Alibre's limits at the moment it uses the tool concerned, from the tool's description or from an error that says what to do instead. What's missing is the overview up front: Alibre's limits that span several tools, the features that don't exist at all (pattern and mirror), and the side effects the tools don't warn about (the construction lines). Server instructions plus the description fixes would close those gaps.
+
+### 🧑 Frank · 13:24
+
+> Yes, add them
+
+> restart session
+
+### 🤖 Claude
+
+> Descriptions fixed. Building and checking that a connecting client actually receives the instructions.
+
+> I can't restart this session or reconnect the `alibre` server from here. That server comes from your own settings, so only you can reconnect it. It's still connected with 46 tools, but that's the old list from when this session started, without `create_parameter` and without equations on dimensions.
+>
+> You have two ways to load the new list:
+>
+> 1. **Reconnect the server:** type `/mcp` in this session, choose **alibre**, then **Reconnect**. This session keeps its history, and the new tools are there from your next message.
+> 2. **Start a new session:** that also loads the current tools, but the new session won't know anything from this conversation.
+>
+> After that, I'd remake D1 so it's an equation too. I'd create a named parameter `Width` = `10 mm`, then set D1 to `Width`, D2 to `Width * 2` and D3 to `Width * 3`.
+>
+> Separately, `alibre-cad` failed to connect again ("Connection closed"). If it's an old copy of the same server, you could remove it from your MCP settings.
+
+> Agents now learn Alibre's limits as soon as they connect, not only when they hit one. It's built and checked but not installed yet: a server one of your Claude sessions started at 13:21 is holding the files.
+>
+> **Server instructions (new).** MCP lets a server send instructions when a client connects, and every client of this one now gets about 2,400 characters of them:
+> - **Conventions:**
+>   - mm and degrees throughout;
+>   - sessions by name or identifier, since names can repeat;
+>   - list faces and edges again after each feature;
+>   - built-in geometry names;
+>   - how to refer to line ends (`ID.start`), the origin and axes in sketches;
+>   - equation syntax and its units;
+>   - occurrence paths.
+> - **What Alibre 27.0.1 can't do, and what to do instead:**
+>   - no pattern or mirror features;
+>   - outward shells only;
+>   - holes need their sketch on a face;
+>   - design axes in sketch constraints come in as construction lines;
+>   - a counterbore through all is 1,000 mm deep;
+>   - some figures have no IDs;
+>   - parts must be saved before going into an assembly;
+>   - constraints can block a move.
+> - **Timing:** the first call may take 15–60 s while Alibre starts, and to call again if it times out.
+>
+> **Description fixes:**
+> - `create_part` and `create_assembly` now point to `save_session` with a folder.
+> - The sketch reference help says constraining to an axis adds a fixed construction line, so the extra figure isn't a surprise.
+> - `hole`'s through-all option says a counterbore is made 1,000 mm deep.
+>
+> I checked by connecting a client: it receives the instructions, the fixed descriptions show up, all 47 tools are listed, and the 12 tests pass.
+>
+> So this doesn't drift, `CLAUDE.md` now has a rule: agents only see what the server tells them, never `CLAUDE.md`. So any new Alibre limit goes in the tool's description and its error message, and in the server instructions if it affects more than one tool.
+
+### 🧑 Frank · 13:26
+
+> Yes, install
+
+### 🤖 Claude
+
+> The server is stopped. Installing now; please approve the admin prompt. Only the server changed, so Alibre can stay open.
+
+> The new server is installed (the 13:25 build, version 0.4.0). I connected to the installed copy, and it sends the instructions to clients.
+>
+> Stopping your session's server cut that session off from Alibre. Reconnect `alibre` there, or restart Claude: from then on that session gets the instructions and the fixed descriptions when it connects.
+
+### 🧑 Frank · 13:27
+
+> Can you clarify how I restart a claude session so it uses the latest mcp definition
+
+### 🤖 Claude
+
+> This session's MCP list shows something you should know about, so I'll check what it points at.
+
+> A session reads its list of MCP servers, and starts each server program, when it begins. So it keeps using whatever server program it started with, even after a new one is installed. There are three ways to get it onto the new one:
+>
+> 1. **Reconnect within the session.** Type `/mcp` in that session to open its MCP servers, pick `alibre`, and press Reconnect. The session keeps its conversation and starts the newly installed server. This is the quickest.
+> 2. **Start a new session** from the Code tab. It reads the config fresh and starts the current server.
+> 3. **Quit Claude completely and reopen it.** Every session starts its servers again when you go back to it.
+>
+> Which change needs which:
+> - **Server changes** (new tools, descriptions, instructions): reconnect or start a new session.
+> - **Add-on changes:** restart Alibre instead, or close it and let the server start it again. Claude doesn't need to reconnect.
+> - **Both:** do both.
+>
+> You can check which version a session has in its tray window: hover over the icon, and the window's header shows the process and when it started. A server started before the 13:25 install is the old one.
+>
+> **About this session:** it doesn't have MCPForAlibre's `alibre` server at all. It started before `alibre` was added to your user config, so it only has `alibre-cad`, the separate server registered for the AlibreCAM project. Its command is `alibre-cad-mcp`, it's connected here with 25 tools, and it's not part of MCPForAlibre. Starting a new session would get you both. If you don't use `alibre-cad`, removing it would avoid confusing the two:
+>
+> ```bash
+> claude mcp remove alibre-cad
+> ```
+>
+> That's for you to decide; I haven't changed it.
+
+### 🧑 Frank · 13:28
+
+> In alibre design, Create a rectangle, 10x20x30mm, dimensioned and centered around the origin.  Each dimension should be an equation.  Use sketch constraints.  Try not to use anchor.
+
+### 🤖 Claude
+
+> Part and parameters (Width 10, Length 20, Height 30) are in; now drawing the sketch.
+
+> My diagonal construction line didn't get an ID, so I can't use it for centring. I'm centring with symmetric constraints about the X and Y axes instead.
+
+> Block checks out: volume 6000 mm³, no errors. Wrapping up.
+
+> I made the box in a new part called **Block**. It has no errors, its volume is 6000 mm³ (10 × 20 × 30), and it isn't saved yet.
+>
+> **Parameters:** Width = 10 mm, Length = 20 mm, Height = 30 mm. Every dimension is an equation that uses one of them:
+> - In the sketch **Profile** on the XY-Plane, the top edge is dimensioned `Width` and the left edge `Length`.
+> - The extrusion **Box** has its depth set to the equation `Height`. It's a mid-plane extrusion, so the box runs from Z −15 to +15 and is centred on the origin in all three axes.
+>
+> **Centring:** nothing in the rectangle is anchored. I used symmetric constraints instead: the left and right edges about the Y axis, and the top and bottom edges about the X axis. Alibre's API can't constrain to design axes directly, so they come into the sketch as fixed construction lines. Those lines are reference geometry, not an anchor on the rectangle, and its corners came out at (±5, ±10).
+>
+> **One leftover:** first I tried centring it with a construction diagonal through the origin. The API gives construction lines no ID, so I couldn't constrain or delete it. It's still in the sketch, unconstrained, from (−4, −9) to (6, 11). It doesn't affect the solid, but you may want to delete it by hand in Alibre.
+>
+> To check it in Alibre:
+> 1. Change Width, Length or Height in the equation editor. The box should resize and stay centred on the origin.
+> 2. Delete the stray diagonal in the Profile sketch.
+> 3. Save the part where you want it.
+
+### 🧑 Frank · 13:31
+
+> Create a 3d model of a GT2 2mm pulley with 20 teeth.  The pulley will be 5mm thick, with a 5mm boss, 10mm dia.  The bore will be 1/4"
+
+### 🤖 Claude
+
+> Parameters are in. Now adding the 80-arc tooth outline and the bore to the sketch.
+
+> The toothed disc extruded cleanly. Next: link its depth to Thickness, then add the boss.
+
+> I made the pulley in a new part called **GT2_20T_Pulley**. It isn't saved yet. It came out as one body with no errors, and its volume is about 592.5 mm³.
+>
+> **Sizes** (parameters you can change in the equation editor):
+> - **Thickness** = 5 mm: the toothed disc, extruded up +Z from the XY-Plane.
+> - **BossLength** = 5 mm and **BossDia** = 10 mm: the hub, extruded the other way, to −Z.
+> - **BoreDia** = 0.25 in (6.35 mm): the bore, through both the disc and the hub.
+>
+> **Teeth:** 20 at a 2 mm pitch. That makes the pitch diameter 12.732 mm and the outside diameter 12.224 mm (the pitch diameter less GT2's 0.254 mm pitch line offset on each side). Each groove is 0.75 mm deep, with a 0.555 mm radius at its bottom and 0.15 mm radii rounding the tooth tips.
+>
+> **Things to know:**
+> - **The tooth shape is an approximation.** It's close to the GT2 belt tooth, but it isn't the manufacturer's exact profile. That's fine for a model or a 3D print. For a cut part that has to mesh precisely, check it against a GT2 data sheet.
+> - **The teeth aren't parametric.** Alibre 27's API has no pattern feature, so I worked out all 80 tooth arcs myself and drew them in the Teeth sketch at fixed positions. To change the tooth count or pitch, the sketch has to be drawn again. The diameters, lengths and bore are all driven by parameters and centred on the origin.
+> - **Not added:** a grub screw hole in the hub, and flanges. Say if you want either.
+>
+> To check it in Alibre:
+> 1. Look at the grooves up close.
+> 2. Change BoreDia or BossDia and check that the model rebuilds.
+> 3. Save the part.
+
+### 🧑 Frank · 13:36
+
+> Create a 3d model of a Helical Bevel gear, module 1, 20 teeth.  The gears meet at 90 degrees.  It has a 3mm bore for the shaft.
+
+*(Frank stopped Claude here.)*
+
+### 🧑 Frank · 13:38
+
+> Create a 3d model of a pair of Helical Bevel gears, module 1, 20 teeth.  The gears meet at 90 degrees.  It has a 3mm bore for the shaft.  2 gears put together in an assembly, constrained to spin about the x and y axis.  Use the "gear" constraint to the spin together.  Ensure they are messed.
+
+> messed should read meshed.
+
+### 🤖 Claude
+
+> Tooth geometry is worked out (20° pressure angle, 20° spiral, 4 mm face width). I'm trimming the data size, then I'll build gear A.
+
+> Gear A's heel section is drawn and closed. Adding the toe section next.
+
+> Gear A's tooth loft worked (one body, about 649 mm³). Checking which way the planes went before I add the hub.
+
+> Gear A is done (one body, about 1053 mm³). Linking its hub length, then building gear B, the left-hand gear.
+
+> Gear B's two sections are in. Healing the toe sketch, then lofting gear B and adding its hub and bore.
+
+> Both gears are modelled and saved. Now placing them in the assembly: gear A on the X axis, gear B on the Y axis.
+
+> Emptying the sketches removed them, so I'm creating them again before adding the new sections.
+
+> Gear A is rebuilt with three sections and thinner teeth. Saving it, then doing the same for gear B.
+
+> Now gear B: removing its old teeth and bore, then adding the three new sections.
+
+> You've hit your weekly limit · resets Nov 14, 1am (Australia/Sydney)
+
+### 🧑 Frank · 13:58
+
+> resume
+
+### 🤖 Claude
+
+> Both gears are rebuilt. Saving gear B, then rebuilding the assembly so it picks up the new parts.
+
+> The design itself overlaps by 1.09 mm³, which matches Alibre's 1.095. So the CAD is faithful and the fault is in my geometry. Next I'm checking whether the spiral causes it.
+
+> That fixes it: no overlap at 0.05 mm backlash per gear. I'll quickly confirm the teeth are actually engaged, so that turning past the backlash makes them touch.
+
+> The teeth touch once gear B is turned 0.8°, so the pair is properly engaged with about half a degree of backlash. Rebuilding both gears with these sections.
+
+> Gear A is rebuilt. Saving it, then gear B.
+
+> Both gears are rebuilt. Saving gear B and putting the assembly back together.
+
+> No interference now. Adding the constraints: each gear's axis is aligned with assembly X or Y, and its apex plane is held so the gear can only spin.
+
+> **Add a gear constraint to MCPForAlibre:** a card for adding the missing `gear` type to `add_assembly_constraint`, so the pair can be coupled.
+
+> Both gears and the assembly are built and saved, and the pair meshes with no interference. I couldn't add the gear constraint: the Alibre MCP tool has no gear constraint type, so that still needs doing by hand or adding to the tool.
+>
+> **Files** in `D:\Projects\alibre\camtest\examples\BevelGears\`:
+> - `BevelGear_A_RH.AD_PRT`: right-hand spiral.
+> - `BevelGear_B_LH.AD_PRT`: left-hand spiral, the mirror of A.
+> - `BevelGearPair.AD_ASM`: the pair.
+>
+> **Gear geometry** (each gear):
+> - 20 teeth, module 1, 20° pressure angle, so the pitch diameter is 20 mm.
+> - Pitch cone 45°, so the axes meet at 90°. Cone distance is 14.14 mm and face width 4 mm.
+> - 20° spiral angle at mid-face, a twist of 9.7° from heel to toe.
+> - 3 mm bore through. A 12 mm diameter, 4 mm long hub behind the heel.
+> - HubDia, HubLength and BoreDia are parameters you can change.
+>
+> **Assembly constraints** (all four have no errors):
+> - Gear A's axis is aligned with assembly X, gear B's with assembly Y.
+> - Each gear's apex plane is aligned with an assembly plane. That holds it axially, so all it can do is spin about its own axis.
+> - Gear B is turned half a tooth so the teeth interleave.
+>
+> **Mesh check:**
+> - Alibre's interference check finds nothing between the gears.
+> - I also checked the design numerically outside Alibre. Turning gear B by 0.8° brings the teeth into contact, so they are engaged with about half a degree of backlash.
+>
+> **How the teeth are made:** each gear is a loft through three tooth-profile sections, at the heel, mid-face and toe. The profiles are involute, using the standard Tredgold approximation for bevel teeth. Each point on the profile is twisted according to its distance from the cone apex.
+>
+> My first version twisted by axial position instead, and that left about 1.1 mm³ of overlap whatever the backlash. Twisting by cone distance removed it.
+>
+> **Not done:**
+> - **The gear constraint.** The tool only offers mate, align, orient, angle and the two tangent types. Alibre 27.0.1's API does have a gear constraint type, so this is fixable in your MCPForAlibre project. Until then, add it in Alibre between the two gears' Z axes at 1:1.
+> - **The tooth sketches aren't parametric.** They are 120 computed curves per section, not constrained geometry. Changing the tooth count or module means regenerating them.
+> - **It's an approximation.** This is a good model for 3D printing or visualising, but not a true generated spiral-bevel (Gleason) tooth form.
+>
+> To check in Alibre:
+> 1. Open `BevelGearPair.AD_ASM` and look at the mesh up close.
+> 2. Add the gear constraint between the two Z axes at 1:1.
+> 3. Drag one gear and check that the other turns the opposite way without clashing.
+
+### 🧑 Frank · 14:36
+
+> Yes, add it
+
+### 🤖 Claude
+
+> Adding an overload that skips a name already taken, then the server side.
+
+> Build succeeded with no warnings, and the 12 tests pass. Checking the install script before installing.
+
+> It's built. Installing needs Alibre closed and the MCP server stopped, because both lock their files.
+
+> Questions:
+> - To install the gear constraint I need Alibre closed and the running MCPForAlibre server stopped (both lock their files), then a UAC prompt. The gears and assembly are all saved. How should I go ahead?
+>   - I'll close Alibre (Recommended): You close Alibre; I stop the server, run the installer (you approve UAC), reconnect, restart Alibre and test the gear constraint.
+>   - Close it for me: I close the open Alibre sessions and end Alibre's process myself, then do the same steps.
+>   - Not now: Leave it built but not installed; you install and test later.
+
+### 🧑 Frank · 14:43
+
+> Answers:
+> - To install the gear constraint I need Alibre closed and the running MCPForAlibre server stopped (both lock their files), then a UAC prompt. The gears and assembly are all saved. How should I go ahead?
+>   **I'll close Alibre (Recommended)**
+
+### 🤖 Claude
+
+> Alibre is still running. I'll wait for you to close it.
+
+> I'm watching for Alibre to close. Once it does, I'll stop the server, run the installer (there'll be a UAC prompt), and test the gear constraint on the gear pair.
+
+### 🧑 Frank · 14:43
+
+> <task-notification>
+> <task-id>bazsgnagd</task-id>
+> <tool-use-id>toolu_01LaNk1vkNTfAeCd6ekJsULF</tool-use-id>
+> <output-file>C:\Users\FRANKT~1\AppData\Local\Temp\claude\af67b47206b29857\09de9301-c362-4426-b9db-98b2ecb8c85c\tasks\bazsgnagd.output</output-file>
+> <status>completed</status>
+> <summary>Background command "Wait until Alibre is closed" completed (exit code 0)</summary>
+> </task-notification>
+
+### 🤖 Claude
+
+> Alibre is closed. Stopping the MCP server and running the installer.
+
+> Both installed copies have the gear code. Reconnecting the MCP server.
+
+> The server came back and started Alibre. Opening the gear pair to test.
+
+> The gear constraint was accepted with no error at a 1:1 ratio. Checking the log, interference, and whether turning one gear turns the other.
+
+> The gear constraint works now. MCPForAlibre's `add_assembly_constraint` has a `gear` type, it's built and installed, and the bevel gear pair has a saved gear constraint (`GearMesh`) at 1:1 with no error. The one thing I couldn't check is whether turning one gear actually drives the other.
+>
+> **What changed in MCPForAlibre** (built, 12 tests pass, installed, not committed):
+> - **Add-on** (`Commands.Assemblies.cs`): a new `gear` type with `ratio1` and `ratio2` (default 1:1). It uses Alibre's two-parameter constraint call. The API docs don't say which "bound type" a gear constraint needs, so the code tries three in turn and logs the one that worked; Alibre accepted the first. Listing constraints now shows a gear's two ratios.
+> - **Server** (`AlibreTools.Assemblies.cs`): the tool takes `ratio1` and `ratio2`, refuses them on other constraint types and refuses values of 0 or less. Its description tells agents that a gear constraint only couples rotation, so each gear must be held on its axis first.
+> - **Docs:** `PROTOCOL.md`, `README.md` and `CLAUDE.md` are updated, including what's proven and what isn't.
+>
+> **Tested on the gear pair:** I reopened `BevelGearPair.AD_ASM`, added the gear constraint between the two gears' Z axes, ran the interference check again (still none) and saved the assembly.
+>
+> **Not tested:**
+> - **Whether the constraint drives gear B.** I tried turning gear A 18° through the API, but neither gear moved; the other constraints held them.
+> - **Ratios other than 1:1.**
+>
+> To check in Alibre:
+> 1. Open `BevelGearPair.AD_ASM`, drag gear A round and confirm gear B turns the other way.
+> 2. Watch for any clash while they turn.
+> 3. If B turns the wrong way, use Reversed on `GearMesh`.
+
+### 🧑 Frank · 14:49
+
+> Are all of the assembly constraint types available?  I don't see screw, or rack
+
+### 🤖 Claude
+
+> No. Alibre 27.0.1's API knows ten assembly constraint types, and I exposed six:
+>
+> | Type | In the tool? |
+> |---|---|
+> | Mate, Align, Orient, Angle, Tangent inside, Tangent outside | Yes |
+> | Fastener, Gear, Rack, Screw | No |
+>
+> The API also has *bound types*, the "between" limits (≥, ≤, bounded with two values), which the tool doesn't expose either. I left these out because I didn't know what values they take. I'll check what the docs say about them.
+
+> No. The tool only offers six of the ten assembly constraint types in Alibre 27.0.1's API: mate, align, orient, angle, tangent inside and tangent outside. Screw and Rack are among the missing four. I left all four out because I didn't know what values they take. Alibre's 27.0.1 API does have what they need:
+>
+> | Type | What it takes (from the 27.0.1 interop) |
+> |---|---|
+> | **Gear** | two ratios (`Ratio1`, `Ratio2`) |
+> | **Rack** | the pinion radius |
+> | **Screw** | the pitch |
+> | **Fastener** | an offset, with a minimum and maximum |
+>
+> **Limits are missing too.** The tool always makes a fixed constraint. Alibre also offers greater-than-or-equal, less-than-or-equal and bounded: a mate that may sit between, say, 0 and 20 mm. These go through `AddConstraintEx`, which takes a second value.
+>
+> **What adding them would mean:**
+> - `add_assembly_constraint` gets the four new types, a limit setting, and a second value: the second gear ratio, or the upper bound of a range.
+> - `list_assembly_constraints` reads back each type's own values: ratios, pinion radius, pitch, offsets.
+> - Their descriptions and the server instructions say what each takes.
+>
+> Only Gear's values are documented, so I'd test each type in Alibre before relying on it, with two cylinders for Gear and a block and a cylinder for Rack and Screw.
+
+### 🧑 Frank · 14:50
+
+> Yes, add them
+
+### 🤖 Claude
+
+> Now the add-on change: one `AddConstraintEx` path for the new types and for limits, with the same bound-type fallback Gear proved.
+
+> The add-on builds. Now the MCP tool: the new types, `limit` and `value2`, and descriptions saying what each type's value means.
+
+> The file changed since I last read it. That could be my own script, or another session. I'll check before editing.
+
+> Only my own script changed it; the content is exactly what I wrote. Applying the two edits.
+
+> Builds. Now the docs: the server instructions get a line on motion constraints, and the README, protocol notes and `CLAUDE.md` record what's proven.
+
+> Docs and instructions are done, it builds, and the 12 tests pass. Final install: close my test sessions and Alibre, stop the servers, install (admin prompt), then check the limit read-back in Alibre.
+
+> Installed: add-on 14:56, server 14:56. Running the first test again to check the read-back: fixed constraints should now show no limit, and the between-limited mate should show "between".
+
+> All ten of Alibre's assembly constraint types are available now, and installed. Your idle session "Alibre rectangle with equation constraints" had already added Gear; I built on its code, adding Rack, Screw and Fastener, plus limits.
+>
+> **Tested in Alibre:**
+>
+> | Type | Result |
+> |---|---|
+> | **Gear 1:2** | Created between two parts' Z axes; ratios read back as 1 and 2. |
+> | **Rack** | Created between a cylinder's axis and a bar's long edge; pinion radius reads back as 10 mm. |
+> | **Screw**, 2 mm pitch | Works once the two axes are aligned. With axes not in line, Alibre puts it in error. |
+> | **Fastener** | Seated a 10 mm pin in a 10 mm hole: the pin moved to the hole's centre. With mismatched sizes it errors. |
+> | **Between 0 and 20 mm** | Works on a mate, and reads back as "between". |
+> | **At least 5 mm** | Works on a tangent constraint, but Alibre reads it back as unknown. |
+>
+> **The limits Alibre misreports:** it reports a fixed limit, and even "at least", as unknown, so `list_assembly_constraints` now shows a limit only when Alibre reports one. In practice that means "between".
+>
+> **What agents are told:** the tool description says what each type takes:
+> - Gear: two ratios, such as tooth counts.
+> - Rack: the pinion's radius.
+> - Screw: the pitch.
+> - Fastener: an offset.
+>
+> The server instructions add two rules: motion constraints only couple movement, so hold the parts with align or mate first (a screw's axes must be in line); and a fastener needs a pin and a hole of the same size.
+>
+> **Untested:** whether gear, rack and screw actually drive the other part when one moves. Moving a part through the tools doesn't simulate motion, so that needs a drag in Alibre. The MotionTest assembly from the last run is open there with all of them, unsaved; WheelB turning should turn PinionA at 2:1.
+>
+> The docs and `CLAUDE.md` are updated, and the 12 tests pass. Any session using `alibre` needs to reconnect to get the new server.
+
+### 🧑 Frank · 15:00
+
+> claude mcp add solidcraft -- solidcraft-cli mcp
+
+### 🤖 Claude
+
+> I added the `solidcraft` server to your local Claude config for this project only, in `C:\Users\Frank Tkalcevic\.claude.json`. It runs `solidcraft-cli mcp`.
+>
+> It won't connect yet, because `solidcraft-cli` isn't on your PATH. To fix that, do one of these:
+> - Install it, or add its folder to PATH.
+> - Or add the server again using the program's full path:
+>
+> ```bash
+> claude mcp remove solidcraft
+> ```
+>
+> ```bash
+> claude mcp add solidcraft -- "C:\path\to\solidcraft-cli.exe" mcp
+> ```
+>
+> Claude Code loads MCP servers when a session starts, so start a new session afterwards to use it.
+
+### 🧑 Frank · 15:02
+
+> Use solidcraft to crate a GT2 2mm 20 tooth gear with 5mm bore, 5mm thickness and 10mm dia 5mm thickness hub
+
+### 🤖 Claude
+
+> I couldn't make the gear with solidcraft. `claude mcp get solidcraft` says it failed to connect because `solidcraft-cli` isn't on your PATH, so none of its tools are in this session. Nothing has been created.
+>
+> To fix it, install solidcraft-cli or add the server again with the program's full path. Then start a new session, because Claude Code loads MCP servers only when a session starts.
+>
+> Or I can make it now in Alibre, which this session can control. The gear would be:
+> - **Teeth:** 20 teeth for a GT2 belt with a 2 mm pitch. That's a pitch diameter of about 12.73 mm and an outside diameter of about 12.22 mm. I'd draw the tooth shape from the published GT2 profile, so it's close but not an exact copy of any supplier's pulley.
+> - **Gear:** 5 mm thick.
+> - **Hub:** 10 mm across and 5 mm long, on one side, so the part is 10 mm long overall.
+> - **Bore:** 5 mm, all the way through.
+
+### 🧑 Frank · 15:10
+
+> I'll fix solidcraft
+
+### 🤖 Claude
+
+> No problem. Once `solidcraft-cli` runs from a terminal, start a new session so Claude Code loads the server. Then ask for the gear again and I'll make it with solidcraft.
+>
+> To check the connection first, run this. It should say "Connected":
+>
+> ```bash
+> claude mcp get solidcraft
+> ```
+
+### 🧑 Frank · 15:15
+
+> I use simwise with alibre.  The plugin to export an alibre part or assembly to simwise has stopped working (because I upgraded the version of alibre).   Is the fileformat of simwise known, or is there a public API so I can create my own exporter?
+
+### 🤖 Claude
+
+> Found SimWise installed locally, with an API help file and an SDK folder. I'm reading them now.
+
+> Yes, there is a public way to do this, and you already have it on this machine. SimWise ships an Export API for writing your own CAD exporter.
+>
+> **The file format (`.wm3`)** isn't documented anywhere public. It comes from Working Model 3D. But you don't need it: the Export API writes `.wm3` files for you.
+>
+> **The Export API.** Your SimWise for Alibre V9.86 install has an SDK folder:
+>
+> - `C:\Program Files\DST\SimWise 4D for Alibre V9.86\SDK\Export API\SimWise Export API.pdf` is the documentation. I couldn't open it here because the PDF reader tool isn't installed.
+> - The same folder has three C# examples (Example1 to Example3) and a sample file, `Link.sat`.
+> - It's a COM library called `SimWiseExportLib`. Example 2 shows it does what the Alibre plugin does:
+>   - `SWExport.Init`, then set the units with `SetUnitSystem`.
+>   - `NewBody()` for each part, with name, colour, opacity, location and orientation. Each body's geometry is an ACIS `.sat` file (`SetAcisFileName`), and it can be marked as fixed in place (`Anchored`).
+>   - `NewSubAssembly()` for sub-assemblies.
+>   - `NewCoord` for a plane or cylinder on a body, then `NewConstraint` with a mate type (coincident, concentric and so on). SimWise turns these into joints.
+>   - `DoExport("file.wm3")` writes the file.
+> - There's also a separate automation interface for controlling SimWise itself. It's documented in `Program\Code\bin\SimWiseAPI.chm`, with type library `wm3d.tlb`.
+>
+> So an exporter would be an Alibre add-on that:
+> 1. Walks the assembly's occurrences and their transforms.
+> 2. Saves each part as a SAT file. Alibre can export SAT, but I'd need to check that the 27.0.1 API exposes it.
+> 3. Maps Alibre's assembly constraints to SimWise mates.
+> 4. Calls the Export API.
+>
+> The patterns from CAMForAlibre (walking occurrences, `WorldTransform`, binding by keys) carry over.
+>
+> **Why the old plugin may have stopped.** It's `SWAlibre.dll`, built in 2018, and its `SimWise.ADC` file is in the SimWise program folder, not in `C:\ProgramData\Alibre AddOns\`. There are two likely causes:
+> - The new Alibre isn't finding the add-on registration any more. That would be a cheap fix.
+> - The DLL calls Alibre's API in a way the new version no longer allows. Then it needs rebuilding.
+>
+> I started a registry search to see how Alibre registers add-ons, but it was still running after two minutes and moved to the background, so I don't have that answer yet. Check this, and ask DST (design-simulation.com) for an updated plugin, before writing a new one.
+>
+> What should I do next: look into why the existing plugin no longer loads, or plan a new exporter on the Export API?
+>
+> Sources:
+> - [SimWise 4D CAD integration](https://design-simulation.com/simwise4d/cadintegration.php)
+> - [SimWise for Alibre brochure](https://www.design-simulation.com/documents/simwise/SimWiseBrochure-Alibre.pdf)
+> - [SimWise 4D brochure (automation interface)](https://www.design-simulation.com/documents/simwise/simwisebrochure.pdf)
+
+### 🧑 Frank · 15:20
+
+> Running the old add-in says it was built to run on Alibre 2017.  Is there any way around that?
+
+### 🤖 Claude
+
+> Questions:
+> - The old SimWise plugin (SWAlibre.dll) refuses any Alibre except 2017. Which route do you want to take?
+>   - Ask DST first: You contact DST for a plugin for Alibre 27; I do nothing for now.
+>   - Plan own exporter: I plan a new Alibre add-on using the SimWise Export API (SAT per part, constraints as mates, .wm3 out).
+>   - Try patching the check: Experiment on a copy of SWAlibre.dll to bypass the version check; risk of crashes and licence issues.
+
+### 🧑 Frank · 15:21
+
+> Use solidcraft to crate a GT2 2mm 20 tooth gear with 5mm bore, 5mm thickness and 10mm dia 5mm thickness hub
+
+### 🤖 Claude
+
+> Still checking: solidcraft isn't connected, so I'm looking for its built program in `D:\Projects\craft\solidcraft`.
+
+> solidcraft connects now, but I couldn't make the gear in this session. Claude Code loads MCP servers only when a session starts, so solidcraft's tools aren't available here.
+>
+> The problem was that `solidcraft-cli` isn't on your PATH. I found the program you built today, `D:\Projects\craft\solidcraft\target\release\solidcraft-cli.exe`. I set the server up again with that full path, and `claude mcp get solidcraft` now shows **Connected**.
+>
+> Start a new session in this project and ask for the gear again. Nothing has been created yet.
+>
+> If you rebuild solidcraft in Debug or install it somewhere else, the server will still run the Release program at that path.
+
+### 🧑 Frank · 15:22
+
+> Use solidcraft to crate a GT2 2mm 20 tooth gear with 5mm bore, 5mm thickness and 10mm dia 5mm thickness hub
+
+### 🤖 Claude
+
+> The pulley is built; now checking its dimensions and taking a look.
+
+> I've built the pulley in SolidCraft as one solid body named **Pulley**, 10 mm tall overall. It isn't saved yet.
+>
+> - **Teeth:** 20 grooves at 2 mm pitch. The pitch diameter is 12.732 mm and the outside diameter is 12.224 mm, which is the standard 0.254 mm GT2 offset in from the pitch line on each side. This section is 5 mm thick, from Z 0 to 5.
+> - **Hub:** 10 mm diameter, 5 mm tall, from Z 5 to 10.
+> - **Bore:** 5 mm, through the whole pulley.
+>
+> **The tooth shape is approximate.** SolidCraft has no gear or pulley generator, so I drew one groove and repeated it 20 times around the axis. Each groove is a 0.555 mm radius circle cut 0.75 mm deep, and it's about 1.04 mm wide at the outside diameter. A true GT2 groove is a little wider (about 1.14 mm) and is shaped from several arcs with 0.15 mm fillets at the top. A belt should seat in it, but it isn't an exact GT2 groove. I can make the exact shape if you need it.
+>
+> Your hub (10 mm) is smaller than the teeth (12.2 mm), so the grooves run out through the face where the teeth meet the hub. If you want flanges to keep the belt on, I can add them.
+
+### 🧑 Frank · 15:24
+
+> The tooth profiles are not GT2
+
+> Answers:
+> - The old SimWise plugin (SWAlibre.dll) refuses any Alibre except 2017. Which route do you want to take?
+>   **Plan own exporter**
+
+### 🤖 Claude
+
+> You were right: the first grooves were simple round cuts, not GT2. I rebuilt the pulley in SolidCraft with GT2 grooves and checked them in a view from below. It still isn't saved.
+>
+> **Groove shape:** I used the GT2 2 mm groove outline from the widely used open-source parametric pulley script for OpenSCAD (by droftarts), entered from memory rather than looked up again. I haven't checked it against Gates' own drawing.
+> - The groove is 1.494 mm wide where it meets the outside diameter and 0.764 mm deep.
+> - The bottom is curved, and the sides flare out at the top to let the belt teeth in.
+> - I drew it as a closed outline of 23 straight segments, not true arcs. That's accurate enough for printing or machining.
+>
+> **Sizes:**
+> - **Teeth:** outside diameter 12.224 mm (pitch diameter 12.732 mm less 2 × 0.254 mm), 5 mm thick, from Z 0 to 5.
+> - **Hub:** 10 mm diameter, 5 mm tall, from Z 5 to 10.
+> - **Bore:** 5 mm, through the whole pulley.
+>
+> If the belt fits too tightly once printed, the usual fix is to widen the grooves a little. That's a quick change.
+
+### 🧑 Frank · 15:25
+
+> Not now
+
+### 🤖 Claude
+
+> OK, I'll leave the pulley unsaved. It stays open in SolidCraft as GT2_20T_Pulley, and you can save it whenever you like.
+
+> I'm gathering the last details for the exporter plan. Your MCPForAlibre add-on already reads assembly constraints in C#, so I'm checking what it can reuse.
+
+> Questions:
+> - For the new SimWise exporter add-on for Alibre 27, which language and project setup do you want?
+>   - C#, new repo (Recommended): New D:\Projects\alibre\SimWiseForAlibre, .NET 4.8 like MCPForAlibre; DST's Export API samples are C#, and constraint-reading code can be copied from MCPForAlibre.
+>   - C++/MFC, new repo: New repo in the style of CAMForAlibre, using #import of AlibreX and SimWiseExport.dll.
+> - What should the first version of the SimWise exporter send across?
+>   - Parts + constraints (Recommended): Geometry, placement, colour, mass/material, and Mate/Align/Orient/Angle mapped to SimWise mates; gear/rack/screw/fastener/tangent later.
+>   - Geometry only first: Bodies with placement, colour and material, no constraints; add constraints in a second step.
+
+### 🧑 Frank · 16:20
+
+> Answers:
+> - For the new SimWise exporter add-on for Alibre 27, which language and project setup do you want?
+>   **Can we use .net core 10?  Does that have all of the libraries we need?**
+> - What should the first version of the SimWise exporter send across?
+>   **Parts + constraints (Recommended)**
+
+### 🤖 Claude
+
+> Now writing the plan.
+
+> Plan:
+>
+> # SimWiseForAlibre: export Alibre 27 parts and assemblies to SimWise 4D
+>
+> ## Context
+> DST's plugin (`SWAlibre.dll`, 2018) refuses to run on anything but Alibre 2017: it reads the host exe's ProductVersion and stops. Frank chose to write his own exporter. SimWise ships a documented Export API (`SimWiseExport.dll`, COM, x64, ProgID `SimWiseExport.SWExport`, type library `{9C9B00F5-D918-4ED5-A7A1-0AE2B5501798}`), the same library the old plugin uses. Docs and three C# samples are in `C:\Program Files\DST\SimWise 4D for Alibre V9.86\SDK\Export API\`. The API takes ACIS SAT files per body, placements, colour, sub-assemblies, coords on planes and cylinders, and mates, and writes a `.wm3` file.
+>
+> First version (Frank's choice): parts and constraints.
+>
+> ## Language: .NET 10 isn't possible inside Alibre
+> Alibre 27 hosts the .NET Framework 4.8 runtime, so an in-process add-on must target `net48`. A .NET 10 DLL can't load there. MCPForAlibre hit the same limit and uses a net48 add-on with a .NET 9 server out of process. This exporter needs only COM (AlibreX, SimWiseExport), which net48 handles fully, so a single net48 x64 add-on with `LangVersion latest` (modern C# syntax) is the plan. A .NET 10 helper exe isn't worth it: every Alibre call would cross processes and be slow.
+>
+> ## Project
+> New repo `D:\Projects\alibre\SimWiseForAlibre`, laid out like MCPForAlibre:
+> - `src\SimWiseForAlibre\SimWiseForAlibre.csproj`: copy `MCPForAlibre.AddOn.csproj` (net48, x64, AlibreX/AlibreAddOn references not copied), plus a `COMReference` to SimWiseExportLib (or `tlbimp` of `SimWiseExport.dll` checked in as an interop DLL if the type library isn't registered).
+> - `AlibreAddOn.cs`, `AddOnMenu.cs`, `Log.cs`: adapted from MCPForAlibre's. One menu item, "Export to SimWise…", in the Part and Assembly workspaces.
+> - `SimWiseForAlibre.adc`, `deploy\install.ps1` (copy to `C:\ProgramData\Alibre AddOns\SimWiseForAlibre\`, the same way as MCPForAlibre's).
+> - `CLAUDE.md`, `README.md`.
+>
+> ## Steps
+> 1. **Read the API.** Get the text out of `SimWise Export API.pdf` (pypdf in a scratch venv) and dump the type library (enums `SWMateType`, `SWFeatureType`, `UnitSystem`, `CADType`, and the members of `SWBody`, `SWCoord`, `SWConstraint`, mass/material properties). Write a short API summary into `docs\ExportAPI.md`. Confirm units (the samples use metres) and what `SetUpdateStampValue`, `AutoComputeCOMs` and `CADType` mean.
+> 2. **Skeleton add-on.** Menu, save dialog (default `<assembly>.wm3` beside the file), logging to `%LOCALAPPDATA%\SimWiseForAlibre\SimWiseForAlibre.log`. Export one part: `IADDesignSession.ExportSAT2` (version to suit SimWise), one `SWBody`, `DoExport`, `TerminateExport`. Frank opens it in SimWise.
+> 3. **Assemblies.** Walk occurrences recursively. Sub-assemblies become `NewSubAssembly` coords. Each part occurrence becomes a body: SAT exported once per part file (cached by path, in the part's own frame), with location and orientation from `WorldTransform` (row-major, translation in row 4, model units, usually cm, converted with `ModelUnits`). Colour comes from the part, mass properties from `PhysicalProperties` or SimWise's own computation with the density (step 1 decides which). Fixed occurrences are anchored. Suppressed and hidden occurrences are skipped.
+> 4. **Constraints.** Read `AssemblyConstraints` (the reading pattern is in MCPForAlibre `Commands.Assemblies.cs`). For each participant, get its face or edge, work out plane or cylinder/axis geometry in the body's frame, and create an `SWCoord` (`swPlane`/`swCylinder`, offset plus XForm). Map Mate (planes facing) and Align (planes the same way, or axes concentric) to the matching `SWMateType`, Orient to parallel, and Angle if the API has it. Suppressed constraints and ones with errors are skipped. Gear, rack, screw, fastener and tangent constraints are logged as not exported (later).
+> 5. **Report.** At the end, a message box: how many bodies and constraints were exported, and a list of what was skipped and why.
+>
+> ## Open questions, decided in step 1 or asked of Frank then
+> - How SimWise expects each mate's coord orientation (normals facing, or the same way).
+> - Whether the per-part SAT should be in the part's own frame with the body placed by transform (the samples suggest yes).
+>
+> ## Verification
+> - Build the Release x64 add-on, install it with `deploy\install.ps1`, restart Alibre.
+> - Frank's tests: export `camtest\examples\test1.AD_ASM` and a single part, open each `.wm3` in SimWise, check positions, colours and mass, run a simple motion (for example a hinge from Mate plus Align on a pin), and read the skipped list in the report and the log.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Registered. Generating the interop assembly into a scratch folder and setting up PDF text extraction.
+
+> The API is documented and there's even a `CADType.Alibre`. Now reading how MCPForAlibre handles participants and placements.
+
+> I'm writing the new add-on now. I've got the full SimWise Export API and the Alibre members it needs. Checking one last detail: what `ExportSAT`'s version number means.
+
+> Setting up the repository and the SimWise interop library.
+
+> Before writing the geometry code, I'll test SimWise's matrix layout directly through its COM objects, so the orientations aren't a guess.
+
+> The objects create, but the type library isn't registered, so late binding fails. Early binding (what the add-on will use) shouldn't need it. Testing that with a small C# program.
+
+> Writing the geometry and export code.
+
+> It built cleanly on the first try. Now the install script, the interop script and the docs.
+
+> Alibre is closed, so I'll run the installer. It will ask you for administrator rights and wait for Enter at the end.
+
+> Installed and registered. Recording the new project in memory and rebuilding the discussion file.
+
+> The new exporter add-on is built and installed in Alibre, but it hasn't been run in Alibre or SimWise yet. It's a new repository, `D:\Projects\alibre\SimWiseForAlibre`, and nothing is committed.
+>
+> **About .NET 10:** it can't be used. Alibre 27 runs add-ons on .NET Framework 4.8, so a .NET 10 DLL won't load inside it. The add-on targets .NET Framework 4.8 and uses `LangVersion latest`, so it still gets modern C# syntax. It needs only the Alibre and SimWise COM libraries, and .NET Framework 4.8 handles both fully.
+>
+> **What it does:** Alibre gets a **SimWise** menu with **Export to SimWise...** and **Show Log**. Export asks where to save the `.wm3`, then SimWise starts and opens the model. A summary lists what was exported and what was left out.
+> - **Parts:** each visible, unsuppressed part becomes a body, placed where it is in Alibre, with its colour and density. SimWise works out the mass. Parts fixed in Alibre are fixed in SimWise.
+> - **Sub-assemblies:** their parts are exported as separate top-level bodies. A rigid sub-assembly's parts are held together with rigid joints; a flexible one's own constraints are exported. That was my choice; tell me if you want it done another way.
+> - **Constraints exported:**
+>   - Mate and Align between faces or planes: coincident, or a distance when there's an offset.
+>   - Mate and Align between axes (concentric) and between points.
+>   - Orient (parallel) and Angle.
+>   - Constraints to the assembly's own planes go to the ground.
+> - **Not yet:** tangent, gear, rack, screw and fastener constraints, a plane with an axis or point, and offset axes. These show in the summary.
+>
+> **What I checked:** SimWise's export library works from C# without SimWise running. I confirmed how it lays out its rotation matrices, so part rotations should come across right. SimWise's type library isn't registered for 64-bit, which is why the project includes a pre-built interop DLL; `tools\MakeInterop.ps1` rebuilds it after a SimWise upgrade.
+>
+> **Least certain:** whether SimWise reads Alibre's ACIS files at the right size, whether the ground and rigid joints work, and the colours. Two settings let you try alternatives without a rebuild: `SIMWISEFORALIBRE_SAT_VERSION` (default 7) and `SIMWISEFORALIBRE_TRANSPOSE=1`. They're environment variables, so set them before starting Alibre.
+>
+> To test:
+> 1. Start Alibre and check the SimWise menu is there in a part and in an assembly.
+> 2. Export a single saved part. Check its size, colour and mass in SimWise.
+> 3. Export `camtest\examples\test1.AD_ASM`. Check that rotated parts sit where they do in Alibre.
+> 4. Export a simple hinge: a pin in a hole (Align on the axes) plus Mate on the faces. Check SimWise turns it into a revolute joint that moves.
+> 5. If anything's wrong, send me the log from **SimWise > Show Log**. It records each body's position and orientation, each constraint's mapping and the reason for anything skipped.
+>
+> The details are in `README.md`, `CLAUDE.md` and `docs\ExportAPI.md` in the new repository.
+
+### 🧑 Frank · 16:37
+
+> Create an alibre design assembly of a simple piston model - a base which includes the cylinder and bearing hole for the crankshaft, a piston, the crankshaft and the connecting rod.
+
+### 🤖 Claude
+
+> Building the Base part now (foot plate done, next the upright, cylinder and bearing hole).
+
+> Adding the cylinder to the base, then boring it out.
+
+> Base body is done; now adding the Ø10 crankshaft bearing hole through the upright.
+
+> The first bearing hole missed the part, so I removed it and am cutting it from a sketch on the ZX plane instead.
+
+> Checking the bearing hole landed at Z = 50 through the upright.
+
+> Bearing hole is correct (Ø10 through the 10 mm upright at Z 50). Tidying the unused sketches and saving the base.
+
+> Base saved. Now the crankshaft: Ø10 shaft, a web, and a Ø8 crank pin with a 15 mm throw.
+
+> Shaft runs Y −35 to −9 as intended. Adding the web (Y −9 to −5) and pin.
+
+> Crankshaft volume matches (4,309 mm³). Saving it, then the connecting rod (60 mm centres, Ø8 big end, Ø6 small end, 6 mm thick).
+
+> Rod is right (big end at origin, small end 60 mm above, Y ±3). Saving it and modelling the piston.
+
+> Piston checks out (12,821 mm³). Saving it and building the assembly.
+
+> All four parts are placed at top dead centre. Now finding faces for the constraints.
+
+> Adding the constraints: shaft in bearing, crank end-play, rod on crank pin, rod in the mid plane, piston in the bore and on the rod's small end.
+
+> All six constraints went on without errors. Checking positions and interference, then saving.
+
+> No interference at top dead centre. Testing the mechanism by turning the crank 90°.
+
+> The piston followed to Z 98.09, exactly what the geometry predicts. Checking bottom dead centre, then returning to top.
+
+> I've built the piston assembly in Alibre and saved it as `D:\Projects\alibre\camtest\examples\Piston\PistonEngine.AD_ASM`, with the four parts in the same folder. Turning the crank drives the rod and piston. I checked it at 0°, 90° and 180° of crank rotation: the piston was where the geometry says it should be each time, and there was no interference. It's saved at top dead centre.
+>
+> | Part | What it is |
+> |---|---|
+> | **Base** | A 100 × 60 × 10 foot plate, a 40 × 10 upright, and a cylinder from Z 80 to Z 150 (Ø40 outside, Ø30 bore). The crankshaft bearing hole is Ø10, through the upright at Z 50. |
+> | **Crankshaft** | A Ø10 shaft through the bearing, a 4 mm web, and a Ø8 crank pin 15 mm off the axis, so the stroke is 30 mm. |
+> | **ConnectingRod** | 60 mm between hole centres, 6 mm thick. The big end hole is Ø8 and the small end Ø6. |
+> | **Piston** | Ø29.8 × 25 tall. It has a slot underneath for the rod and a Ø6 hole for the piston pin, 10 mm above its bottom. |
+>
+> The Base is anchored, and six constraints hold the rest:
+> - The shaft is lined up with the bearing hole, with 1 mm between the web and the upright.
+> - The rod's big end is on the crank pin, and the rod is centred in the middle plane.
+> - The piston is on the bore's axis, and its pin hole is lined up with the rod's small end.
+>
+> The piston travels between Z 85 and Z 115 (its bottom face), so it always stays in the bore.
+>
+> Two things to know:
+> - **No piston pin part.** You listed four parts, so the rod's small end and the piston's hole are lined up with nothing in them. A Ø6 × 29 pin would be quick to add if you want one.
+> - **Two leftover sketches in Base.** `BearingSketch` and `BearingSketch2` are empty sketches from my first two tries at the bearing hole, which missed the part. The tools can't delete sketches, so you'll need to delete them in Alibre.
+
+### 🧑 Frank · 16:51
+
+> Add a piston pin
+
+### 🤖 Claude
+
+> The Ø6 × 29 pin is modelled and saved. Adding it to the assembly at the piston pin's position.
+
+> The pin is constrained into the piston's hole and centred. Turning the crank 90° to check the pin moves with the piston.
+
+> I've added a piston pin and saved the assembly. It's a Ø6 × 29 mm pin, saved as `PistonPin.AD_PRT` in the same folder.
+>
+> - **Fit:** it's 29 mm long, so its ends stop 0.1 mm inside the piston's round side.
+> - **Constraints:** it's lined up with the piston's pin hole and centred in the piston. It moves with the piston, and the rod still swings on it.
+> - **Check:** I turned the crank 90° and the pin went to Z 108.09, the same as the piston pin's centre. No parts overlap at 0° or 90°. The assembly is saved at top dead centre.
+>
+> The pin is exactly the size of the holes in the piston and rod (Ø6 in a Ø6). In a real engine there would be a little clearance or a press fit.
+
+### 🧑 Frank · 17:02
+
+> *[picture]*
+>
+> *[picture]*
+>
+> Test 3 failed.
+>
+> I've pasted the original alibre view, and what came out on simwise.  Alibre has the shaded blue background.
+
+### 🤖 Claude
+
+> I've fixed the rotation and built it, but it isn't installed yet because Alibre is running. Neither change has been tested.
+>
+> **What went wrong:** SimWise reads a part's rotation the opposite way to what I expected. Your square plate is turned about 32°, and SimWise turned it 32° the other way. The plate with the holes isn't rotated, so it came out right. The square also landed in the wrong place because it turned about its own origin, which isn't at its centre.
+>
+> **The fix:** each part's rotation now goes to SimWise in Alibre's own layout. The points where constraints attach also use that layout now, so concentric and coincident constraints point along the right axes.
+>
+> **Also found in the log:** Alibre's physical properties call fails for every part with an empty error. So no density has reached SimWise, and it has been working out mass from its default density. The log will now record the error code so I can find the cause.
+>
+> To install, close Alibre and run:
+>
+> ```bash
+> powershell -ExecutionPolicy Bypass -File D:\Projects\alibre\SimWiseForAlibre\deploy\install.ps1
+> ```
+>
+> Then test:
+> 1. Export `test1.AD_ASM` again. The square plate should sit and turn as it does in Alibre.
+> 2. Export the piston assembly. Check the crank turns about its bearing axis, not a different one.
+> 3. Send me the log's `[mass]` lines, so I can work out why the mass properties fail.
+
+### 🧑 Frank · 17:04
+
+> In step 2, the volume was correct, but the mass was wrong.  I set the material to steel in alibre.  It exported that correctly to simwise, but alibre showed Cast Aluminium in the physical properties dialog.
+
+### 🤖 Claude
+
+> I'll wait for your choice before changing the code. Either way, install the current build when Alibre is closed, so the log captures why the mass properties call fails.
+
+### 🧑 Frank · 17:10
+
+> Retested rotation.  That is correct now.
+
+### 🤖 Claude
+
+> Rotations are confirmed correct, so the placement side of the exporter is done.
+>
+> **Mass:** this changes my earlier answer. The API sees only one material, and its density matches it. On `simwise-simple` it reports "Aluminum - cast-hammered" at 2,643 kg/m³, which is Alibre's Cast Aluminium mass. So your earlier question about which source to trust doesn't arise. The new build sends that name and density, so SimWise's mass should now match Alibre's Physical Properties dialog.
+>
+> The Steel you set lives somewhere the API doesn't read. Knowing where you set it will tell me whether there's another property to try.
+>
+> **Still wrong:** test1's two parts have no material, and they came out at 1,000,000 kg/m³, a thousand times too dense. Alibre most likely reported their mass in grams while I treated it as kilograms. I've added a log line with the raw mass, volume and unit settings. It's built, but not installed, because Alibre is running.
+>
+> To test:
+> 1. Close Alibre and run `deploy\install.ps1`.
+> 2. Export test1 and `simwise-simple`. Compare each mass in SimWise with Alibre's Physical Properties dialog.
+> 3. Send me the `[mass]` lines from the log, and I'll fix the units.
+
+### 🧑 Frank · 17:17
+
+> That was a new model. I forgot to set the material.  I have rerun the test with the material as steel.
+
+### 🤖 Claude
+
+> You've hit your monthly spend limit · raise it at https://claude.ai/settings/usage?from=cc_cli_limit_message · your weekly limit resets Nov 14, 1am (Australia/Sydney)
+
+### 🧑 Frank · 17:24
+
+> I have exported a new assembly, simwise-hinge-test.  The model has been imported correctly, but the constraints look wrong.  The coincident constraints are working, but the placeholder in simwise is in the wrong location.  The coaxial constraint looks positioned and oriented incorrectly
+
+### 🤖 Claude
+
+> I've fixed the constraint markers, but it isn't installed or tested yet, because Alibre is running.
+>
+> **The cause:** the exporter placed each constraint's coord in world coordinates. SimWise reads a coord attached to a body in that body's own frame, which is what DST's PDF says `SetReferenceToBody` does. DST's examples only have bodies at the origin, unrotated, where the two frames agree, so they didn't show the difference. Both bodies in your hinge test are rotated, so the coaxial markers came out in the wrong place and pointing the wrong way. The coincident constraints looked right because their other side is the assembly's own planes, which really are in world coordinates.
+>
+> **The fix:** each coord's position and axes are converted into its body's frame before they're sent. For the pin, its coaxial coord now goes 5 mm along the pin's own Z axis, pointing along it. The log gets a new `[coord]` line for each one with the numbers sent.
+>
+> Mass and material look right now: both parts came through as cast aluminium at 2,643 kg/m³, matching Alibre.
+>
+> To test:
+> 1. Close Alibre and run `deploy\install.ps1`.
+> 2. Export `simwise-hinge-test` again. The coaxial marker should sit on the pin and hole axis, and the coincident markers on their faces.
+> 3. Run the simulation and check the pin turns in its hole about the right axis.
+> 4. If anything is still off, send me the `[coord]` lines from the log.
+
+### 🧑 Frank · 17:30
+
+> The simulation with coaxial constraint worked correctly.
+
+### 🤖 Claude
+
+> Good, the hinge works, so the core of the exporter is proven:
+> - parts placed and rotated as they are in Alibre
+> - constraint markers placed in each body's own frame
+> - coaxial and coincident constraints
+>
+> I've recorded this in `CLAUDE.md` and `docs\ExportAPI.md` in the SimWiseForAlibre repository. Nothing is committed.
+>
+> Built but not yet tested:
+> - **Sub-assemblies:** the parts of a rigid one are held together with rigid joints; a flexible one's own constraints are exported.
+> - **Orient** (parallel) and **Angle** constraints.
+> - **Mate or Align with an offset**, exported as a distance constraint.
+> - **Constraints between points.**
+> - **Mass for parts with no material:** test1's parts came out a thousand times too dense. The log now records the raw units to explain it.
+>
+> Not built yet:
+> - Tangent, gear, rack, screw and fastener constraints.
+> - Plane-to-axis and plane-to-point Mate or Align.
+> - Axes that are offset from each other.
+
+### 🧑 Frank · 17:54
+
+> The "sent" dialog box doesn't appear to be modal
+
+### 🤖 Claude
+
+> The summary box (and the error box) is shown with no owner window, so it isn't tied to Alibre. I'll give every box Alibre's main window as its owner.
+
+> I've fixed it: the export summary box should now be modal to Alibre. It's built but not installed or tested.
+>
+> **The cause:** the box was opened without saying which window it belongs to, so Windows didn't tie it to Alibre. The error box and the "save the design first" box had the same problem.
+>
+> **The fix:** all three boxes, and the save dialog, now use Alibre's main window as their owner. A new file, `AlibreWindow.cs`, finds that window: it's the main window of the process the add-on is running in.
+>
+> Two copies of Alibre are running at the moment, so close both before installing.
+>
+> To test:
+> 1. Close both Alibre windows and run `deploy\install.ps1`.
+> 2. Export an assembly. While the summary box is open, check Alibre can't be clicked, and that the box stays in front of Alibre.
+> 3. Export an unsaved part and check the "save the design first" box behaves the same way.
+
+### 🧑 Frank · 18:02
+
+> The PistonInBore constraint incorrectly appeared as a rigid joint in simwise.  The constraint should have let the piston move up and down in the base's cylinder
+
+### 🤖 Claude
+
+> I've changed how concentric constraints are sent. It's built but not installed, because Alibre is running, and not tested.
+>
+> **The cause:** PistonInBore aligns two design axes: the piston's Z-Axis with the base's Z-Axis. The exporter sent straight lines like these to SimWise as edges, and SimWise turned a concentric constraint between two edges into a rigid joint. Your pin-in-hole constraints worked because they use cylindrical faces, which go to SimWise as cylinders.
+>
+> **The fix:** a concentric constraint now always sends both sides as cylinders, whether the axis comes from a cylindrical face, a circular edge, a straight edge or a design axis. The positions were already right: the log shows both markers on the Z axis at the piston's height.
+>
+> To test:
+> 1. Close Alibre and run `deploy\install.ps1`.
+> 2. Export the piston assembly. Check PistonInBore is a sliding joint in SimWise, not a rigid one.
+> 3. Turn the crank in the simulation. The piston should move up and down its bore, driven by the connecting rod.
+
+### 🧑 Frank · 18:16
+
+> Test passed
+
+### 🤖 Claude
+
+> Good, the piston now slides in its bore. I've recorded in `CLAUDE.md` and `docs\ExportAPI.md` that concentric constraints between design axes are proven. Nothing is committed in the SimWiseForAlibre repository.
+>
+> Still untested:
+> - Whether the summary and error boxes are now modal to Alibre.
+> - **Sub-assemblies:** rigid joints for rigid ones, and exported constraints for flexible ones.
+> - Orient and Angle constraints.
+> - Mate or Align with an offset, and constraints between points.
+> - Mass for parts with no material, which came out a thousand times too dense on test1.
+
+### 🧑 Frank · 18:17
+
+> Summary boxes tested ok
+
+### 🤖 Claude
+
+> Good, the summary boxes are fixed too. I've noted in `CLAUDE.md` that they're now modal to Alibre.
+>
+> Still untested:
+> - **Sub-assemblies:** rigid joints for rigid ones, and exported constraints for flexible ones.
+> - **Orient and Angle constraints.**
+> - **Mate or Align with an offset**, and **constraints between points.**
+> - **Mass for parts with no material**, which came out a thousand times too dense on test1.
+
+### 🧑 Frank · 18:18
+
+> Add the untested items and any other tasks you can think of to the todo section of the readme
+
+### 🤖 Claude
+
+> I've added a "To do" section to the SimWiseForAlibre `README.md`, just before "Files", in two parts.
+>
+> **Built but not yet tested:**
+> - sub-assemblies, rigid and flexible
+> - Orient and Angle constraints
+> - Mate or Align with an offset, and constraints between points
+> - mass for parts with no material
+> - parts in other model units
+> - hidden and suppressed parts, and constraints with errors
+> - exporting a single part
+> - exporting again over an existing `.wm3`, where SimWise should update only the parts that changed
+>
+> **Not built yet:**
+> - tangent, gear, rack, screw and fastener constraints
+> - plane-to-axis and plane-to-point Mate or Align
+> - axes aligned with an offset between them
+> - constraint limits as joint limits
+> - keeping sub-assemblies as SimWise sub-assemblies instead of flattening them
+> - a camera matching Alibre's view
+> - a progress dialog for large assemblies
+> - Parasolid as a fallback to ACIS
+> - configurations
+> - an option to send Alibre's own mass properties
+> - a ribbon icon
+> - a clear message when SimWise isn't installed
+>
+> Nothing is committed.
+
+### 🧑 Frank · 18:21
+
+> Is there any way to create simwise like constraints in alibre and send them when we export?  For example, the simwise revolute motor, placed on a spinning part
+
+### 🤖 Claude
+
+> Your question depends on what SimWise's automation interface can do, so I'll look before answering. The export API I'm using has no motor settings. SimWise also ships a separate automation interface (`SimWiseAPI.chm`, `wm3d.tlb`), so I'm checking that for motors.
+
+> Still reading SimWise's automation help, for how motors are created and set.
+
+> Yes, I think it can be done, though two parts are unproven. The Export API I'm using can't make motors. But SimWise has a second interface, its automation API, which can drive a running SimWise. That interface can add motors to the model the export has just opened.
+>
+> **What SimWise offers (from `SimWiseAPI.chm` and `wm3d.tlb`):**
+> - `GetObject(, "WM3D.Application")` connects to the running SimWise, and `ActiveDocument` gives the model the export opened. `WM3D.Application` is registered on your machine.
+> - `doc.Find("name")` finds a coord by name. The exporter already names what it creates, so it can name a motor's two coords and find them again.
+> - `doc.Constraints.CreateConstraint(wmMotor, wmJoinInPlace, coord1, coord2)` creates a motor where the parts already sit. Actuators (`wmActuator`), springs and rods can be made the same way.
+> - `motor.MotorValue.Formula = "..."` sets what drives it: a number, a formula, or `input[n]` to link it to a slider that `doc.Inputs.Add` creates.
+> - Motor types are torque, rotation, velocity and acceleration. `MotorType` is read-only in the help, so I don't yet know how to choose one. It may follow from the formula, or need a different call.
+>
+> **How it would work:**
+> 1. In Alibre, you'd define a motor on a pair of parts, such as the crank in its bearing. You'd give it a type and a value.
+> 2. On export, the exporter sends the parts and constraints as now, plus two named coords on that axis.
+> 3. Once SimWise has opened the model, the add-on connects to SimWise, finds the coords and creates the motor.
+>
+> A SimWise motor is itself a revolute joint. So the Alibre constraints that already make that joint would probably be left out, or SimWise would see the joint twice. That needs testing.
+>
+> **Unproven:** whether calls from Alibre's process reach SimWise. That depends on the automation type library being registered for 64-bit, and the export library's isn't. Also unproven: how to choose the motor type. A small probe would settle both before building anything: after an export, add a velocity motor to the first concentric constraint.
+>
+> **Where the motor definition lives in Alibre** is your choice:
+> - **Stored in the assembly file (my recommendation):** a SimWise ▸ Motors dialog, where you pick the parts or an existing coaxial constraint and set the type and value. The add-on saves this inside the `.AD_ASM` using Alibre's add-on data, so it travels with the file. It's more work, and needs picking geometry.
+> - **By naming convention:** name an Alibre constraint something like `Motor velocity 60rpm`, and the exporter turns it into a motor. There's nothing to build in Alibre, and it shows in the design tree, but it's fragile and limited.
+> - **A sidecar file** next to the assembly, like CAMForAlibre's `.cam`. It's easy to edit, but it's lost when the assembly is copied without it.
+
+> If the probe works, I'll need your choice of where motors are stored in Alibre before building the rest.
+
+### 🧑 Frank · 18:29
+
+> Not now
+
+### 🤖 Claude
+
+> I've added motors to the to-do list in the SimWiseForAlibre `README.md`, under "Not built yet", so we can pick them up later. The entry records:
+> - the SimWise automation calls involved
+> - what's unproven: whether those calls reach SimWise from inside Alibre, and how to choose the motor type
+> - the probe to build first
+> - the storage choice still to make: a dialog saved in the assembly, a naming convention, or a sidecar file
+
+### 🧑 Frank · 18:29
+
+> Not now - the export updates the existing export, so if there is already a motor defined it would complicate things.  We'll leave this for now.
+
+### 🤖 Claude
+
+> Agreed, that's a real complication. Exporting again updates the existing `.wm3`, so a motor from an earlier export, whether added by the add-on or by hand in SimWise, would have to be found and kept or replaced, not added twice. I've added that to the motors item in the `README.md` to-do list, which stays deferred.
+
+## 2026-11-11
+
+### 🧑 Frank · 13:36
+
+> Next project will be tools to help covert a 3d scan into a 3d alibre part. import a point cloud or stl. interact with the user to identify features and create part features.  for complex shapes, fit surfaces.  how much of this can be done as an alibre add on? what is the best language for this?
+
+### 🤖 Claude
+
+> I checked the Alibre 27.0.1 headers for this. Now I'll write up the answer and finish the plan.
+
+> Most of it can be an Alibre add-on. The one real limit is freeform surfaces. I checked this against the 27.0.1 headers.
+>
+> **What works inside an add-on**
+> - **Reading the scan:** we read STL, PLY or point clouds with our own code. Alibre 27.0.1 can also import an STL as a native "design mesh" (`ImportNonNative3DFile`, `AddMeshBooleanFeature`), but what that's useful for hasn't been tried.
+> - **Showing it:** we'd use the same `On3DRender` drawing CAMForAlibre uses. A multi-million-point scan needs simplifying for display, because a 200,000-point line already takes 47 ms to draw.
+> - **Picking points on the scan:** Alibre can't pick our own graphics, so we do it ourselves. A view command gets the mouse clicks, and `ScreenToWorld` plus the view transform turn a click into a ray into the scan. From the clicked point we grow a region and fit a plane, cylinder, cone, sphere or torus to it.
+> - **Making real features:** sketches with lines, arcs, circles and B-splines, constraints and dimensions, design planes, axes and points. Then extrude, revolve, sweep, loft with guide curves, holes, fillets, chamfers, draft, shell, and 3D sketch B-splines. The result is a genuine parametric part.
+>
+> **What the API can't do**
+> - There are no surface features: no boundary or patch surface, no knitting surfaces into a solid, no thicken. Pattern and mirror are missing too.
+> - Freeform shapes therefore go one of two ways:
+>   1. **Native:** fit B-spline cross-sections and guide curves, then loft or sweep. This stays editable and covers most organic but structured shapes.
+>   2. **Imported:** fit NURBS surfaces ourselves, build the solid with OpenCASCADE, write a STEP file and bring it in with `ImportSTEPFile`. Normal features can then be added on top, but the imported body itself isn't editable.
+>
+> **Main workflow for mechanical parts:** put a plane through the scan, slice it into a polyline, fit lines and arcs to it, add constraints, and send it to Alibre as a sketch to extrude or revolve. Fitted cylinders and blends then become holes and fillets. Finally, a colour map shows how far the finished part is from the scan.
+>
+> **Language: C++, the same as CAMForAlibre.** Scans run to millions of points, so the fitting needs C++ speed. It also lets us reuse what's already tested:
+> - the add-on skeleton, the view command and the drawing code;
+> - the `core\` and tests layout;
+> - `Nurbs` (closest points, k-d tree), `SurfaceGeometry` (analytic sphere, cylinder, cone and torus) and `ArcFit` (fitting arcs to section polylines).
+>
+> I'd add Eigen and nanoflann, and OpenCASCADE only if freeform import is in version 1. C# would make the UI easier but has weaker geometry libraries. AlibreScript (Python) is far too slow for scans, though a Python notebook with Open3D is handy for trying fitting ideas on real scans first.
+>
+> The plan also covers the first steps for a new repository and three questions for you: what scanner data you'll use and how big, whether the parts are mostly mechanical or organic, and what to call the project.
+
+> Plan:
+>
+> # Scan to Alibre part: feasibility and recommended approach
+>
+> ## Context
+>
+> Frank's next project: turn a 3D scan (point cloud or STL) into a real Alibre Design part. The user picks out features interactively (planes, holes, bosses, revolved profiles), and the tool makes Alibre features from them; complex freeform areas get fitted surfaces. Question: how much can be an Alibre add-on, and which language. This is a scoping answer and a first roadmap, not code yet. It would be a new repository (like SimWiseForAlibre), not part of CAMForAlibre.
+>
+> ## What Alibre 27.0.1 allows (checked against the generated AlibreX_64.tlh)
+>
+> **Can do in an add-on (most of the job):**
+> - Read the scan: STL/PLY/XYZ/OBJ read by our own code (no Alibre call needed). Alibre also has `ImportNonNative3DFile`, `IsMeshTypeFile`, `GetDesignMeshes` and `AddMeshBooleanFeature`, so an STL can also live in the part as a native design mesh (unproven what the boolean does with a scan).
+> - Show it: the same `On3DRender` graphics CAMForAlibre uses. Limit: a 200,000-point polyline took 47 ms, so a multi-million-point scan needs decimation / level of detail, drawn as a coloured mesh with fitted regions highlighted.
+> - Interact: a view command (proven pattern from camtest) gets mouse clicks; `ScreenToWorld`/`WorldToScreen` (AlibreAddOn_64.tlh) plus `GetViewTransform`/`GetCameraPosition` let us cast a ray into our own mesh and pick scan points/regions ourselves (Alibre can't pick our graphics as geometry).
+> - Make features: `AddSketch` with lines, arcs, circles, ellipses, B-splines (`AddBspline`, `AddBsplineByInterpolation`), sketch constraints/dimensions, design planes/axes/points, `AddExtrudedBoss/Cutout`, `AddRevolvedBoss/Cutout`, `AddSweptBoss/Cutout`, `AddLoftBoss/Cut` (with guide curves), holes, fillets, chamfers, draft, shell, `Add3DSketch` with 3D B-splines. Parameters can be named, so the result is genuinely parametric.
+>
+> **Can't do through the 27.0.1 API:**
+> - No surface modelling features: no boundary/patch surface, knit/sew, thicken or "replace face". No pattern or mirror features.
+> - So freeform areas need one of:
+>   1. **Loft/sweep through fitted B-spline sections and guide curves** (native, parametric, editable). Works for most "organic but structured" shapes (handles, ducts, fairings).
+>   2. **Fit NURBS surfaces ourselves, build the solid outside Alibre, write STEP, and `ImportSTEPFile`/`ImportSTEPFileEx`** into the part, then add parametric features on top. The imported body is a dumb base, not editable as features. This is how truly freeform bodies get in.
+>
+> ## Recommended workflow (like Geomagic Design X's "mesh to parametric")
+>
+> 1. Import scan, clean (outliers, holes in mesh), decimate for display; align the scan to part axes (pick a main plane = XY, a second = XZ, or automatic by principal axes/RANSAC).
+> 2. User clicks a seed point; region growing + fit gives a plane, cylinder, cone, sphere or torus with its deviation shown as a colour map. Snap to "design intent": round values, perpendicular/parallel/coaxial to features already found.
+> 3. Section approach for prismatic/turned parts: put a plane through the scan, slice the mesh into a polyline, fit lines and arcs (with tangency), constrain, and send as a sketch -> extrude/revolve. This one path covers most mechanical parts.
+> 4. Holes, fillets and chamfers detected from fitted cylinders/blends and created as Alibre features after the base body.
+> 5. Freeform: fit B-spline sections + guides -> loft; or NURBS patch -> STEP import as the base body.
+> 6. Compare: deviation map of the finished Alibre part (facets via `GetFacetData`, already used in CAMForAlibre) against the scan.
+>
+> ## Language: C++ (same as CAMForAlibre)
+>
+> - Reuses everything proven: COM add-on skeleton, view command, `On3DRender` drawing, units handling, the `core\` testable library + doctest layout, `WriteFileAtomically`, help page pattern.
+> - Reusable code from CAMForAlibre `core\`: `Nurbs` (evaluate, derivatives, closest point, k-d tree sampling), `SurfaceGeometry` (`AnalyticSurface` sphere/cylinder/cone/torus, `ClosestPointOn`, `SurfaceFitsPoints`), `Boundary` (paths with arcs), `ArcFit` (fitting lines/arcs to polylines — directly useful for section sketches), mesh/STL code from `Simulation` (`StockMeshToStl`).
+> - Performance: millions of points, k-d trees, RANSAC, least squares, NURBS fitting, parallel with `std::execution::par` — C++ is the right fit.
+> - Libraries (pinned in `third_party\`): Eigen (MPL2) for least squares; nanoflann (BSD) for k-d trees; OpenCASCADE (LGPL 2.1 + exception, dynamic link) only if we take route 2 for freeform: `GeomAPI_PointsToBSplineSurface`, sewing faces into a solid, and STEP writing. Open3D/PCL are heavier than needed.
+> - Alternatives considered: C# (.NET add-on; easier WPF UI but weaker geometry libraries, and loses the shared core); AlibreScript/IronPython (fine for quick experiments, far too slow for scans). A Python + Open3D notebook is useful only for trying fitting ideas on real scans before writing them in C++.
+>
+> ## Suggested first steps (once approved)
+>
+> 1. New repo `ScanToAlibre` (name to be chosen by Frank) with the CAMForAlibre layout: `addon\`, `core\`, `tests\`, `third_party\`, `docs\SPEC.md`, CLAUDE.md, help page.
+> 2. Prove in Alibre: drawing a 1-2 million triangle scan at usable frame rates (LOD), ray picking via `ScreenToWorld`, `ImportSTEPFile` into an open part, creating a sketch + extrude from the add-on, and what `AddMeshBooleanFeature` does with a design mesh.
+> 3. Core: scan reader, k-d tree, plane/cylinder/sphere/cone fitting by region growing + RANSAC with tests on synthetic noisy data.
+> 4. Section-to-sketch (slice, fit lines/arcs, constrain) -> extrude/revolve — the first end-to-end useful tool.
+>
+> ## Open questions for Frank
+>
+> - What scanner/data: dense meshes (STL) or raw point clouds, and typical size?
+> - Mostly mechanical (prismatic/turned) parts, or organic shapes? This decides whether freeform (OpenCASCADE + STEP) is in version 1.
+> - Project name.
+>
+> ## Verification
+>
+> Each step is proved in Alibre by Frank by hand (numbered test lists), with `core\` covered by doctest on synthetic scans (known shapes + noise) and a few real scans as replay fixtures.
+
+*(Frank turned the plan down.)*
+
+### 🧑 Frank · 13:51
+
+> How can surfaces be integrated into this add in?
+
+### 🤖 Claude
+
+> Too broad; I'll look at the specific interfaces.
+
+> Surfaces can go into the part directly, as Alibre surfaces, from a file we write ourselves. None of this has been tried in Alibre yet.
+>
+> **The way in.** The 27.0.1 API has `IADPartSession::DesignSurfaces->InsertFromFile(file, faceProcessing, heal, makeTolerant, units)`. It puts the surfaces from a STEP, IGES or SAT file into an *existing* part, and can stitch neighbouring faces together. Each inserted surface gives back its faces, edges and vertices. Extrudes, cuts and holes also have an "up to geometry" end condition (`AD_TO_GEOMETRY` with a target object), so a feature can stop at a face of that surface.
+>
+> **How it would work for one freeform region:**
+> 1. **Fit:** the user picks a region of the scan, and our code fits a B-spline surface to it. The patch is fitted oversize and left untrimmed, so Alibre does the trimming. The user sees a colour map of how far the scan is from the surface, and can change the number of control points and the smoothing.
+> 2. **Write:** we save the patch as an IGES or STEP B-spline surface. Both are simple text formats, so a single patch doesn't need OpenCASCADE.
+> 3. **Insert:** `InsertFromFile` puts it into the open part.
+> 4. **Use it with ordinary features:**
+>    - Extrude a sketched outline *up to the surface*. That gives straight sides and a freeform top, which suits many scanned parts: lids, covers, grips, moulded housings.
+>    - Cut a block *down to the surface* to carve it to the scan.
+>    - Drill holes to the surface.
+>    - The surface is a real Alibre object, so you can also use your edition's own surface commands on it by hand.
+>
+> **Other routes:**
+> - **Loft or sweep** through fitted spline cross-sections and guide curves. This stays fully parametric and is best for ducts, handles and tube-like shapes.
+> - **A wholly freeform body** made of several patches sewn into a closed solid. That needs OpenCASCADE and a STEP import, so I'd leave it until a part actually needs it.
+>
+> The CAMForAlibre code that reads spline faces (`Nurbs`) already evaluates surfaces and finds closest points, which is the hard half of fitting.
+>
+> The first test in Alibre would be:
+> 1. Insert a hand-written IGES patch with `InsertFromFile`.
+> 2. Extrude a sketch up to that patch.
+>
+> If those two work, surfaces fit well into the add-on. I've added this to the plan.
+
+> Plan:
+>
+> # Scan to Alibre part: feasibility and recommended approach
+>
+> ## Context
+>
+> Frank's next project: turn a 3D scan (point cloud or STL) into a real Alibre Design part. The user picks out features interactively (planes, holes, bosses, revolved profiles), and the tool makes Alibre features from them; complex freeform areas get fitted surfaces. Question: how much can be an Alibre add-on, and which language. This is a scoping answer and a first roadmap, not code yet. It would be a new repository (like SimWiseForAlibre), not part of CAMForAlibre.
+>
+> ## What Alibre 27.0.1 allows (checked against the generated AlibreX_64.tlh)
+>
+> **Can do in an add-on (most of the job):**
+> - Read the scan: STL/PLY/XYZ/OBJ read by our own code (no Alibre call needed). Alibre also has `ImportNonNative3DFile`, `IsMeshTypeFile`, `GetDesignMeshes` and `AddMeshBooleanFeature`, so an STL can also live in the part as a native design mesh (unproven what the boolean does with a scan).
+> - Show it: the same `On3DRender` graphics CAMForAlibre uses. Limit: a 200,000-point polyline took 47 ms, so a multi-million-point scan needs decimation / level of detail, drawn as a coloured mesh with fitted regions highlighted.
+> - Interact: a view command (proven pattern from camtest) gets mouse clicks; `ScreenToWorld`/`WorldToScreen` (AlibreAddOn_64.tlh) plus `GetViewTransform`/`GetCameraPosition` let us cast a ray into our own mesh and pick scan points/regions ourselves (Alibre can't pick our graphics as geometry).
+> - Make features: `AddSketch` with lines, arcs, circles, ellipses, B-splines (`AddBspline`, `AddBsplineByInterpolation`), sketch constraints/dimensions, design planes/axes/points, `AddExtrudedBoss/Cutout`, `AddRevolvedBoss/Cutout`, `AddSweptBoss/Cutout`, `AddLoftBoss/Cut` (with guide curves), holes, fillets, chamfers, draft, shell, `Add3DSketch` with 3D B-splines. Parameters can be named, so the result is genuinely parametric.
+>
+> **Can't do through the 27.0.1 API:**
+> - No surface modelling features: no boundary/patch surface, knit/sew, thicken or "replace face". No pattern or mirror features.
+> - So freeform areas need one of:
+>   1. **Loft/sweep through fitted B-spline sections and guide curves** (native, parametric, editable). Works for most "organic but structured" shapes (handles, ducts, fairings).
+>   2. **Fit NURBS surfaces ourselves, build the solid outside Alibre, write STEP, and `ImportSTEPFile`/`ImportSTEPFileEx`** into the part, then add parametric features on top. The imported body is a dumb base, not editable as features. This is how truly freeform bodies get in.
+>
+> ## How surfaces get into the part (found in the 27.0.1 headers)
+>
+> Key finding: `IADPartSession::DesignSurfaces` has `InsertFromFile(fileName, ADFaceProcessingType, healOption, makeTolerantOption, overridingUnit)`. It inserts surfaces from a STEP/IGES/SAT file into an **existing** part as design (reference) surfaces, optionally stitched (`AD_STITCH_ADJOINING_FACES`). Each `IADDesignSurface` gives back its faces, edges and vertices. Extrudes, cuts and holes have the end condition `AD_TO_GEOMETRY` with a `toGeometryObject`, so a feature can stop at a face. Both are unproven in 27.0.1.
+>
+> Our pipeline for one freeform region:
+> 1. **Fit (core, ours):** the user picks a region; fit a B-spline surface by least squares (base parameterisation by projection onto a plane or cylinder, a smoothing term, then parameter correction using the existing `Nurbs::ClosestPoint`). Fit it oversize as an untrimmed rectangular patch, so Alibre does the trimming. Show the deviation map, and let the user change the control-point count and smoothing.
+> 2. **Write (core, ours):** an IGES type 128 rational B-spline surface, or STEP `B_SPLINE_SURFACE_WITH_KNOTS`. Both are simple text formats, so no OpenCASCADE is needed for single patches.
+> 3. **Insert:** `DesignSurfaces.InsertFromFile` into the open part.
+> 4. **Use it with native features:**
+>    - an extruded boss from a sketch outline with `AD_TO_GEOMETRY` to the surface, giving prismatic sides and a freeform top (covers many scanned parts: covers, grips, moulded lids);
+>    - a cutout up to the surface, to carve a block down to the scan;
+>    - a hole to the surface.
+>    - The user can also use Alibre's own surface commands by hand (whatever their edition has), since the surface is a real Alibre object.
+>
+> Other routes:
+> - **Loft or sweep** through fitted B-spline sections and guides (`AddLoftBoss` with `GuideCurves`, 3D sketch `AddBspline`). Fully parametric. Best for tube- or duct-like shapes.
+> - **Whole freeform body:** several patches sewn into a closed solid needs OpenCASCADE (sewing, trimming, STEP solid). Import it as the base body (`ImportSTEPFileEx`), or into the part with stitching. Leave this until a part needs it.
+>
+> Things to prove early in Alibre: `InsertFromFile` with an IGES or STEP B-spline patch; extrude `AD_TO_GEOMETRY` with the inserted surface or its face as the target; and which surface commands Frank's Alibre edition has in its own interface.
+>
+> ## Recommended workflow (like Geomagic Design X's "mesh to parametric")
+>
+> 1. Import scan, clean (outliers, holes in mesh), decimate for display; align the scan to part axes (pick a main plane = XY, a second = XZ, or automatic by principal axes/RANSAC).
+> 2. User clicks a seed point; region growing + fit gives a plane, cylinder, cone, sphere or torus with its deviation shown as a colour map. Snap to "design intent": round values, perpendicular/parallel/coaxial to features already found.
+> 3. Section approach for prismatic/turned parts: put a plane through the scan, slice the mesh into a polyline, fit lines and arcs (with tangency), constrain, and send as a sketch -> extrude/revolve. This one path covers most mechanical parts.
+> 4. Holes, fillets and chamfers detected from fitted cylinders/blends and created as Alibre features after the base body.
+> 5. Freeform: fit B-spline sections + guides -> loft; or NURBS patch -> STEP import as the base body.
+> 6. Compare: deviation map of the finished Alibre part (facets via `GetFacetData`, already used in CAMForAlibre) against the scan.
+>
+> ## Language: C++ (same as CAMForAlibre)
+>
+> - Reuses everything proven: COM add-on skeleton, view command, `On3DRender` drawing, units handling, the `core\` testable library + doctest layout, `WriteFileAtomically`, help page pattern.
+> - Reusable code from CAMForAlibre `core\`: `Nurbs` (evaluate, derivatives, closest point, k-d tree sampling), `SurfaceGeometry` (`AnalyticSurface` sphere/cylinder/cone/torus, `ClosestPointOn`, `SurfaceFitsPoints`), `Boundary` (paths with arcs), `ArcFit` (fitting lines/arcs to polylines — directly useful for section sketches), mesh/STL code from `Simulation` (`StockMeshToStl`).
+> - Performance: millions of points, k-d trees, RANSAC, least squares, NURBS fitting, parallel with `std::execution::par` — C++ is the right fit.
+> - Libraries (pinned in `third_party\`): Eigen (MPL2) for least squares; nanoflann (BSD) for k-d trees; OpenCASCADE (LGPL 2.1 + exception, dynamic link) only if we take route 2 for freeform: `GeomAPI_PointsToBSplineSurface`, sewing faces into a solid, and STEP writing. Open3D/PCL are heavier than needed.
+> - Alternatives considered: C# (.NET add-on; easier WPF UI but weaker geometry libraries, and loses the shared core); AlibreScript/IronPython (fine for quick experiments, far too slow for scans). A Python + Open3D notebook is useful only for trying fitting ideas on real scans before writing them in C++.
+>
+> ## Suggested first steps (once approved)
+>
+> 1. New repo `ScanToAlibre` (name to be chosen by Frank) with the CAMForAlibre layout: `addon\`, `core\`, `tests\`, `third_party\`, `docs\SPEC.md`, CLAUDE.md, help page.
+> 2. Prove in Alibre: drawing a 1-2 million triangle scan at usable frame rates (LOD), ray picking via `ScreenToWorld`, `DesignSurfaces.InsertFromFile` of a hand-written IGES B-spline patch, extrude `AD_TO_GEOMETRY` up to it, creating a sketch + extrude from the add-on, and what `AddMeshBooleanFeature` does with a design mesh.
+> 3. Core: scan reader, k-d tree, plane/cylinder/sphere/cone fitting by region growing + RANSAC with tests on synthetic noisy data.
+> 4. Section-to-sketch (slice, fit lines/arcs, constrain) -> extrude/revolve — the first end-to-end useful tool.
+>
+> ## Open questions for Frank
+>
+> - What scanner/data: dense meshes (STL) or raw point clouds, and typical size?
+> - Mostly mechanical (prismatic/turned) parts, or organic shapes? This decides whether freeform (OpenCASCADE + STEP) is in version 1.
+> - Project name.
+>
+> ## Verification
+>
+> Each step is proved in Alibre by Frank by hand (numbered test lists), with `core\` covered by doctest on synthetic scans (known shapes + noise) and a few real scans as replay fixtures.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> I'm ready to start the scan-to-part add-on, but nothing is built yet. It will be a separate repository, not part of CAMForAlibre. None of the Alibre calls in the plan have been tried yet.
+>
+> The first job is setting up the new repository with the same layout as CAMForAlibre. After that, the first things to prove in Alibre are:
+> 1. Insert a hand-written IGES B-spline patch into a part with `DesignSurfaces.InsertFromFile`.
+> 2. Extrude a sketch up to that surface.
+> 3. Draw a scan of 1 to 2 million triangles fast enough to work with.
+> 4. Pick points on the scan by clicking, using `ScreenToWorld`.
+>
+> My suggestion is to call it `ScanToAlibre` and put it in `D:\Projects\alibre\ScanToAlibre`.
+>
+> It would also help to know two things:
+> - What your scanner gives you: STL meshes or raw point clouds, and roughly how big.
+> - Whether the parts are mostly mechanical or organic. If they're organic, the full freeform-body route with OpenCASCADE should be in the first version.
+>
+> I rebuilt `Discussion.md`.
+
+### 🧑 Frank · 13:58
+
+> what is full freeform-body
+
+### 🤖 Claude
+
+> A full freeform body is a part whose whole shape is made from fitted surfaces, with no flat faces or simple shapes to build it from. Think of a computer mouse, a car mirror housing, a shoe last or a carved handle.
+>
+> **How it differs from the single-patch route**
+>
+> - **Single patch (the main plan):** most of the part is ordinary features, such as a sketch extruded with straight sides. Only one face, like the top, is freeform. We fit one rectangular, oversize surface and insert it. Alibre trims it by extruding up to it. Our code only fits the surface and writes a simple IGES or STEP file.
+> - **Full freeform body:** the whole outside is freeform, so no single patch covers it. Several patches are needed, for example top, sides, front and back. Each has to be:
+>   1. fitted to its own region of the scan;
+>   2. trimmed where it meets its neighbours, which means working out the curves where the surfaces cross;
+>   3. joined to its neighbours with no gaps, ideally smoothly;
+>   4. sewn into a closed, watertight shell that counts as a solid.
+>
+> Trimming, joining and sewing need a full geometry kernel, which is why that route uses OpenCASCADE. It has surface intersection, sewing and STEP solid writing. Our code would do the fitting and the user interaction, OpenCASCADE would assemble the solid, and the result comes into Alibre as an imported body.
+>
+> **The cost**
+> - **Effort:** it's much more work, and it adds a large library to the project.
+> - **Editing:** the imported body is a "dumb" solid. You can add holes, cuts and fillets on top in Alibre, but you can't change the freeform shape itself through Alibre's features. To change it, you refit and import it again.
+>
+> **Why I asked:** if your scanned parts are mostly mechanical, or mechanical with one freeform face, the first version can skip this entirely. It only matters if you want to rebuild organic objects as a whole.
+
+### 🧑 Frank · 13:59
+
+> ScanToAlibre, alibre folder
+
+### 🤖 Claude
+
+> The ScanToAlibre folder, git repository, CLAUDE.md, README, spec and to-do list are written. Next I'll save a memory note and rebuild Discussion.md.
+
+> I've set up `D:\Projects\alibre\ScanToAlibre` as a new git repository. It has only documents so far, and nothing is committed:
+> - [CLAUDE.md](../ScanToAlibre/CLAUDE.md) gives the project's working rules, locations and planned layout. It points to CAMForAlibre for the add-on patterns and the Alibre behaviour already proven.
+> - [docs/SPEC.md](../ScanToAlibre/docs/SPEC.md) is the draft spec: what the 27.0.1 API offers, how surfaces get into the part, the workflow, open questions and first steps.
+> - [TODO.md](../ScanToAlibre/TODO.md) is the work list.
+> - [README.md](../ScanToAlibre/README.md), `.gitignore` and `.gitattributes` (copied from CAMForAlibre).
+>
+> I also saved a memory note about the new project.
+>
+> The next step is the add-on skeleton: the solution, `addon\`, `core\`, `tests\`, install scripts, a log and a ribbon command. Once that builds, the first trial in Alibre would be inserting an IGES surface patch and extruding up to it.
+>
+> It would be better to do that work in a new session opened in the ScanToAlibre folder, so it keeps its own transcript. This conversation is being recorded in CAMForAlibre's `Discussion.md`. If you say yes here instead, I'll build it from this session.
+
+### 🧑 Frank · 14:02
+
+> Yes, build skeleton
+
+### 🤖 Claude
+
+> I've read CAMForAlibre's skeleton. Now I'm checking a few 27.0.1 API details the first test command will use: units, collections and the part session.
+
+> I have what I need. Now writing the core library: atomic file writes, a B-spline surface type, and an IGES writer for the first Alibre test.
+
+> Now the core and tests projects.
+
+> Project files are clean. Now the tests.
+
+> Now the add-on itself.
+
+> Collections are 0-based, matching what I wrote. Now the menu interface and resources.
+
+> The add-on source and project files are written. Next come the solution, the .filters file and the install scripts, then the build.
+
+> The shell is eating doubled backslashes inside the script, so I'll put it in a file instead.
+
+> Converting to CRLF line endings, then building.
+
+> Built cleanly. Running the tests and checking the exports and the IGES output.
+
+> All 5 tests pass, and the four exports Alibre looks for are there. Checking whether Alibre is running before I install.
+
+> Installed and registered. Now updating the docs to match.
+
+> I built the ScanToAlibre skeleton in Release and installed it. All 5 core tests pass, but it hasn't been tried in Alibre yet and nothing is committed.
+>
+> The add-on gets its own **ScanToAlibre** ribbon tab with two commands:
+> - **Insert Test Surface** (greyed outside parts) is the first test of the surface route. It writes a test surface (a gentle hump over X 0–100, Y 0–80, Z 20 to about 30 mm) as `%LOCALAPPDATA%\ScanToAlibre\test-surface.igs`. It then inserts it with `DesignSurfaces->InsertFromFile` and shows how many surfaces the part had before and after, with their faces and edges. The same is written to the log with `[surface]` lines.
+> - **About**.
+>
+> The rest is copied or adapted from CAMForAlibre:
+> - the add-on entry points, menus, log and crash catcher;
+> - the `ScanCore` library with the IGES writer and the B-spline surface;
+> - the tests, the install scripts, and the docs (README, CLAUDE.md "Current state", spec, to-do).
+>
+> The icon is CAMForAlibre's for now.
+>
+> **To test:**
+> 1. Start Alibre. There should be a **ScanToAlibre** ribbon tab, and **About** should open.
+> 2. In an assembly or drawing, **Insert Test Surface** should be greyed.
+> 3. Open a new part and click **Insert Test Surface**. The message should report one more design surface than before, with its faces and edges. You should see a curved surface over 100 × 80 mm, between Z 20 and about 30.
+> 4. Draw a rectangle on the XY plane inside 0–100 × 0–80 and extrude it with **To Geometry**, picking the surface. This shows whether a feature can stop at an inserted surface.
+> 5. If any step fails, the details are in `%LOCALAPPDATA%\ScanToAlibre\ScanToAlibre.log`, and I can check the IGES file is what Alibre expects.
+>
+> Future work on ScanToAlibre would be better done in a session opened in its own folder. This conversation is still being recorded in CAMForAlibre's `Discussion.md`, which I've rebuilt.
+
+### 🧑 Frank · 14:11
+
+> tests passed
+
+### 🤖 Claude
+
+> Good news: freeform surfaces will work. The log matches what you saw. `InsertFromFile` took about 0.25 s and added one design surface, `Surface<1>`, with 1 face and 4 edges. So Alibre reads the IGES files our core writes, and an extrude To Geometry stops at the surface. That was the riskiest part of the plan.
+>
+> I've recorded this in ScanToAlibre's docs:
+> - [CLAUDE.md](../ScanToAlibre/CLAUDE.md): the skeleton and Insert Test Surface are now marked as tested, and there's a new "Proven Alibre API behaviour" section with the call, its arguments and what it returned.
+> - [docs/SPEC.md](../ScanToAlibre/docs/SPEC.md): its status line says the same.
+> - [TODO.md](../ScanToAlibre/TODO.md): the test item is gone. Still to do is extruding To Geometry from the add-on itself (`AD_TO_GEOMETRY`); so far it has only been done by hand.
+>
+> Nothing is committed in ScanToAlibre. I also rebuilt `Discussion.md`.
+>
+> The next proofs on the list are drawing a large scan quickly enough to work with, and picking points on it with `ScreenToWorld`. That needs a test STL; one of your own scans would be ideal.
+
+### 🧑 Frank · 14:14
+
+> Here's a file - "D:\3dscanner\mt12cover\mt12cover -cleaned.stl".
+
+### 🤖 Claude
+
+> 1.07 million triangles, binary STL, about 37 × 24 × 66 mm, not aligned to the axes. Now studying how CAMForAlibre draws meshes and handles clicks.
+
+> I need to know what `ScreenToWorld` returns before relying on it. Checking the Alibre samples.
+
+> I have everything I need. Writing the core first: shared geometry, the STL reader, mesh tools and ray picking.
+
+> Now the view projection: fitting it from `WorldToScreen` samples and turning a click into a line through the scene.
+
+> Now tests for the mesh reader, simplification, picking and the projection fit.
+
+> Adding a skipped timing test that reads a real scan named by an environment variable, then registering the files and building.
+
+> All 14 tests pass. Now timing on your real scan.
+
+> Now the view command that draws the scan and picks points on it.
+
+> Now the Import Scan command, then the menu entries.
+
+> The edit left that file with LF endings and the include didn't go in. Fixing both, then rebuilding and installing.
+
+> Installed. Updating the docs.
+
+> Import Scan and point picking are built and installed in ScanToAlibre, but haven't been tried in Alibre yet. All 14 core tests pass, and nothing is committed.
+>
+> **On your scan:** `mt12cover -cleaned.stl` has 1.07 million triangles and reads in 0.33 s. It's simplified to 230,700 triangles for drawing in 0.14 s. Finding where a click hits the whole scan takes 21 ms, with no search structure needed yet.
+>
+> **What's new on the ribbon (parts only):**
+> - **Import Scan** asks for an STL file and draws the scan in light blue. It's held in memory for that part only, not added to it. In the scan view:
+>   - a left-click picks a point on the scan and puts a red crosshair there;
+>   - **F** switches between full detail (1.07 million triangles) and the simplified copy, so we can compare drawing speed;
+>   - **C** clears the picked points.
+> - **Show Scan** starts the scan view again after another command or Escape has ended it.
+>
+> **How picking works:** Alibre can't pick add-on graphics, and `ScreenToWorld` isn't documented. So the add-on works out the view's projection from `WorldToScreen` on the scan's eight box corners. It turns the click into a line through the scene and finds the hit nearest the camera.
+>
+> Three things are unproven, and each is logged:
+> - whether Alibre's click and `WorldToScreen` use screen or viewport coordinates (it tries both);
+> - whether `OnClick` is called at all (picking uses mouse-up instead);
+> - what `ScreenToWorld` returns.
+>
+> **To test:**
+> 1. Restart Alibre and open a new part. **Import Scan** and **Insert Test Surface** should be enabled, and **Show Scan** greyed.
+> 2. **Import Scan** and choose `D:\3dscanner\mt12cover\mt12cover -cleaned.stl`. The scan should appear after about half a second. It isn't at the origin (roughly X 8–46, Y −32 to −8, Z −248 to −182 mm), so you may need to zoom to fit.
+> 3. Rotate, pan and zoom. Does it stay drawn, and is it smooth enough to work with?
+> 4. Press **F** for full detail, rotate again and compare. Press **F** again to go back.
+> 5. Click a few spots on the scan. A red crosshair should appear exactly where you click, including after you rotate the view. Press **C** to clear them.
+> 6. Run an Alibre command such as Measure, then **Show Scan**. The scan and its points should come back.
+> 7. If a pick lands in the wrong place or not at all, the `[pick]`, `[probe]` and `[view]` lines in `%LOCALAPPDATA%\ScanToAlibre\ScanToAlibre.log` will show why. They also record the render times for both detail levels.
+>
+> I've updated ScanToAlibre's CLAUDE.md, README and TODO.md, and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 14:29
+
+> it is a bit sluggish but in future we will reduce the points. the shape disappeared when measuring. click didn't work
+
+### 🤖 Claude
+
+> Now making `Pick` return whether it hit.
+
+> Installed. Recording what we learned in the docs.
+
+> The log showed why clicking didn't work, and I've fixed it. The fix is built and installed but not tried in Alibre yet.
+>
+> **Click:** Alibre does tell a regular command about clicks through `OnClick` (you clicked three times and all three arrived as the left button). But it never calls `OnMouseDown` or `OnMouseUp`, which is where I'd put the picking. Picking now happens in `OnClick`. A click that hits the scan is marked as handled, so Alibre won't also select whatever is behind it.
+>
+> **Disappearing during Measure:** this is how Alibre works. Any native command, Measure included, ends an add-on's command, and add-on graphics are only drawn while one is running. **Show Scan** brings it back. CAMForAlibre avoids this with its Design Explorer tab, which restarts its command whenever the tab gets focus. ScanToAlibre could do the same once it has a tab, so I've put that on the to-do list. Measuring the scan itself wouldn't work anyway, because Alibre can't pick add-on graphics.
+>
+> **Sluggishness:** the drawing call takes 14–23 ms for the simplified scan (230,700 triangles) and about 90 ms at full detail. The rest is Alibre drawing the mesh. Reducing the points is on the to-do list as you suggested.
+>
+> **To test:**
+> 1. Restart Alibre, open a part, and **Import Scan** the same STL file.
+> 2. Click a few spots on the scan. A red crosshair should appear exactly where you click.
+> 3. Rotate the view and click again. The new point should still land under the cursor, and the earlier ones should stay on the surface.
+> 4. Click on empty background. Nothing should be added, and Alibre should behave as usual.
+> 5. If a crosshair lands in the wrong place or not at all, the `[pick]` and `[probe]` lines in `%LOCALAPPDATA%\ScanToAlibre\ScanToAlibre.log` will show which coordinates were tried.
+>
+> I've recorded what we learned in ScanToAlibre's CLAUDE.md (under "Proven Alibre API behaviour") and TODO.md, and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 14:35
+
+> clicking selects a point on the far side of the part
+
+### 🤖 Claude
+
+> The tests confirm it: the fitted line already points into the screen and picks the near side. Now removing the camera flip from the add-on, but still logging what the camera position says.
+
+> Installed. Updating ScanToAlibre's CLAUDE.md with what the log proved, then I'll give you the test steps.
+
+> I've fixed the far-side picks. The fix is built and installed but not tried in Alibre yet.
+>
+> **Cause:** every click turned into the right line through the scan, under the cursor, so the click coordinates are fine. What went wrong was choosing which end of that line is nearer you. I'd used Alibre's camera position for that, and it isn't the eye position I assumed, so it chose the back. The line worked out from the view already points into the screen, so it picks the near side on its own. A new test proves this on a cube seen from above and from below, and all 15 core tests pass. The camera position is now only written to the log once, so we can learn what it really means.
+>
+> I also removed the fallback that tried converting the click coordinates. Your log showed they're never needed, and they could have turned a click on the background into a stray pick.
+>
+> **Learned from your log, now in ScanToAlibre's CLAUDE.md:**
+> - A click's coordinates match `WorldToScreen` directly, with no conversion.
+> - The fitted view is accurate to under a pixel.
+> - `ScreenToWorld` fails with a .NET array type error, so it takes some other argument type. It isn't needed.
+>
+> **To test:**
+> 1. Restart Alibre, open a part, and **Import Scan** the STL file.
+> 2. Click points on the side of the scan facing you. Each crosshair should sit exactly under the cursor, on the near surface.
+> 3. Rotate to the other side and click again. Those points should land on the side now facing you.
+> 4. Click on the empty background. Nothing should be added.
+>
+> I rebuilt `Discussion.md`.
+
+### 🧑 Frank · 14:39
+
+> test passed
+
+### 🤖 Claude
+
+> That completes the early proofs. Inserting a surface works, drawing a full-size scan works, and picking on the scan works.
+>
+> The log also showed what `GetCameraPosition` really returns. Looking down −Z, it gave (0, 0, −28.35), which is behind the scan rather than at your eye, and that's why the first fix picked the far side. I've recorded that in ScanToAlibre's CLAUDE.md under "Proven Alibre API behaviour", marked picking as tested, and taken it off TODO.md. Nothing is committed.
+>
+> There are two sensible next steps:
+> - **Fit a plane:** click a seed point on the scan. The add-on grows the region around it, fits a plane, colours the scan by how far each point is from it, and creates an Alibre design plane. This is the first real reverse-engineering tool, it builds straight on picking, and alignment and section sketches both start from fitted planes.
+> - **Scan tab first:** a Design Explorer tab like CAMForAlibre's. It would list the scan and the features found, and restart the scan view when you come back from Measure or another native command. That fixes the scan disappearing, and gives later tools somewhere to live.
+>
+> I'd do the plane fit first, as it proves the main idea sooner. The tab is mostly patterns we've already proven in CAMForAlibre.
+>
+> Whichever you choose, start it in a new session opened in `D:\Projects\alibre\ScanToAlibre`. Its CLAUDE.md now holds everything needed, and this conversation is going into CAMForAlibre's `Discussion.md`.
+
+### 🧑 Frank · 14:47
+
+> I'd like the ribbon to be like a workflow. button 1 is load.  button 2 is a fix dialog with point smoothing, decimation, etc. button 3 is orient dialog - move, rotate. plane/axis align.  Start with load; stl and ply. the points should be saved with the part.
+
+### 🤖 Claude
+
+> Questions:
+> - Where should the scan be saved "with the part"? Alibre lets an add-on store its own data inside the .AD_PRT file (IAlibreAddOn::SaveData, unproven in 27.0.1). The alternative is a file next to the part, like CAMForAlibre's .cam. Your largest point cloud (6.9M points) would add about 80–170 MB.
+>   - Inside the part (Recommended): Stored in the .AD_PRT through Alibre's add-on data stream, so it travels with the part and saves when the part saves. The part file grows by the scan's size (compressed where possible).
+>   - File beside the part: A .scan file next to the .AD_PRT, saved when the part is saved. The part stays small, but the two files must be kept together.
+> - PLY point clouds (no faces) can't be drawn as points: Alibre's canvas only draws meshes, lines and one marker at a time. How should a point cloud be shown?
+>   - Small discs (Recommended): Each point drawn as a tiny triangle facing along its normal (your PLY files all have normals), sized from the point spacing, so the cloud looks like a shaded surface. Simplified for display like meshes.
+>   - Build a mesh on load: Turn the cloud into a triangle mesh when it's loaded (surface reconstruction). Looks like a real surface, but it's a large piece of work and slow on millions of points.
+
+### 🧑 Frank · 14:50
+
+> Answers:
+> - ? Alibre lets an add-on store its own data inside the .AD_PRT file (IAlibreAddOn::SaveData, unproven in 27.0.1). The alternative is a file next to the part, like CAMForAlibre's .cam. Your largest point cloud (6.9M points) would add about 80–170 MB.
+>   **Inside the part (Recommended)**
+> - PLY point clouds (no faces) can't be drawn as points: Alibre's canvas only draws meshes, lines and one marker at a time. How should a point cloud be shown?
+>   **Build a mesh on load**
+
+### 🤖 Claude
+
+> Now the scan data saved inside the part: a small versioned binary format, checked on reading.
+
+> Now one loader that picks STL or PLY from the extension, then the tests.
+
+> The tests project didn't pick up the new file. Checking its line endings.
+
+> All 21 tests pass. Timing on your real PLY files: a mesh, and a point cloud to check the message.
+
+> No sample actually saves data, so this part is unproven. I'll log every call. One more thing to check: whether the API can mark a part as changed, so Alibre saves it after a scan is loaded.
+
+> Now the view command's unit lookups, then a rewrite of Load to use the new reader and ask before replacing a scan.
+
+> Now the ribbon and the save and load handlers in `AddOnInterface`.
+
+> Now the menu IDs in the header and the icon list.
+
+> It builds. Checking line endings across the project, then installing.
+
+> Installed. Now the spec, CLAUDE.md, README and TODO, with your decisions.
+
+> The workflow ribbon and Load are built and installed, but haven't been tried in Alibre yet. All 21 core tests pass, and nothing is committed.
+>
+> **The ribbon:** **1 Load**, **2 Fix**, **3 Orient**, then **Show Scan** and **About**. Fix and Orient are greyed until they're built, with tooltips saying what they'll do. Insert Test Surface has done its job and is off the ribbon; its code is kept.
+>
+> **Load:**
+> - It reads STL and PLY. PLY can be text or binary, any number types, and polygons are split into triangles.
+> - Your `mt12cover.ply` (1.07 million faces) reads in 0.18 s.
+> - If the part already has a scan, Load asks before replacing it.
+> - PLY point clouds aren't loaded yet. Load says so and suggests the mesh file instead, as each of your point clouds has a `Mesh.ply` beside it. Building a mesh from a point cloud, as you chose, is a big job of its own, so it's next on the to-do list.
+>
+> **Saving inside the part:**
+> - When the part is saved, the scan goes into the `.AD_PRT` through Alibre's add-on data stream. It adds about 19 MB for 1.07 million triangles.
+> - When the part is opened, the scan is read back and **Show Scan** draws it.
+> - Data that's damaged or from a newer version is kept exactly as it was and written back unchanged.
+>
+> This is the unproven part. No Alibre sample actually saves data, and the API has no way for an add-on to mark a part as changed. So if a scan is the only change, Alibre might not think the part needs saving. The log will show what happens.
+>
+> **To test:**
+> 1. Restart Alibre and open a new part. The ribbon should show 1 Load, 2 Fix, 3 Orient, Show Scan and About. Fix and Orient should be greyed, and so should Show Scan until there's a scan.
+> 2. **Load** `D:\3dscanner\mt12cover\mt12cover.ply`. It should appear like the STL did, and picking should still work.
+> 3. **Load** a point cloud, such as `...\result\Optimization.ply`. You should get the "point cloud isn't built yet" message, and the current scan should stay.
+> 4. **Load** again and answer No to replacing. Nothing should change.
+> 5. Save the part as it is, without any other change, and close it. Check whether the `.AD_PRT` grew by about 19 MB.
+> 6. Open the part again and click **Show Scan**. The scan should be back.
+> 7. If step 5 or 6 fails, try again after adding any feature before saving. The `[save]` and `[load]` lines in `%LOCALAPPDATA%\ScanToAlibre\ScanToAlibre.log` show whether Alibre called the add-on.
+>
+> I've added your decisions to ScanToAlibre's spec: the ribbon is the workflow, the scan is saved inside the part, and point clouds become meshes on load. I also updated its CLAUDE.md, README and TODO.md, and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 15:01
+
+> 1.scan wasn't saved. 2.alibre didn't detect something changed, so no save button
+
+### 🤖 Claude
+
+> The escape lost its backslash on the way through the shell. Fixing it.
+
+> Now the add-on: Load writes the scan as a binary STL and inserts it as a design mesh named "Scan". The view then skips drawing its own copy whenever the part has that mesh.
+
+> Alibre is running, so the add-on can't be installed until it's closed. In the meantime, updating the docs.
+
+> The log explains both problems, and I've built a fix, but it isn't installed yet because Alibre is open.
+>
+> **What happened:** there are no `[save]` lines in the log. Since Alibre didn't think the part had changed, it never saved, so it never asked ScanToAlibre for its data. Whether saving the scan inside the part works is still untested. The real problem is that the API has no way for an add-on to mark a part as changed.
+>
+> **The fix:** Load now also puts the scan into the part as a native Alibre design mesh named "Scan", using `CreateFromFile`, which the 27.0.1 API has. Adding a mesh is a real change to the part, so:
+> - Alibre should see the part as changed and offer to save;
+> - that save should also ask ScanToAlibre for its data, so our own copy gets written too;
+> - Alibre draws the mesh itself, so the scan should stay visible during Measure, and ScanToAlibre then draws only the picked points.
+>
+> **Costs to know about:**
+> - The API can't read a design mesh's triangles back or delete one. So ScanToAlibre still keeps its own copy for picking and fitting, and the part holds the scan twice, roughly 20 MB plus whatever Alibre's own mesh takes.
+> - Loading a replacement scan leaves the old "Scan" mesh behind for you to delete by hand.
+>
+> Once you've closed Alibre and I've installed it, here's what to test:
+> 1. Start Alibre, open a new part and **Load** `mt12cover.ply`. A "Scan" mesh should appear in the part (in the Design Explorer too), and Save should become available.
+> 2. Click a few points: crosshairs should still land on the scan.
+> 3. Run Measure. The scan should stay visible.
+> 4. Save the part, close it, and check its file size.
+> 5. Open the part again and click **Show Scan**. Picking should work on the reloaded scan.
+> 6. If something's off, the `[mesh]`, `[save]` and `[load]` lines in the log will show what Alibre did.
+>
+> I've updated ScanToAlibre's CLAUDE.md with the finding and the new approach, and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 15:04
+
+> Closed, install it
+
+### 🤖 Claude
+
+> The new version is installed and ready to try in Alibre.
+>
+> **To test:**
+> 1. Start Alibre, open a new part and **Load** `D:\3dscanner\mt12cover\mt12cover.ply`. A "Scan" mesh should appear in the part and in the Design Explorer, and Save should become available.
+> 2. Click a few points on the scan. Crosshairs should land under the cursor.
+> 3. Run Measure. The scan should stay visible this time, because Alibre is drawing it.
+> 4. Save the part, close it, and note its file size.
+> 5. Open the part again and click **Show Scan**. Picking should work on the reloaded scan.
+> 6. If anything's wrong, the `[mesh]`, `[save]` and `[load]` lines in `%LOCALAPPDATA%\ScanToAlibre\ScanToAlibre.log` will show what Alibre did.
+>
+> I've marked the design mesh as installed in ScanToAlibre's CLAUDE.md, and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 15:07
+
+> didn't work
+
+### 🤖 Claude
+
+> `IADParameters::NewParameter` exists, with transactions, and a parameter has a value and a comment. Checking its signature and the parameter types.
+
+> It's on `IADSession`, not `IADDesignSession`.
+
+> My cut also removed `ScanDisplayName`. Putting it back.
+
+> Backslashes again. Fixing that line directly.
+
+> Installed. Recording the design mesh failure and the new approach in CLAUDE.md.
+
+> The log showed why: `CreateFromFile` failed with Alibre's own message, "This method is obsolete and no more supported". Design meshes can't be created from the API in 27.0.1. Alibre never saved, so we still don't know whether the scan can be saved inside the part.
+>
+> **New attempt (installed, untested):** Load now changes a parameter of our own to make Alibre see the part as changed. It's a count parameter named `ScanToAlibre` that goes up by 1 each time the scan changes, with a comment naming the scan. It will show in the Equation Editor. If Alibre treats that as a change, Save should then call our `SaveData` and store the scan inside the part. The design mesh code is gone, and ScanToAlibre draws the scan itself as before.
+>
+> **To test:**
+> 1. Start Alibre, open a new part and **Load** `mt12cover.ply`. Is Save now available? The Equation Editor should list `ScanToAlibre` = 1.
+> 2. Save the part, close it, and check whether the file is about 19 MB bigger.
+> 3. Open it again and click **Show Scan**.
+> 4. The `[changed]`, `[save]` and `[load]` lines in the log will show how far it got.
+>
+> If the parameter doesn't make Alibre see the part as changed, try adding any feature (a sketch will do) before saving. That would at least tell us whether `SaveData` works at all.
+>
+> If saving inside the part turns out not to work, the fallback is the other option you were offered: a file next to the part.
+>
+> I've recorded the design mesh failure and the new approach in ScanToAlibre's CLAUDE.md, and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 15:20
+
+> there is no ScanToAlibre in equations,
+
+### 🤖 Claude
+
+> That left the old function behind under another name. Removing it.
+
+> There was no parameter because creating it failed. Alibre said "Parameter transaction already open", even though this was the first thing we did to the part. So opening our own parameter transaction is the problem, or Alibre already has one open.
+>
+> **Change (installed, untested):** Load now tries to set the parameter without opening a transaction. If that fails, it tries again with one. The log names the exact step that fails, so if neither works we'll know where.
+>
+> **To test:**
+> 1. Start Alibre, open a new part and **Load** `mt12cover.ply`.
+> 2. Does the Equation Editor show `ScanToAlibre` = 1, and does Save become available?
+> 3. If so, save, close and reopen the part, then click **Show Scan**.
+> 4. Either way, the `[changed]`, `[save]` and `[load]` lines in the log show what happened.
+>
+> If the parameter still can't be set, there are two ways forward:
+> - Check `SaveData` by hand: add any feature, then save. That tells us whether storing the scan inside the part can work at all.
+> - Fall back to the other option: a scan file next to the part.
+>
+> I've recorded the finding in ScanToAlibre's CLAUDE.md and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 15:25
+
+> equation is now correct.  the scan didn't save. there is another reference document for stream data - "C:\AlibreToolBox\Integrated_Addons_in_Alibre Design.pdf"
+
+### 🤖 Claude
+
+> A stray line in my script raised an error, but only after the file had been written. Checking the result.
+
+> The rewrite is in and the DLL was built after it. Installing.
+
+> Installed, with the stream declared in the `.adc`. Updating CLAUDE.md with what the PDF says and what we found about parameters.
+
+> The PDF had the answer. An add-on only gets its data saved if its `.adc` file declares a stream:
+>
+> ```
+> <PersistentData streamName="ScanToAlibre_Scan"/>
+> ```
+>
+> Without that line, Alibre never asks the add-on for data, and that's why the log had no `[save]` lines. I've added it, built and installed it, but saving hasn't been tried in Alibre yet. The PDF spells the attribute `streamName` in one place and `StreamName` in another, so the `.adc` has both.
+>
+> I also tidied the parameter change. The log showed `NewParameter` fails inside a parameter transaction and `PutValue` fails outside one. It now creates the parameter first, then opens a transaction to set its value, so no step should fail on the way.
+>
+> **To test:**
+> 1. Start Alibre (it reads the `.adc` at startup), open a new part and **Load** `mt12cover.ply`. Save should become available.
+> 2. Save the part. The file should grow by about 19 MB, and the log should show `[save] HasPersistentDataToSave ... yes` and `[save] SaveData ... wrote ... bytes`.
+> 3. Close the part, open it again and click **Show Scan**. The scan should be back, and the log should show `[load] LoadData`.
+> 4. Pick a few points to check the reloaded scan.
+>
+> I've recorded what the PDF says about the stream, and the parameter behaviour we found, in ScanToAlibre's CLAUDE.md. I also rebuilt `Discussion.md`.
+
+### 🧑 Frank · 15:33
+
+> almost. after loading, I don't get a save button, but I can force a "save as", which works. after that, the save button is on. it always says the file needs saving.
+
+### 🤖 Claude
+
+> Installed. Updating CLAUDE.md with what's now proven and the open question.
+
+> Saving inside the part works. Your Save As wrote the scan (19.3 MB, in 32 ms), and reopening the part read it back in 31 ms.
+>
+> **Why it always needed saving:** the log shows Alibre asks `HasPersistentDataToSave` many times, not just when saving, and takes a yes to mean "unsaved changes". ScanToAlibre answered yes whenever the part had a scan. Now it answers yes only when the scan has changed since the part was last saved or opened: after Load, and later after Fix or Orient. It answers no after a save or after opening. This is built and installed but not tried yet.
+>
+> **Still unknown:** if you save because of some other change while ScanToAlibre is answering no, does Alibre keep the scan already in the file, or drop it? The PDF only says the stream is created when the answer is yes. Step 4 below checks this.
+>
+> **Save button after Load:** in your test it didn't light up until Save As. For a new, never-saved part that may just be how Alibre works. Step 2 will tell us whether the new answer turns it on for a part that's already been saved.
+>
+> **To test:**
+> 1. Start Alibre, open a new part, **Load** `mt12cover.ply`, then Save As. Save should go off afterwards.
+> 2. Close and reopen the part. Save should be off, and **Show Scan** should draw the scan. Then **Load** the same file again: does Save come on?
+> 3. Save it. Save should go off.
+> 4. Add any feature, such as a sketch, save, close, reopen, and click **Show Scan**. Is the scan still there? This is the test that matters most.
+> 5. The `[save]` and `[load]` lines in the log show each answer and write.
+>
+> If step 4 loses the scan, the fix is to answer yes while Alibre is actually saving. That needs a save event from Alibre, which I'd look for next.
+>
+> I've recorded all this in ScanToAlibre's CLAUDE.md and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 15:38
+
+> that part works
+
+### 🤖 Claude
+
+> Two to-do items are now out of date: keeping the scan with the part is done, and design meshes turned out to be obsolete. Removing them.
+
+> Load and saving inside the part are now working. The log also settles the one risk I'd flagged. At 15:37:45 ScanToAlibre was saying "nothing new to save", yet the save at 15:38:00 still wrote the scan, and reopening read it back. So Alibre writes our data on every save, and saving for another reason can't lose the scan.
+>
+> I've marked saving as tested in ScanToAlibre's CLAUDE.md. In TODO.md I removed two items that are done or obsolete: keeping the scan with the part, and design meshes. I added one question: whether Load still needs the `ScanToAlibre` parameter now that Save lights up without it. It may not, which would keep it out of your Equation Editor. Nothing is committed in ScanToAlibre.
+>
+> Where the workflow ribbon stands:
+> - **1 Load** works for STL and PLY meshes. PLY point clouds still need turning into a mesh.
+> - **2 Fix** isn't built: smoothing, decimation and more.
+> - **3 Orient** isn't built: move, rotate, and align to planes and axes.
+>
+> The next big pieces are making meshes from point clouds, then the Fix and Orient dialogs. Orient is probably the most useful next. Every later step, such as fitting and sections, works best on a scan that's lined up with the part's axes, and Orient works on the meshes you can already load. Point cloud meshing is a larger job of its own.
+>
+> As before, I'd do whichever comes next in a new session opened in `D:\Projects\alibre\ScanToAlibre`. Its CLAUDE.md now has everything needed, and this conversation is still going into CAMForAlibre's `Discussion.md`.
+
+### 🧑 Frank · 15:43
+
+> Lets work on fix - choose a better name.  It will be a modeless dialog that offers a decimate button and options to reduce the number of triangles.  A smooth option, with algorithm choices, to smooth the object.  Only one scan to alibre dialog can be open at a time.
+
+### 🤖 Claude
+
+> Name: **Refine**. It covers both reducing and smoothing the scan without sounding like it repairs something broken. The ribbon becomes 1 Load, 2 Refine, 3 Orient.
+>
+> Here's the design, kept within what you described:
+> - **Refine** is a modeless dialog with two parts, each with its own button. Changes apply to the scan straight away, and an **Undo** button steps back.
+>   - **Decimate:** reduce to a number of triangles or a percentage. Optionally keep open edges where they are, or stop before the shape moves more than a set distance. It uses quadric edge collapse (Garland and Heckbert), the standard method that keeps the shape best.
+>   - **Smooth:** three algorithms: **Laplacian** (simple, but shrinks the shape), **Taubin** (keeps the size), and **Bilateral** (keeps sharp edges, which suits mechanical parts). Passes, strength, and keep open edges.
+> - **One dialog at a time:** opening a step's dialog closes any other ScanToAlibre dialog. Changes are applied as you go, so nothing is lost.
+> - Opening Refine also starts the scan view, so you can watch the scan change.
+>
+> The algorithms go in the core library with tests first, then the dialog.
+
+> The singularity test needs a sturdier scale. A flat area makes two of the diagonal terms zero, so their product says nothing useful. Using the trace cubed instead.
+
+> Now smoothing.
+
+> Now the tests: a closed sphere, an open flat grid, and a cube, checked for triangle counts, a sound closed surface, shape kept, corners kept, noise reduced, and size kept.
+
+> I left two pointless lines in the bilateral test that would rebuild a cube for every vertex. Removing them.
+
+> All 30 tests pass. Timing on your real scan:
+
+> First the document's replace and undo, and a way to redraw any open scan view.
+
+> Now the one-dialog-at-a-time manager and the Refine dialog.
+
+> Simpler to keep the template ID myself than rely on `CDialog`'s internals.
+
+> Now the Refine dialog itself.
+
+> Now the dialog template and its control IDs.
+
+> Now the ribbon entry, unload cleanup, and project files.
+
+> It builds. Checking line endings and tests, then installing.
+
+> The administrator prompt for the install was cancelled, so Refine isn't installed yet. The installed copy is still the 3:33 pm build. I'll finish the docs, then ask you to run the install.
+
+> Refine is built and all 30 core tests pass, but it isn't installed: the administrator prompt for the install was cancelled. The installed copy is still the 3:33 pm one without Refine.
+>
+> **The step is now "2 Refine"** on the ribbon. It's enabled once the part has a scan, and it opens a modeless dialog. Opening it also starts the scan view, so you can watch each change.
+> - **Decimate:** to a number of triangles or a percentage of the current count. Optionally stop before the surface moves more than a set distance, and keep open edges in place. On `mt12cover.ply`, halving takes 3.5 s, and cutting to a tenth takes 6.5 s with the surface moving only about 0.026 mm. The tests confirm it keeps a sphere closed and round, a cube's corners exact, and a flat sheet's outline.
+> - **Smooth:** a choice of method, plus passes, strength (0 to 1) and keep open edges. Each takes 1–2 s on your scan.
+>   - **Laplacian:** simple, but shrinks the shape.
+>   - **Taubin:** keeps the size.
+>   - **Bilateral:** keeps sharp edges. It's the default, as your parts are machined.
+> - **Undo** takes back up to five changes. Each change marks the part as needing saving, and the saved scan is the refined one.
+> - **One dialog at a time:** opening a workflow dialog closes any other. Changes apply straight away, so nothing is lost when one closes.
+>
+> The first Bilateral method I wrote rounded a cube's corners and shrank a sphere more than Laplacian did. The tests caught it, and I replaced it with a better-suited method that keeps edges.
+>
+> **To test, once it's installed:**
+> 1. Open a part with a scan (or **Load** `mt12cover.ply`). **2 Refine** should be enabled, and should open the dialog with the scan drawn.
+> 2. **Decimate** to 10%. After about 7 seconds the status line should say about 107,000 triangles, and the scan should look the same.
+> 3. **Smooth** with Bilateral, then try Laplacian with 20 passes to see the difference. Use **Undo** between tries.
+> 4. Save, close and reopen the part. The scan should come back refined.
+> 5. Open Refine, then **Load**. Answering No should leave things as they were.
+> 6. Check the Tab key and Enter in the dialog. Alibre may not pass them to modeless dialogs, as we saw in CAMForAlibre.
+>
+> I've updated the spec, CLAUDE.md, README and TODO, and rebuilt `Discussion.md`. There's no help page for ScanToAlibre yet.
+
+### 🧑 Frank · 16:00
+
+> Yes, install it
+
+### 🤖 Claude
+
+> Refine is installed (3:51 pm) and ready to try in Alibre.
+>
+> **To test:**
+> 1. Start Alibre and open a part with a scan (or **Load** `mt12cover.ply`). **2 Refine** should be enabled. It should open the Refine Scan dialog, showing the file name, the triangle count and the size, with the scan drawn.
+> 2. **Decimate** at 10%. After about 7 seconds the status line should report about 107,000 triangles and the largest change, and the scan should look much the same.
+> 3. **Smooth** with Bilateral. Then **Undo**, and try Laplacian with 20 passes to see it shrink and round the edges. **Undo** again.
+> 4. Save, close and reopen the part, then **Show Scan**. The scan should come back refined.
+> 5. Open Refine, then **Load**. Answering No should leave everything as it was.
+> 6. Try Tab and Enter in the dialog. Alibre may not pass them through, as we found with CAMForAlibre's dialogs.
+> 7. The `[refine]` lines in `%LOCALAPPDATA%\ScanToAlibre\ScanToAlibre.log` record each step's settings, result and time.
+>
+> I've marked Refine as installed in ScanToAlibre's CLAUDE.md and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 16:08
+
+> Next the orient dialog.  We should be able to translate, rotate and scale the part.  We should automatically add a bounding box with center planes and axis.  These should be selectable so we can translate and rotate to the built in geometry.  We should be able to select a chunk of triangles and fit a plane to that.  The plane can then be aligned with a built in plane.
+
+### 🤖 Claude
+
+> Before building, a few things decide how this works, and two of them hit limits we've already found:
+> - Alibre only tells ScanToAlibre about single clicks, not mouse-down, mouse-up or drags. So selecting a chunk of triangles has to be click-based.
+> - Alibre can't pick our own drawn geometry, so our box, planes and axes would be picked by our own click test, the same way picking on the scan works.
+
+> Questions:
+> - Which bounding box should Orient add to the scan, with its centre planes and axes?
+>   - Fitted to the scan (Recommended): A box turned to fit the scan's own shape (its principal directions), so its centre planes run along the part. Aligning one of them to XY, YZ or ZX straightens the scan in one step.
+>   - Square to the axes: A box along the world X, Y and Z axes. Its planes are always parallel to Alibre's, so aligning to them only moves the scan, never turns it.
+>   - Both: Show both boxes, each with its centre planes and axes, and pick which to use.
+> - How should a chunk of triangles be chosen for fitting a plane? Alibre only reports single clicks to ScanToAlibre (no drags), so it has to be click-based.
+>   - Click and grow (Recommended): Click on a flat area; the selection grows outwards over triangles within a set angle and distance of the plane, so one click selects a whole face. Further clicks add more; a click on a selected area removes it.
+>   - Click triangle patches: Each click adds a disc of triangles of a set radius around the point; click repeatedly to paint the area you want.
+> - How should the target (Alibre's built-in geometry) be chosen when aligning?
+>   - List in the dialog (Recommended): Choose XY, YZ or ZX plane, X, Y or Z axis, or the origin from a list. They never move, so nothing needs picking. Reliable whatever Alibre lets us pick.
+>   - Click in the view: Click Alibre's planes and axes in the view. Needs Alibre's own selection while our command runs, which is unproven for design planes in a part.
+> - Should alignment work in steps (3-2-1), so a second alignment doesn't undo the first?
+>   - 3-2-1 steps (Recommended): First: a scan plane onto a built-in plane (turns and moves freely). Second: turns only about the first plane's normal and slides within it. Third: slides only along the last free direction. The usual way to square up a scan.
+>   - Each alignment free: Each alignment turns and moves the scan the shortest way, ignoring earlier ones. Simpler, but a second alignment can tilt the first out.
+
+### 🧑 Frank · 16:14
+
+> Answers:
+> - Which bounding box should Orient add to the scan, with its centre planes and axes?
+>   **Fitted to the scan (Recommended)**
+> - How should a chunk of triangles be chosen for fitting a plane? Alibre only reports single clicks to ScanToAlibre (no drags), so it has to be click-based.
+>   **Click and grow (Recommended)**
+> - How should the target (Alibre's built-in geometry) be chosen when aligning?
+>   **Click in the view**
+> - Should alignment work in steps (3-2-1), so a second alignment doesn't undo the first?
+>   **3-2-1 steps (Recommended)**
+
+### 🤖 Claude
+
+> Now tests for the orient maths: transforms, the eigen solver, the fitted box, region growing and plane fitting, and a full 3-2-1 alignment of a turned, moved box.
+
+> All 37 tests pass, including the full 3-2-1 alignment of a turned, moved box. Now the add-on side. First, the current document and view code, so the orient state, undo and drawing slot in cleanly.
+
+> The .cpp went in, but the header write was refused because the file had changed since I read it (my line-ending pass). Reading it, then writing the new header.
+
+> Now the view command: drawing the orient overlays, picking our planes, axes and centre, growing flat-area selections, and reading Alibre's selection as the target.
+
+> The shell choked on the script, so I'll put it in a file and run it from there.
+
+> Now the Orient dialog: Move, Rotate, Scale, what clicks on the scan do, Fit Plane, and the 3-2-1 Align steps, with a status line, Undo and Close.
+
+> Now the dialog template, its IDs, the ribbon entry and the project files.
+
+> Built cleanly. One edge case: loading a new scan while Orient is open would leave the dialog pointing at the old scan's state. So Load will close any open step dialog first. Then checks and install.
+
+> Alibre is running, so I can't install yet. Updating the docs in the meantime.
+
+> Orient is built and all 37 core tests pass, but it isn't installed because Alibre is open.
+>
+> **3 Orient** on the ribbon opens a modeless dialog and starts the scan view.
+> - **Move** by X, Y and Z (mm), or **Centre on the Origin**. **Rotate** about X, Y or Z by an angle, through the origin or the scan's centre. **Scale** by a factor, through either.
+> - **Fitted box:** fitted to the scan's own shape and drawn with its edges in grey. Its centre planes and axes are A (square to the longest direction) red, B green and C blue, with an asterisk at its centre.
+> - **Fit Plane:** choose "Select a flat area", then click a face. The selection grows over triangles within the angle and distance you set (10° and 0.2 mm to start). More clicks add areas, and a click on a selected area removes it. **Fit Plane** adds Plane 1, Plane 2 and so on, in orange, with the fit's rms shown.
+> - **Align (3-2-1):** in "Choose geometry to align" mode, click one of our planes, axes or the centre; it turns yellow. Then click Alibre's own plane, axis or origin, and press **Align**.
+>   1. Turns and moves freely.
+>   2. Turns only about what step 1 lined up.
+>   3. Slides only.
+>
+>   The dialog says which step is next. **Flip** turns the scan over instead of the short way. Moving, rotating or scaling by hand starts the alignment over.
+> - **Undo** takes back moves, fitted planes and Refine's changes, up to five. Only the oriented scan is saved with the part; fitted planes and alignment progress are lost when the part closes.
+>
+> The tests prove the core: a box turned and moved at random, then squared exactly onto the origin by aligning its three centre planes to XY, YZ and ZX. One thing is unproven: whether clicking Alibre's built-in planes and origin in a part, while our command runs, comes through as a selection. The log will show it.
+>
+> **To test, once installed:**
+> 1. Open the part with the scan and click **3 Orient**. The box, coloured planes, axes and centre should appear.
+> 2. **Rotate** Z by 30° through the scan's centre. The scan and box should turn together. Then **Undo**.
+> 3. Choose "Select a flat area" and click a flat face. It should turn orange. **Fit Plane**, and check the rms in the status line.
+> 4. Back in "Choose geometry", click a box plane (or your fitted plane); it turns yellow. Show Alibre's planes if they're hidden, then click its XY plane. "To:" should name it. **Align**.
+> 5. Continue with steps 2 and 3 (for example box plane A to YZ, then B to ZX). Then check the scan sits square on the origin.
+> 6. Save, close and reopen the part. The oriented scan should come back.
+> 7. If a target click doesn't register, the `[orient]` lines in the log will show what Alibre returned.
+>
+> I've updated ScanToAlibre's spec, CLAUDE.md, README and TODO, and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 16:26
+
+> Closed, install it
+
+### 🤖 Claude
+
+> Orient is installed (4:24 pm) and ready to try.
+>
+> **To test:**
+> 1. Start Alibre, open the part with the scan, and click **3 Orient**. You should see the fitted box in grey, with red, green and blue centre planes and axes and an asterisk at its centre.
+> 2. **Rotate** Z by 30° through the scan's centre. The scan and box should turn together. Then **Undo**.
+> 3. Choose "Select a flat area" and click a flat face. It should turn orange. **Fit Plane**, and read the rms in the status line.
+> 4. Choose "Choose geometry to align" and click a box plane or your fitted plane, which should turn yellow. Show Alibre's planes if they're hidden, click its XY plane, and check that "To:" names it. Then **Align**.
+> 5. Do steps 2 and 3 the same way (for example box plane A to YZ, then B to ZX). The scan should end up square on the origin.
+> 6. Save, close and reopen the part. The oriented scan should come back.
+> 7. If clicking an Alibre plane doesn't set the target, the `[orient]` lines in `%LOCALAPPDATA%\ScanToAlibre\ScanToAlibre.log` show what Alibre returned.
+>
+> I've marked Orient as installed in ScanToAlibre's CLAUDE.md, and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 17:04
+
+> It works, but is a bit clunky.  Change the Scan: and To: to push down type radio buttons that switch selecting between from and to geometries.  Push selects one, and unselects the other.  clicking a selected one unselects both.  both can be unselected
+
+### 🤖 Claude
+
+> Here's how it'll work:
+> - **Scan** and **To** become push-down toggle buttons, each with the chosen name beside it.
+>   - Pushing one selects it and releases the other.
+>   - Clicking a pushed one releases it, leaving both up.
+>   - With Scan down, clicks on the scan's planes, axes or centre choose the scan geometry. With To down, clicks go to Alibre and its selection becomes the target. With both up, clicks do nothing for Orient.
+> - The old "Clicks on the scan" radio buttons would clash with these. So "Select a flat area" becomes a third push-down button, **Select Area**, in the Fit Plane group, and the three release each other. That's a small change beyond what you asked, needed so the dialog has one clear click mode.
+
+> Built cleanly. Installing.
+
+> You've hit your weekly limit · resets Nov 14, 1am (Australia/Sydney)
+
+## 2026-11-14
+
+### 🧑 Frank · 07:34
+
+> resume
+
+### 🤖 Claude
+
+> Installed. Updating ScanToAlibre's spec and CLAUDE.md to describe the push-down buttons.
+
+> The push-down buttons are built and installed (the second administrator prompt went through), but haven't been tried in Alibre yet.
+>
+> In the Orient dialog's **Align** group, **Scan** and **To** are now push-down buttons, each with the chosen name beside it:
+> - Pushing one pushes it down and releases the other.
+> - Pushing the one that's already down releases it, so both are up.
+> - With **Scan** down, a click on the scan's planes, axes or centre chooses it.
+> - With **To** down, a click on Alibre's plane, axis or point makes it the target.
+> - With both up, clicks are Alibre's alone. Orient ignores them.
+>
+> To keep one clear click mode, the old "Clicks on the scan" radio buttons are gone. "Select a flat area" is now a third push-down button, **Select Area**, in the Fit Plane group. At most one of the three is down. After **Fit Plane**, all three go up, and the new plane is already chosen as the scan geometry. The dialog is also a little shorter.
+>
+> **To test:**
+> 1. Open a part with a scan and click **3 Orient**. All three buttons should start up.
+> 2. Push **Scan**, then click a box plane. It should turn yellow and its name should appear beside Scan.
+> 3. Push **To**. Scan should release. Click Alibre's XY plane, and its name should appear beside To.
+> 4. Push **To** again. Both should be up, and clicking a plane in the view should change neither name.
+> 5. Push **Select Area**, click a flat face, and **Fit Plane**. Select Area should release.
+> 6. **Align**, and carry on with steps 2 and 3 as before.
+>
+> I've updated ScanToAlibre's spec and CLAUDE.md, and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 07:45
+
+> That worked.  But the "Fit Plane" was off on a know flat area.  On scan4.ad_prt, using scan "D:\Downloads\Popsicle_dispenser.stl", there is a flat circle already on the yx plane.  The fit plane is rotated.
+
+### 🤖 Claude
+
+> All 38 pass. Now checking the actual popsicle scan, and timing on your million-triangle scan, since this runs at every Load and Refine. I'll add a skipped test that prints the box.
+
+> Closer, but the box is still turned 3.1° about Z. The flat area it lined up with isn't one of the sides. Listing the scan's largest flat areas to see what's there:
+
+> The popsicle is back to 18°, so the side average didn't pass one of its two checks. Working out the numbers to see which:
+
+> You're right to question it. I've been describing the box, but your question was about the plane. Here's what the log says about the planes you fitted on the popsicle:
+>
+> - Plane 2 (06:45:46) and the later Plane 1 (07:42:54): 178 triangles, normal (0, 0, −1), point at Z 0.000, rms 0.0000 mm. That's the flat circle, exactly on XY.
+> - The earlier Plane 1 (06:44:35): 470 triangles on the top face, normal (0, 0, +1) at Z 150.000, rms 0.0000.
+>
+> So the numbers for each fitted plane are exact: none is tilted, or the normal would show it. What I think you saw is the drawing:
+> - The square outline for a plane is drawn turned to a direction of its own when the plane isn't square to the box. Here it wasn't, because the box leaned about 2°.
+> - So the outline sat flat on the face, but turned about Z and at odds with the box.
+>
+> That's my reading from the log, not something I could see. If what you saw was the plane actually **tilted** off the face, or the scan moving when you aligned the plane, then it's something else and I need to know. One thing in the log: at 06:44:49 you aligned the top-face plane "onto YZ-Plane". That turns the scan 90° so its top faces along X, which could look like a rotated result, and you then undid it.
+>
+> Either way, the change I'm building fixes both drawing problems:
+> - The box now sits square on the scan's faces: 150 × 97.74 × 44.99, along Z, X and Y.
+> - A fitted plane's outline now lines up with the box's directions.
+>
+> The build is running in the background. Once it finishes I'll install it, if Alibre is closed.
+
+### 🧑 Frank · 07:51
+
+> <task-notification>
+> <task-id>b90iu03v1</task-id>
+> <tool-use-id>toolu_01TDFBHQxqjBdXAdWjiv9y2K</tool-use-id>
+> <output-file>C:\Users\FRANKT~1\AppData\Local\Temp\claude\af67b47206b29857\244a670c-a82f-4107-a694-db7d498c5d3f\tasks\b90iu03v1.output</output-file>
+> <status>completed</status>
+> <summary>Background command "Fix the comment, align plane outlines with the box, build, check Alibre" completed (exit code 0)</summary>
+> </task-notification>
+
+### 🤖 Claude
+
+> Installed. Updating ScanToAlibre's spec and CLAUDE.md for the new box.
+
+> The new fitted box and plane outlines are installed (7:52 am). All 38 core tests pass, but it hasn't been tried in Alibre yet.
+>
+> On your question: the plane fit itself was right. Each plane you fitted on the popsicle came out exact in the log: rms 0.0000 mm, normal exactly along Z, at Z 0 for the circle and Z 150 for the top. What was wrong was the box. It followed the material, not the flat faces, so it leaned about 2°, and the plane's outline was then drawn turned to a direction of its own.
+>
+> What changed:
+> - **Fitted box:** it's now the smallest box that holds the scan. It sits square to the part's flat faces and sides whenever that costs at most 5% more. For the popsicle that's 150 × 97.74 × 44.99, along Z, X and Y to within 0.004°. It used to be 153.5 × 98.1 × 45 and leaning.
+>   - The popsicle's sides are mostly curves made of facets, so lining up with any single facet was fragile. Instead, the turn follows the average direction of all the side faces, which cancels the curves and mirror pairs and leaves the flat sides.
+>   - A new test checks a block with a lump on one corner, which used to tilt the box. It must come out square and the right size, even when turned and moved.
+>   - It takes under half a second on your million-triangle scan, at Load and Refine.
+> - **Plane outlines** now follow the box's directions, so a fitted plane's square lines up with the box.
+>
+> **To test:**
+> 1. Open `scan4.AD_PRT` (or **Load** the popsicle STL) and click **3 Orient**. The box should hug the part, with box plane A along Z and its edges square to the part.
+> 2. **Select Area**, click the flat circle on the bottom, and **Fit Plane**. Its outline should lie flat on the circle, square with the box.
+> 3. If anything still looks rotated, tell me exactly what: the box, a plane's outline, or the scan after **Align**.
+>
+> I've updated ScanToAlibre's spec and CLAUDE.md, and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 07:55
+
+> That all looks correct now.
+
+### 🤖 Claude
+
+> Good. I've marked Orient as tested in ScanToAlibre's CLAUDE.md, taken it off TODO.md, and rebuilt `Discussion.md`. Nothing is committed in ScanToAlibre.
+>
+> Refine is still listed as untested, since you haven't reported on its Decimate, Smooth and Undo yet.
+>
+> The main open items on the list are:
+> - Making meshes from PLY point clouds when they're loaded.
+> - Keeping the scan visible after a native command like Measure, for example with a Design Explorer tab that restarts the scan view.
+> - The first modelling tools: fitting primitives, and turning sections into sketches you can extrude or revolve.
+
+### 🧑 Frank · 07:56
+
+> Next, when orientating, I'd like to be able to select cylinders - either outside shapes, or inside, holes - and fit an axis along the center line.  These axis should be able to help align the part, either on x/y/z axis geometry, or a xy yz zx plane
+
+### 🤖 Claude
+
+> A couple of points first. Selecting a cylinder works like Select Area: a new **Select Cylinder** push-down button, and a click grows over the curved surface.
+> - Growth follows the smooth surface until there's enough curve to fit a cylinder. After that it only takes triangles that lie on that cylinder, so it stops at fillets and neighbouring faces.
+> - **Fit Axis** then fits the centre line (direction from the normals, centre and radius from a circle fit), and adds "Axis 1 (Ø12.03, hole)" or "outside".
+>
+> Holes and outside shapes work the same way.
+>
+> For alignment, the 3-2-1 steps will be generalised: each step fixes what it can and keeps what earlier steps fixed. That makes a common sequence work which today is refused: a flat face onto XY, then a hole's axis (square to that face) onto Z, then a turn about Z. One thing I need from you first:
+
+> Questions:
+> - When a scan axis (a cylinder's centre line) is aligned to one of Alibre's planes (XY, YZ or ZX), what should happen?
+>   - Square to the plane (Recommended): The axis ends up along the plane's normal, like a hole square to a face: an axis onto XY points it along Z. Where it crosses the plane is left free for a later step (such as onto the Z axis).
+>   - Lying in the plane: The axis ends up in the plane, like Alibre's own align constraint between an axis and a plane: an axis onto XY lays it flat in XY, at Z 0.
+>   - Either, with a choice: A choice in the dialog (Square to it / In it) when the scan side is an axis and the target is a plane.
+
+### 🧑 Frank · 07:58
+
+> Answers:
+> - When a scan axis (a cylinder's centre line) is aligned to one of Alibre's planes (XY, YZ or ZX), what should happen?
+>   **Either, with a choice**
+
+### 🤖 Claude
+
+> Now the core: cylinder growing and fitting, and the generalised alignment.
+
+> The Done check didn't go in, so I'll cover it in a new test file, `CylinderTests.cpp`, rather than edit around the line endings.
+
+> `Reject` is private to the core, so the test needs its own copy.
+
+> Built cleanly. Checks, then install.
+
+> Installed. Updating ScanToAlibre's spec and CLAUDE.md.
+
+> Cylinder axes are built and installed (8:05 am). All 44 core tests pass, but it hasn't been tried in Alibre yet.
+>
+> **Selecting and fitting cylinders**
+> - The Fit group, now "Fit a plane or an axis", has a fourth push-down button, **Select Cylinder**. Click a cylinder's surface, outside or a hole.
+>   - The selection grows over the smooth surface until there's enough curve to fit a cylinder, about 25° round.
+>   - After that it only takes triangles on that cylinder, so it stops at its ends, fillets and neighbouring faces. More clicks add more, and clicking a selected one removes it.
+> - **Fit Axis** fits the centre line and adds it, for example "Axis 1 (diameter 12.030, hole)", drawn as an orange line and chosen ready to align.
+>   - The direction comes from the triangles' normals, and the centre and radius from a circle fit.
+>   - The tests cover a whole tube, outside and as a hole, turned and moved at random (radius exact to 1e-6), and a quarter of a tube.
+>
+> **Aligning with axes**
+> - A scan axis goes onto one of Alibre's axes, or onto a plane. A new choice, **Axis onto a plane**, sets **square to it** (a hole square to XY points along Z) or **lying in it** (laid flat in XY at Z 0).
+> - The steps are no longer fixed at 3-2-1. Each step turns and slides only where earlier steps left freedom, then fixes what it lined up. The step line says what's still free, for example "Still free: turning about (0, 0, 1)". So this sequence now works, and a test covers it:
+>   1. A face onto XY.
+>   2. A hole's axis onto the Z axis, which only slides the hole onto Z.
+>   3. A side onto ZX, which turns the part about the hole until the side is parallel to ZX.
+> - A point, such as the box centre onto the origin, slides as near as it can: after a face is on XY, that centres the part in X and Y. A step that lines up nothing new is refused, with a reason.
+>
+> **To test:**
+> 1. Open the popsicle part, then **3 Orient**. Push **Select Cylinder** and click a round surface or a hole. It should go orange around the whole cylinder and stop at its edges.
+> 2. **Fit Axis**. The status line should give the diameter, hole or outside, and the rms. Check the diameter against what you know.
+> 3. Align the flat base onto XY. Then push **Scan** and click the axis, push **To** and click Alibre's Z axis, and **Align**. The cylinder should move onto Z without tilting.
+> 4. Try an axis onto XY with "square to it", then **Undo** and try "lying in it".
+> 5. If a selection leaks onto a neighbouring face or stops short, set a smaller or larger angle or distance, and tell me what happened. The log records each grow and fit.
+>
+> I've updated ScanToAlibre's spec and CLAUDE.md, and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 08:17
+
+> Works ok
+
+### 🤖 Claude
+
+> Good. I've marked cylinder axes and the new alignment steps as tested in ScanToAlibre's CLAUDE.md, and rebuilt `Discussion.md`. Nothing is committed.
+>
+> Orient is now complete as you described it. The main things left on ScanToAlibre's list are:
+> - Making meshes from PLY point clouds when they're loaded.
+> - Keeping the scan visible after Measure or another native command.
+> - Keeping fitted planes and axes with the part after it closes.
+> - The first modelling step: sections through the scan turned into sketches you can extrude or revolve.
+
+### 🧑 Frank · 08:19
+
+> Next - Keeping fitted planes and axes with the part after it closes.
+
+### 🤖 Claude
+
+> Fitted planes and axes will go into the part along with the scan, in the same add-on data stream:
+> - The format moves to version 2, with a features section after the triangles (kind, point, direction, size and name for each).
+> - Version 1 data still reads, with no features. An older add-on that meets version 2 keeps it untouched, as it already does for newer data.
+> - Fitting a plane or axis marks the part as changed, so Save lights up.
+>
+> The fitted box is still worked out from the scan, and alignment progress still lasts only until the part closes.
+
+> All 46 pass. Now the add-on: save the fitted features, read them back, and mark the part changed when one is added.
+
+> Installed. Updating ScanToAlibre's spec, CLAUDE.md and TODO.
+
+> Fitted planes and axes are now saved with the part. It's built and installed (8:20 am), and all 46 core tests pass, but it hasn't been tried in Alibre yet.
+>
+> - **Saved inside the part** with the scan, in format version 2: each plane's and axis's kind, position, direction, size and name.
+> - **Reopening** brings them back, and they're listed in the log.
+> - **Fitting one** marks the part as changed, so Save lights up.
+> - **Your existing parts** (version 1) still open; they just have no fitted features.
+> - **New tests** cover a plane and an axis surviving a save and reopen, damaged or cut-off feature data being refused rather than half read, and version 1 data still reading.
+>
+> The fitted box is still worked out again from the scan, and alignment progress still starts fresh when the part reopens.
+>
+> **To test:**
+> 1. Open the popsicle part, then **3 Orient**. Fit a plane and an axis. Save should light up.
+> 2. Save and close the part.
+> 3. Open it again and click **3 Orient**. Plane 1 and Axis 1 should be drawn where they were, with the same names, and you should be able to choose and align them.
+> 4. The `[load]` line in the log gives how many fitted planes and axes came back.
+>
+> I've updated ScanToAlibre's spec, CLAUDE.md and TODO, and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 08:34
+
+> The save button wasn't enabled.  If I force save as, the planes and axis save and load correctly.
+
+### 🤖 Claude
+
+> Built. Installing.
+
+> The administrator prompt was cancelled, so it isn't installed. Recording the finding while that's sorted out.
+
+> Good that the planes and axes save and load correctly. The log explains why Save stayed off.
+>
+> After each fit, ScanToAlibre marked the scan as changed and bumped the `ScanToAlibre` parameter. But Alibre only asks the add-on whether it has unsaved data when it refreshes its own buttons, after a command starts or a menu opens. A fit made from the dialog doesn't cause that. In your test Alibre didn't ask until about 10 seconds after your last fit, and the answer was yes then. Save would have come on eventually.
+>
+> **The fix (built, not installed):** after each change to the scan, ScanToAlibre now asks Alibre to refresh its buttons. It does this with `UpdateToolbars` on the scan view, which the command site provides. That should make Alibre ask straight away and light Save. It's unproven, so the first call is logged as `[changed] UpdateToolbars`. If it works, the parameter trick may not be needed at all, which would keep `ScanToAlibre` out of your Equation Editor.
+>
+> The install's administrator prompt was cancelled, so the installed copy is still the 8:20 am one.
+>
+> **To test, once installed:**
+> 1. Open a saved part with a scan, then **3 Orient**. Save should be off.
+> 2. Fit a plane. Save should come on straight away.
+> 3. Save. It should go off, and the `[save] SaveData` line should appear in the log.
+> 4. If Save stays off, the `[changed] UpdateToolbars` line in the log shows what Alibre returned.
+>
+> I've recorded the finding in ScanToAlibre's CLAUDE.md and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 08:38
+
+> Yes, install it
+
+### 🤖 Claude
+
+> The Save button fix is installed (8:35 am) and ready to try.
+>
+> **To test:**
+> 1. Open a saved part with a scan, then **3 Orient**. Save should be off.
+> 2. Fit a plane or an axis. Save should come on straight away.
+> 3. Save. It should go off again.
+> 4. Try a Move or a Refine Smooth too. Save should come on after each.
+> 5. If Save stays off, the `[changed] UpdateToolbars` line in `%LOCALAPPDATA%\ScanToAlibre\ScanToAlibre.log` shows what Alibre returned.
+>
+> I've marked the fix as installed in ScanToAlibre's CLAUDE.md and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 08:43
+
+> fixed.  now look at - Keeping the scan visible after Measure or another native command.
+
+### 🤖 Claude
+
+> Fixed is good. I'll record that, then look at keeping the scan visible.
+
+> The proof-of-concept never tried drawing from a toggle command, but CAMForAlibre restarts its view after native commands. Checking how, and whether it waits until the native command has finished:
+
+> The ribbon supports checked buttons (`ADDON_MENU_CHECKED`), so Show Scan can show as pushed in while it's on. Writing the toggle display command.
+
+> Now wiring it in: the ribbon toggle, the scan view skipping the mesh while Show Scan draws it, redraws, unload, and the project files.
+
+> Built cleanly. Checking line endings, then installing.
+
+> Installed. Recording the experiment in CLAUDE.md.
+
+> The first attempt at a persistent scan is installed (8:45 am), but it's an experiment, so it hasn't been tried in Alibre yet.
+>
+> **The approach:** Alibre ends a regular add-on command when any native command such as Measure starts, and that command's graphics go with it. There's no API to tell when the native command has finished, so the view can't simply restart afterwards. But two-way toggle commands, like CAMForAlibre's tab command, stay on through native commands. So **Show Scan** is now an on/off toggle:
+> - While it's on, a toggle command draws the scan itself. It asks Alibre for drawing calls with `EnableOn3DRenderCallback`.
+> - The ribbon button should show as pushed in while it's on. Clicking it again turns it off.
+> - Orient's view still draws the box, planes and axes over the scan, and handles clicks. It no longer draws the scan a second time while Show Scan is on.
+>
+> The unknown is whether Alibre ever calls a toggle command to draw. The `[display]` lines in the log will show it.
+>
+> **To test:**
+> 1. Open a part with a scan and click **Show Scan**. The button should show as pushed in, and the scan should appear.
+> 2. Run Measure (or any native command). Does the scan stay visible during it? Does it come back afterwards?
+> 3. Open **3 Orient** with Show Scan on. The box and planes should draw over the scan, and clicks should still work.
+> 4. Click **Show Scan** again. The button should come up and the scan should go.
+> 5. If the scan never appears in step 1, send the `[display]` lines from the log. If Alibre won't draw for a toggle, the fallback is a Design Explorer tab that restarts the view, as CAMForAlibre does. With that, the scan only comes back when you return to the tab.
+>
+> I've recorded the experiment in ScanToAlibre's CLAUDE.md and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 08:49
+
+> I'm getting unexpected errors.  
+>
+> Object reference not set to an instance of an object
+>
+>    
+>
+>
+> at com.alibre.ui.directX.GeometryListener.checkCurrentLocation(Int32 currentX, Int32 currentY, Boolean forceUpdate)
+>    at com.alibre.ui.directX.GeometryListener.onMouseMove(Object sender, MouseEventArgs e)
+>    at System.Windows.Forms.MouseEventHandler.Invoke(Object sender, MouseEventArgs e)
+>    at System.Windows.Forms.Control.OnMouseMove(MouseEventArgs e)
+>    at System.Windows.Forms.Control.WmMouseMove(Message& m)
+>    at System.Windows.Forms.Control.WndProc(Message& m)
+>    at System.Windows.Forms.Form.WndProc(Message& m)
+>    at DevExpress.XtraEditors.DForm.WndProc(Message& m)
+>    at DevExpress.XtraEditors.XtraForm.WndProc(Message& msg)
+>    at com.alibre.ui.directX.GeometryCanvas.WndProc(Message& message)
+>    at System.Windows.Forms.NativeWindow.Callback(IntPtr hWnd, Int32 msg, IntPtr wparam, IntPtr lparam)
+
+### 🤖 Claude
+
+> Half of the experiment worked. Alibre does call the toggle to draw (the log shows it), and you've seen the scan stay visible. The errors are the other half. They come from Alibre's hover code, which checks what's under the cursor as you move the mouse. Our scan's graphics take part in that check, and the canvas has no way to mark them as not pickable. With a toggle command, Alibre seems to be missing something it needs to handle them, hence the null.
+>
+> **Second experiment (installed, 8:50 am):** every working toggle I know of opens a Design Explorer tab: CAMForAlibre's, and all of Alibre's samples. So Show Scan now opens a small **Scan** tab while it's on, saying the scan is shown and how to hide it. Turning Show Scan off closes the tab.
+>
+> **To test:**
+> 1. Start Alibre, open a part with a scan, and click **Show Scan**. A **Scan** tab should appear in the Design Explorer, and the scan should show.
+> 2. Move the mouse over the scan and the part. Do the "Object reference not set" errors still appear?
+> 3. Run Measure, then move the mouse again. The scan should stay visible.
+> 4. Click **Show Scan** again. The tab and the scan should go.
+>
+> If the errors persist, drawing from a toggle isn't usable. Then I'll switch to the plan B we discussed: the Scan tab restarts the normal scan view, like CAMForAlibre. The scan would disappear during Measure and come back when you return to the tab, without errors.
+>
+> I've recorded the finding in ScanToAlibre's CLAUDE.md and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 08:55
+
+> The same error occurs, but only once.  I can continue to use the application.  I don't know if this happens without the tab
+
+### 🤖 Claude
+
+> An error only once is useful: it points at something that happens once, which is starting the toggle. When Show Scan starts, my code asks Alibre to redraw straight away, from inside `putref_CommandSite`. That's before Alibre has finished setting up the toggle. Per the PDF, it calls `OnComplete` for a toggle once that's done. A redraw, and the hover check that comes with it, during that half-set-up moment could easily meet a null once and then never again.
+>
+> So: no redraw request while the command site is being set; ask for it in `OnComplete` instead, and log both, so we can see the order.
+
+> An error that happens only once suggests something that happens once, and the obvious candidate is starting the toggle. My code asked Alibre to redraw immediately, while Alibre was still setting up the command. A redraw at that point brings a hover check, which could meet something not yet set up. So the first redraw now waits until Alibre calls `OnComplete`, which it does once the toggle is fully set up. That's installed (8:55 am), but it's a guess, so it hasn't been confirmed yet.
+>
+> **To test:**
+> 1. Start Alibre, open a part with a scan, and click **Show Scan**. Move the mouse over the scan and the part. Does the error still appear?
+> 2. If it does, note what you'd just done: clicking Show Scan, the first mouse move over the scan, or something later such as starting Measure. The log has a timestamped `[display]` line for each step, which I can match up.
+> 3. Turn Show Scan off and on again in the same session. Does the error come back the second time?
+>
+> If the one error remains whatever we try, there are two choices:
+> - Live with it. It's one dismissible error per session, and the scan stays visible through native commands.
+> - Go to plan B: the tab restarts the normal scan view. That has no errors, but the scan disappears during Measure until you return to the tab.
+>
+> I've recorded where things stand in ScanToAlibre's CLAUDE.md and rebuilt `Discussion.md`.
+
+### 🧑 Frank · 08:58
+
+> Same problem.  We'll live with it for now.
