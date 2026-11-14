@@ -10514,6 +10514,196 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Accept the plan and save it for later.
 
+### 🤖 Claude
+
+> I've saved the lathe plan to [docs/LatheSupport.md](docs/LatheSupport.md) and added a line to [TODO.md](TODO.md) that points to it. No code has changed. I rebuilt `Discussion.md`.
+>
+> The plan has six stages, each built and tested on its own:
+>
+> 1. **Machine type and stock:** a Mill or Lathe setting for the machine, plus Rod Stock, Part Rod Stock and Import Stock. The rod lies along the Set Origin's Z axis, which is the spindle axis.
+> 2. **The lathe menu and operations:** a single Add Turning menu with each operation's dialog and saved settings, plus the four lathe tool types you chose.
+>    - The list has 11 operations for you to trim: Facing, Turn Roughing, Turn Finishing, Grooving, Threading, Parting, Boring, Drilling, Turn Chamfer, Grooving Face and Knurling.
+> 3. **The part's turned outline,** with the Facing, Turn Roughing and Turn Finishing toolpaths.
+> 4. **The Grooving, Parting, Drilling and Threading toolpaths.**
+> 5. **A LinuxCNC lathe post:** X as a diameter, constant surface speed and thread cycles.
+> 6. **A lathe simulation:** the stock kept as a radius along the spindle axis, much simpler than the mill's voxel one.
+>
+> Questions for later stages are listed in the doc: whether the tool post is at the front or rear, whether feeds default to per revolution or per minute, and whether to include live tooling. Stage 1 can start whenever you choose.
+
+### 🧑 Frank · 15:26
+
+> <local-command-stdout>Compacted </local-command-stdout>
+
+> Add tri-dexel mode as an option to simulation.
+
+### 🤖 Claude
+
+> I've read the voxel simulation code (the stock grid, cutting, meshing, Compare, STL and the dialog's resolution controls). Before I write the plan, there are a few tri-dexel choices for you to make.
+
+> Questions:
+> - Where should the tri-dexel option go?
+>   - Dialog choice (Recommended): A Stock model choice in the Simulation dialog (Voxels / Tri-dexel), beside Auto divide and Resolution. Changing it restarts the simulation at the same move, as the resolution does now. It's remembered like the other dialog settings.
+>   - Settings dialog: A program setting under the gear, which applies to every simulation.
+> - How should the tri-dexel stock be drawn in the view?
+>   - Smooth surface (Recommended): A mesh through the exact points where the dexels end, like marching cubes, so slopes and round walls are smooth rather than stepped. This is the main reason for using tri-dexels.
+>   - Dexel ends: A small square at each dexel's end. It's quicker to build, but looks grainy and isn't watertight for Save STL.
+> - Which simulation features must work in tri-dexel mode?
+>   - Compare and Save STL: Not enough removed and Too much removed, with their volumes, plus saving the cut stock as an STL.
+>   - Collision checks: Rapid into stock, and the shank, neck and holder touching the stock.
+>   - Rest machining: The remaining stock that Waterline Roughing and Pocketing read. Leaving it out means that stays on voxels, as now.
+> - What should the Resolution slider control in tri-dexel mode?
+>   - Dexel spacing (Recommended): The slider sets the spacing between dexels, with its own stops, at most about 4 million dexels on each of the three grids. Auto divide is greyed, as it doesn't apply.
+>   - Same stops as voxels: The slider keeps the voxel cell sizes as the spacing.
+
+### 🧑 Frank · 15:49
+
+> Answers:
+> - Where should the tri-dexel option go?
+>   **Dialog choice (Recommended)**
+> - How should the tri-dexel stock be drawn in the view?
+>   **Smooth surface (Recommended)**
+> - Which simulation features must work in tri-dexel mode?
+>   **Compare and Save STL,Collision checks**
+> - What should the Resolution slider control in tri-dexel mode?
+>   **Dexel spacing (Recommended)**
+
+### 🤖 Claude
+
+> Plan:
+>
+> # Tri-dexel simulation mode
+>
+> ## Context
+>
+> The simulation now keeps the stock as voxels: each cell is cut when its centre falls inside the tool. Slopes, round walls and tilted 3+2 cuts come out stair-stepped at the cell size.
+>
+> A tri-dexel model instead keeps three grids of rays, along X, Y and Z, at one spacing. Each ray holds the exact intervals where it's inside the stock. Cuts are exact along every ray, so the surface built from the rays' ends is smooth and accurate at the same memory.
+>
+> Frank asked for it as an option. His choices:
+> - **The option:** a Stock model choice in the Simulation dialog (Voxels / Tri-dexel). Changing it restarts at the same move, as the Resolution slider does.
+> - **Drawing:** a smooth surface through the dexels' exact ends.
+> - **What must work in tri-dexel mode:** Compare (Not enough / Too much removed), Save STL, and the collision checks (rapid into stock, shank, neck, holder).
+> - **What stays on voxels:** rest machining's remaining stock.
+> - **Resolution slider:** sets the dexel spacing, with its own stops; Auto divide is greyed.
+>
+> ## Approach
+>
+> ### Core: `core\TriDexel.h/.cpp` (new, in `core\CamCore.vcxproj`)
+>
+> **`TriDexelStock`: the three grids**
+> - One spacing `s` over the stock box. The rays lie on the lines of one cubic lattice with nodes at the cell centres, like `VoxelStock::Centre`:
+>   - Z rays at (x_i, y_j).
+>   - X rays at (y_j, z_k).
+>   - Y rays at (x_i, z_k).
+> - Every lattice edge then lies along exactly one ray. Its crossing point is exact, which is what the mesh uses.
+> - **Storage:**
+>   - Each ray is `{ float enter, exit; int32 more; }`, measured from the box's lower corner along the ray. Most rays hold one interval. `more` indexes an overflow pool, for a ray cut into several pieces.
+>   - That's 12 bytes a ray, about 150 MB at the largest stop.
+> - **Members:**
+>   - `Reset(box, spacing)`, `FillAll()`.
+>   - `FillMesh(triangles)`: each ray's crossings with the triangles, sorted and paired, as `VoxelStock::FillMesh` counts crossings up each column.
+>   - `Volume()`: from the Z rays, s² times the intervals' lengths.
+>   - Dirty chunks of 32 × 32 × 32 lattice cells, with `MarkDirtyBox` and `ChunkCount` as in `VoxelStock`.
+>   - `ToVoxels(VoxelStock&)`: fills a voxel grid at spacing `s` from the Z rays' intervals, as whole spans of bits. It's for Compare.
+>
+> **`DexelResolutionStops(box, maxRays = 4e6)`**
+> - Up to seven spacings, fine to coarse, following `ResolutionStops`' pattern (`core\Simulation.cpp:102`).
+> - The finest is where the largest grid has 4 million rays.
+> - The middle one is the default.
+>
+> **Cutting: `CutDexels(stock, profile, from, to, axis)` and `CountDexels(..., stopAtFirst)`**
+> - These mirror `CutMove` and `CountMove` (`core\Simulation.cpp:600-840`). They take the same short steps and use the same `inside(along, distance)` test from `ToolProfile::RadiusAt`. They only look at rays crossing the step's box, grown by the reach.
+> - **A ray parallel to the tool's axis** (Z rays with the tool along ±Z, the usual 3-axis case) gets its interval in closed form. It's the column cut: the distance to the step's segment, then `HeightForRadius`, up to the tool length above the higher tip.
+> - **Any other ray:**
+>   - Every tool profile is convex (flat, ball, corner radius, V, chamfer, taper, drill), so its sweep along a straight step is convex. A ray meets it in at most one interval.
+>   - Golden section on how far the ray's points are outside the sweep finds a point inside.
+>   - Bisection then settles each end to 1e-4 mm.
+> - Each ray subtracts the interval from its list.
+> - Rays are cut on all cores (`std::execution::par` over the rays of each grid), because they're independent.
+> - Returns the length removed (for the rapid warning, any > 0) and marks the chunks touched.
+>
+> **Mesh: `MeshDexelChunk` and `MeshDexelChunks`, as surface nets**
+> - A lattice node is inside where its Z ray covers it.
+> - In each lattice cell with mixed corners, one vertex goes at the average of the exact crossings on its 12 edges. Each crossing comes from the ray along that edge. If the ray disagrees with the corners, the edge's middle is used instead.
+> - One quad is made for each lattice edge with a crossing, joining its four cells' vertices. The quad faces from inside to outside.
+> - A cell's vertex depends only on its own edges, so chunks mesh on their own and still meet watertight. That matters for STL.
+> - Normals come from the quads, averaged per vertex.
+> - The result is the existing `StockMesh`, so `JoinMeshes`, `StockMeshToStl` and `DrawMesh` take it unchanged.
+> - Sharp corners are rounded within one spacing. That's the usual cost of surface nets.
+>
+> ### `core\Simulation`
+>
+> - **`SimResolution`** gains `model` (`StockModel::Voxels`, the default, or `TriDexel`).
+>   - Rest machining's `ComputeRemainingStock` doesn't set it, so it stays on voxels (Frank's choice).
+> - **`Simulation`** keeps a `TriDexelStock m_dexels` and `m_startDexels` beside the voxels, plus `Model()`.
+>   - `Start` fills whichever stock the resolution asks for.
+>   - `Rewind` and `SeekTo` copy the start stock back.
+>   - `CutPiece` (`core\Simulation.cpp:1486`) calls `CutDexels`/`CountDexels` in tri-dexel mode for the cut, the rapid check, and the neck, shank and holder checks.
+> - **New `Simulation` members that pick the model**, so the add-on doesn't branch:
+>   - `ChunkCount()`, `DirtyChunks()`, `MeshChunks(chunks, meshes)`, `MeshWhole()`.
+>   - `CompareTo(part)`.
+>   - `StockVolume()`.
+>
+> ### Compare in tri-dexel mode
+>
+> - The cut stock is turned into voxels at the dexel spacing (`ToVoxels`). The part is filled by `FillMesh` into `ResetLike` of that, as now.
+> - Then the existing `CompareStock` runs, keeping its one-cell tolerance, its volumes and its amber and red meshes.
+> - The differences stay blocky at the dexel spacing. Only the stock is smooth.
+>
+> ### Add-on
+>
+> - **`addon\SimulationDialog`:**
+>   - A Stock model combo, `IDC_SIM_MODEL` (the next free 13xxx ID in `addon\resource.h`), with Voxels and Tri-dexel. It goes above Auto divide and Resolution, and the controls below move down.
+>   - `g_stockModel` remembers the choice as the other dialog settings do.
+>   - `ChosenResolution` returns the model. Tri-dexel greys Auto divide.
+>   - Changing the model resets the slider's range and stops, then calls `RestartSimulation`.
+> - **`addon\CamTabCommand.cpp`:**
+>   - `SimulationStops()` returns the dexel stops in tri-dexel mode.
+>   - `Simulate`, `RestartSimulation`, `UpdateSimulationScene` (lines ~1712-1940) and Save STL use the new `Simulation` members in place of `Stock()`.
+>   - `m_simulationPart` is built from the tri-dexel spacing for Compare.
+>   - The `[simulate]` log line gives the model, the spacing, the ray counts and the memory.
+> - **`addon\CAMForAlibre.rc`:** the combo in `IDD_SIMULATION`.
+>
+> ### Docs
+>
+> - **Help:** the Simulation section of `help\CAMForAlibre.html` describes the Stock model field, and Resolution in each mode.
+> - **Spec:** `docs\SPEC.md` and the Claude doc.
+> - **`CLAUDE.md`:** a Current state line for this work.
+>
+> ## Tests: `tests\TriDexelTests.cpp`
+>
+> - **Volumes:** a filled box's volume is exact, and a `FillMesh` sphere's is within 0.5%.
+> - **3-axis cuts:** a flat slot and a ball groove match the analytic volume within 0.1%. They're also checked against the voxel `CutMove` at a fine cell.
+> - **A tilted tool (3+2) slot:** the X, Y and Z rays agree at the lattice nodes.
+> - **Mesh:**
+>   - Watertight: every edge is shared by two triangles, both whole and joined from chunks.
+>   - Its enclosed volume is within 1% of `Volume()`.
+> - **Dirty chunks:** only the chunks near a cut are marked.
+> - **The simulation:** Rewind and SeekTo give the same volume, and a rapid into stock and the holder warnings fire as with voxels.
+> - **Timing:** a skipped test `tri-dexel timing*` runs the same facing case as `simulation timing*`, to compare it with voxels' 1.5 s.
+>
+> ## Verification
+>
+> 1. **Build:** Debug and Release, then run `CamCoreTests.exe`, which must pass.
+> 2. **Timing:** run `-tc="tri-dexel timing*" --no-skip` and `-tc="simulation timing*" --no-skip`, and report both.
+> 3. **Install** (Release), with Alibre closed.
+> 4. **Frank's tests in Alibre:**
+>    1. Switch Stock model to Tri-dexel and back.
+>    2. Check that the slider's stops change and Auto divide greys.
+>    3. Simulate a Parallel Finishing job: the surface should look smooth, not stepped.
+>    4. Simulate a tilted 3+2 operation.
+>    5. Check Compare (Not enough and Too much removed, with volumes) in tri-dexel mode.
+>    6. Save STL and open it.
+>    7. Check that a rapid through stock and a holder hit still stop the simulation.
+>    8. Check that Generate with rest machining is unchanged.
+>    9. Check that the help's Simulation section has changed.
+
+*(Frank turned the plan down.)*
+
+### 🧑 Frank · 16:24
+
+> Accept and save the plan for later.
+
 ---
 
 # Side conversation
@@ -16058,3 +16248,268 @@ A forked copy of the session, kept apart from the main one.
 ### 🤖 Claude
 
 > I'll follow the plan: a second `Section` (`silhouette`) with a `kind`, `ActiveSection()`, and `CSectionDlg` reused on a new template. Reading the remaining pieces.
+
+> I have what I need. Writing `core\Silhouette` now.
+
+> Now the tests.
+
+> All 4 pass, with the bracket's outline exact (to 1e-14 mm) along each axis. Let me time it on a real scan.
+
+> Silhouettes take 0.3 to 0.5 s on both real scans, and every loop point snapped onto the mesh's outline. Now the add-on. Reading the sketch writer and ribbon.
+
+> Writing the add-on changes in one script.
+
+> Now the dialog: `CSectionDlg` takes the kind and picks its template and section.
+
+> The check was too strict (it matched `sectioning`); the replacements before it are in. Running the rest.
+
+> Clean build, 84 tests pass. Checking nothing else still reads `section` directly.
+
+> All routed through `ActiveSection()`. Now the docs.
+
+> Installed. Rebuilding the discussion files.
+
+> 6 Silhouette is built and installed, with its own ribbon button after 5 Surface. All 84 core tests pass, including 4 new ones; it hasn't been tried in Alibre yet.
+>
+> **How it works**
+> - It opens Section's dialog under the title "Silhouette to Sketch". The plane, offset, tolerance, design intent and Create Sketch work as they do in Section, but it keeps its own plane and settings.
+> - **Outline:** instead of a slice, you get the scan's outline seen along the plane's normal. It includes every separate piece and every through-hole.
+> - **Smallest hole** (mm across, default 1): holes smaller than this are filled. Pieces that small are left out as stray bits; that was my choice, not in the plan.
+> - **Accuracy:** the outline's points are moved onto the scan's own edges, so it's exact rather than stepped. The test bracket's outline came out exact along each axis.
+> - **Sketch:** sketches are named "Scan Silhouette n", with the holes as inner loops. The result line gives the number of pieces and holes, and the suggested depth is how far the scan reaches along the normal.
+> - **Speed:** 0.3 to 0.5 s on `Popsicle_dispenser.stl` and on `mt12cover.ply` (1.07 million triangles).
+>
+> **One change from the plan:** I didn't share the outline code with 5 Surface's `ProjectionOutline`, so 5 Surface behaves exactly as before. The silhouette has its own copy in `core\Silhouette`, and the spec and `CLAUDE.md` record this.
+>
+> `Popsicle_dispenser.stl` shows 2 pieces along two of its axes. That only happens if the file holds two separate bodies, so it's worth a look when you try it.
+>
+> I've updated the spec, `CLAUDE.md`, `README.md` and `TODO.md`. Restart Alibre to load it.
+>
+> **To test in Alibre**
+> 1. Click 6 Silhouette, push Alibre Plane and click XY. Check the red outline and green fit, and the pieces and holes in the result line.
+> 2. Click Create Sketch. Check that every piece and through-hole is in "Scan Silhouette 1" with its constraints, then extrude it.
+> 3. Push Scan Plane and click one of the scan's fitted planes. Change Smallest hole and the offset, and watch the preview update.
+> 4. Open 4 Section afterwards. It should still have its own plane and settings.
+> 5. Check the log for the `[silhouette]` line.
+
+### 🧑 Frank · 15:36
+
+> Yes, continue
+
+### 🤖 Claude
+
+> Facets come as 9 doubles a triangle in model units. Now ScanToAlibre's mesh arrays and coloured drawing.
+
+> Core additions to `Compare`:
+
+> Now the tests.
+
+> Core Compare passes, and 1 million points against a 50,000-triangle part takes 0.38 s. Now the add-on: document state first.
+
+> Now the Compare dialog.
+
+> Now the view (bands, probe marker, probe click), ribbon, resources and project files.
+
+> Everything applied except the last line-ending step: `CompareDialog.cpp` has a non-ASCII character. Finding it.
+
+> Only a comment (line 62) has a typed minus sign; string literals use escapes. I'll make the comment plain ASCII and finish the conversion.
+
+> The file writer turned my `\u2212` and `\u00B1` escapes into real characters, string literals included. Putting the escapes back:
+
+> Shell quoting is getting in the way; I'll use a script file.
+
+> All sources are ASCII now. Building.
+
+> `BandArrays` is declared before `DrawArrays`. Moving the declaration below it.
+
+> Clean build, 88 tests pass. Docs next.
+
+> 7 Compare is built and installed, with its own ribbon button after 6 Silhouette. All 88 core tests pass, including 4 new ones; it hasn't been tried in Alibre yet.
+>
+> **What the dialog does**
+> - It reads the part's shape when it opens. There's no Update button, as you chose, so open it again after changing the part. If the part has no solid yet, it says "Nothing to compare: the part has no solid yet".
+> - Every scan point gets its distance from the part, positive outside it. Points further than the **Range** (default 1 mm) from the part are grey: "not modelled".
+> - **Colours:** dark blue, blue and light blue inside the part; green within the **Tolerance** (default 0.1 mm); yellow, orange and red outside; grey not compared. A legend in the dialog shows the colours and their edges.
+> - **Statistics:** points compared and their share, the largest distance outside and inside, the RMS, and the share within the tolerance.
+> - **Probe:** push it, then click the scan to read the distance there, for example "At (x, y, z): +0.134 mm (outside the part)". A magenta mark shows where you clicked.
+> - **Speed:** changing the tolerance, or narrowing the range, only recolours. Widening the range measures again, which took 0.38 s for 1 million points.
+>
+> **Three choices that weren't in the plan:**
+> - **Number of colours:** the plan said 8 bands but listed 7, with fewer on the inside, so I made them symmetric: three blues, green, three warm colours and grey. The spec records this.
+> - **Drawn over the part:** the colours are drawn on top of the part, otherwise anything inside it would be hidden. I don't know yet how Alibre layers this; the scan may show through itself or flicker against the part.
+> - **Line-ending fix:** a file-writing step turned the minus and ± escapes into typed characters, so I put them back as escapes. All source files are plain ASCII again.
+>
+> **Not proven yet:** that reading the open part's shape (`GetFacetData`) gives its solid in model units, and whether inserted surfaces are included. The log's `[compare] part facets` line will show what came back.
+>
+> I've updated the spec, `CLAUDE.md`, `README.md` and `TODO.md`. Restart Alibre to load it.
+>
+> **To test in Alibre**
+> 1. On a part that's partly modelled, click 7 Compare. Check the colours, that areas not yet modelled are grey, and the statistics.
+> 2. Check how the colours look over the part: whether they flicker, or whether the far side of the scan shows through.
+> 3. Change the tolerance and the range. The colours, legend and statistics should update.
+> 4. Push Probe and click a few places, then compare the readings with Alibre's Measure.
+> 5. Open Compare on a part with no solid. It should say there's nothing to compare.
+> 6. Check the log for `[compare] part facets`, the timing line and the statistics.
+
+### 🧑 Frank · 15:46
+
+> Remind me what the last plan items are.
+
+### 🤖 Claude
+
+> Two items from the saved plan (`docs\PLAN-next.md`) are left. Both make use of the symmetry planes from Find Symmetry and Mid Plane.
+>
+> **1. Detect, in 5 Surface**
+> - A **Detect** button beside the Symmetry check boxes (XY, YZ, ZX).
+> - It scores the three world planes on the whole scan, using the same mirror score as Find Symmetry.
+> - It ticks each plane that has at least 80% of the scan within 0.2 mm of its mirror image.
+> - It shows each score, for example "YZ: 94% within 0.2 mm".
+> - That saves you working out which symmetry boxes to tick before fitting a surface.
+>
+> **2. A Symmetric design intent, in 4 Section and 6 Silhouette**
+> - A **Symmetric** check box beside Horizontal and vertical, Tangent and Concentric.
+> - It applies when the sketch plane is square to a symmetry plane: any fitted plane named "Symmetry plane" or "Mid plane", or a world plane Detect found.
+> - It finds pairs of segments that mirror each other across that plane's line: lines within 2 degrees and the tolerance, or arcs with matching radii and centres within the tolerance.
+> - It averages each pair so the two are exactly symmetric.
+> - In the sketch it adds a construction line on the symmetry line, and a Symmetric constraint about it on each pair's matching ends. That constraint is in the 27.0.1 headers but hasn't been tried.
+>
+> The tests planned for them: Detect ticks YZ for a scan symmetric about YZ, and Symmetric pairs a mirrored profile's lines and arcs and makes them exactly symmetric.
+>
+> For you in Alibre: Detect in 5 Surface after Find Symmetry and aligning the plane to YZ, and a Section on XY with Symmetric ticked, then checking the Symmetric constraints in the sketch.
+>
+> Once those are done, the plan is finished.
+
+### 🧑 Frank · 15:47
+
+> Yes, continue
+
+### 🤖 Claude
+
+> Detect is straightforward. Now the Section side: `FindConstraints` and how the sketch writer applies constraints.
+
+> Now the sketch writer's constraint section.
+
+> Header changes first.
+
+> Now `MakeSymmetric`.
+
+> Now `ScoreWorldPlanes` in `core\Symmetry`.
+
+> Tests: Detect in `SymmetryTests.cpp`, the Symmetric intent in `SectionTests.cpp`.
+
+> Vec2 has no public `+` operator, which the test uses. Fixing that.
+
+> Detect passes (YZ 100%, XY 67%, ZX 73%). The Symmetric failures come from one bug: for a crossed pair I moved the partner's ends the wrong way round. Fixing:
+
+> All geometry checks pass now. The remaining failure is my test's count: the sides' lower ends are the bottom line's ends, so there are 3 joint pairs, not 4. Correcting the test:
+
+> All 90 core tests pass. Now the add-on side. Checking the Symmetric constraint type in the 27.0.1 headers and the `Collect` helper.
+
+> Writing the add-on changes for both pieces.
+
+> Templates look right. Building.
+
+> Clean build, 90 tests pass. Quick ASCII check, then docs and install.
+
+> The last two plan items are built and installed. All 90 core tests pass, including 2 new ones, but neither has been tried in Alibre yet. Every item of the plan is now built.
+>
+> **Detect, in 5 Surface**
+> - A Detect button sits in the Symmetry group, which is a little taller now. It scores XY, YZ and ZX as symmetry planes of the whole scan, as it lies, using Find Symmetry's mirror score.
+> - It ticks the planes with at least 80% of the scan within 0.2 mm of the mirror image. The base plane is left out, and at most the best two are ticked.
+> - The scores show under the boxes, for example "XY: 67%, YZ: 100%, ZX: 73%", and the surface is fitted again.
+> - Align the scan's symmetry plane to a world plane in Orient first, since Detect only checks the world planes where they are.
+>
+> **Symmetric, in 4 Section and 6 Silhouette**
+> - **When it applies:** a new check box, used when a symmetry plane is square to the sketch plane. It takes your first "Symmetry plane" or "Mid plane", or else a world plane Detect found.
+> - **Pairing:** segments that mirror each other across the symmetry line are paired, and each pair is averaged so it's exactly symmetric. Ends shared with the next segment move with them, so the outline stays joined.
+> - **Matching rule (my choice):** matching ends may be up to 3× the tolerance apart, because fitted end points are noisier than the lines. A segment that crosses the line, such as the top edge of a symmetric part, is paired with itself.
+> - **In the sketch:** a construction line goes on the symmetry line, and each pair of matching points gets Alibre's Symmetric constraint about it.
+> - **Result line:** it names the plane used and the number of pairs, or explains when there's no symmetry plane square to this one.
+> - **Not proven yet:** Alibre's Symmetric constraint is in the 27.0.1 headers but hasn't been tried. If Alibre refuses it, the status line counts the refusals and the log has the details.
+>
+> I've updated the spec, `CLAUDE.md` and `TODO.md`. Restart Alibre to load it.
+>
+> **To test in Alibre**
+> 1. In Orient, run Find Symmetry on a symmetric part and Align the symmetry plane to YZ. Then click Detect in 5 Surface: YZ should be ticked, with its score shown.
+> 2. In 4 Section, slice on XY with Symmetric ticked. The result line should name the symmetry plane and the number of pairs, and the green fit should look exactly symmetric.
+> 3. Create the sketch, then check the construction line and the Symmetric constraints, and whether any were refused.
+> 4. Try Symmetric in 6 Silhouette too.
+> 5. Tick Symmetric on a plane that no symmetry plane is square to, and check the message.
+> 6. Check the log for `[surface] detect` and any `[section] symmetric refused` lines.
+
+### 🧑 Frank · 16:03
+
+> Find Symmetry worked.  Symmetrical sketches did not work.  There were no symmetrical constraints, and the lines and arcs were not symmeterical.  Both section and silhouette failed.
+
+### 🤖 Claude
+
+> Checking the log first.
+
+> Writing the new `MakeSymmetric`, which works on the section's polylines before fitting.
+
+> Now the header, the callers and the test.
+
+> Passes. Now replaying your case on the real scan: Find Symmetry, align the plane to YZ, section on XY and silhouette on ZX, with Symmetric on.
+
+> The includes didn't go in; checking that file's line endings.
+
+> It was an LF file and my additions were CRLF; it's consistent again (LF, as committed). Rebuilding and replaying.
+
+> All 90 pass. Updating the spec and `CLAUDE.md` for the new method, then installing.
+
+> I found the cause and changed how Symmetric works; the new version is built and installed. On a replay of your steps with your scans, both the section and the silhouette now come out symmetric, but it hasn't been tried in Alibre yet.
+>
+> **Why it failed:** the log showed the symmetry line was found (Symmetry plane 1 on YZ, and Detect found YZ at 99%), but no pairs. My first version fitted each side of the scan on its own and then looked for matching pieces. The fit breaks the two sides up differently (one side 2 arcs, the other 3, with ends millimetres apart), so nothing matched. That gave no constraints and no symmetry, and it didn't depend on whether you used Section or Silhouette.
+>
+> **How it works now:** it makes the fit symmetric before fitting.
+> - **Loops crossing the line:** a loop that crosses the symmetry line is cut there and each half is fitted. The half that fits better is kept, and its mirror image becomes the other half.
+> - **Pieces across the line:** a segment that meets its mirror at the line becomes one segment across it, such as a line square to it or an arc centred on it. Half a circle becomes a whole circle.
+> - **Loops on one side:** a loop wholly on one side, such as a hole, is paired with its mirror loop, and one fit is used for both.
+> - **Constraints:** every corner, or circle centre, gets a Symmetric constraint with its exact mirror about a construction line on the symmetry line.
+>
+> **The replay:** I ran your steps on your scans: Find Symmetry, align the plane to YZ, then Symmetric ticked.
+>
+> | Scan | Sketch | Segments before → after | Symmetric constraints |
+> |---|---|---|---|
+> | `mt12cover.ply` | Section on XY | 7 → 10 | 4 |
+> | `mt12cover.ply` | Silhouette along Y | 38 → 22 | 11 |
+> | `Popsicle_dispenser.stl` | both | both loops cut at the line and mirrored | |
+>
+> All 90 core tests pass, including a new one with a noisy outline, two mirrored holes and an unpaired slot. Whether Alibre accepts its Symmetric constraint is still unproven. I've updated the spec and `CLAUDE.md`. Restart Alibre to load it.
+>
+> **To test in Alibre**
+> 1. Repeat your Section on XY with Symmetric ticked. The green fit should look exactly mirrored, and the result line should say "Symmetric about Symmetry plane 1: n pairs of points".
+> 2. Create the sketch, then check the construction line, the Symmetric constraints, and the status line for refusals.
+> 3. Do the same in Silhouette.
+> 4. Check the log for the `[section] symmetric about …` lines (loops cut, pairs, constraints) and any `[section] symmetric refused` lines.
+
+### 🧑 Frank · 16:16
+
+> The symmetry line is drawn in the sketches.  No symmetry constraints are present.  Silhouette looks symmetrical, but the alibre sketch has moved off the silhouette path.  Same with the Section alibre sketch, but it is way off, shifting about 4mm
+
+### 🤖 Claude
+
+> Checking the log.
+
+> Building, then installing.
+
+> Line 3 is the symmetry line at x = 1. I'll fix it, as ScanToAlibre now does, then make 1.start and 2.start symmetric about it.
+
+> Recording the proven behaviour and the fix in `CLAUDE.md`.
+
+> I found two causes, fixed both, and installed the add-on. I haven't redone your section and silhouette sketches with the fix, so that still needs your test.
+>
+> **1. The target order was wrong, which also moved your sketches.** Alibre's Symmetric constraint wants the line of symmetry first, then the two points. I passed the line last, and given that order Alibre mirrors the other targets about the first one. That's why the sketches moved off the scan, about 4 mm on the section, and why no Symmetric constraints showed. Your MCPForAlibre project had already found this on 10 November; I should have checked it first.
+>
+> **2. Refusals weren't caught.** `AddConstraint` can refuse by returning false instead of raising an error, and I only caught errors. That's why the log said "0 refused". A false return now counts as refused and is logged as `[section] symmetric refused: AddConstraint returned false`.
+>
+> **Also:** the symmetry construction line is now fixed in place, so Alibre's solver can't move it, and the sketch stays where the scan's symmetry plane is.
+>
+> **Proven in Alibre:** I checked the new order with the Alibre MCP tools on a throwaway part, which I closed without saving. With a fixed line at x = 1 passed first, a second line's start moved to (0, 1), the exact mirror of the first line's start at (2, 1), and the line didn't move. So Symmetric works on two end points, which is what ScanToAlibre uses. The test used an ordinary line for the axis, while ScanToAlibre's is a construction line; that difference is still untried.
+>
+> The Alibre that the MCP tools started already has the new add-on loaded. `CLAUDE.md` now records both facts under the proven API behaviour.
+>
+> **To test in Alibre**
+> 1. Repeat your Section on XY with Symmetric ticked, and create the sketch. It should stay on the slice, with the Symmetric constraints and a fixed symmetry line.
+> 2. Do the same in Silhouette.
+> 3. Check the status line and the log for any refused constraints.
