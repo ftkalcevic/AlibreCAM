@@ -10310,24 +10310,209 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 >
 > I changed nothing for this, and `Discussion.md` wasn't rebuilt because plan mode is on.
 
-### 🧑 Frank · 08:13
+## 2026-11-14
 
-> Is there an MCP available for Alibre Design?
+### 🧑 Frank · 15:02
+
+> <local-command-stdout>Compacted </local-command-stdout>
+
+> Add Lathe support.  in the machine setup, add machine type - mill, lathe.  Stock options will be Rod Stock, Part Rod Stock and Import Stock.  A rod is a cylinder, providing similar options to the box.
+> Lathe will have just one Add... submenu, with face, turn rough, turn finish, face, groove, threading, parting.
 
 ### 🤖 Claude
 
-> Yes, there are community-looking packages on NuGet, though nothing in Claude's connector registry. I couldn't tell whether Alibre itself publishes them, and I've only read the search summaries, not tried either one.
+> Questions:
+> - Lathe support is big. How much should this first change cover?
+>   - Framework first (Recommended): Machine type, Rod/Part Rod/Import stock, the lathe Add menu, lathe tool types, and each operation with its dialog tabs and settings saved. Toolpaths, simulation and the lathe post come one operation at a time afterwards, as Drill/Facing did.
+>   - Framework + Face and Turn: As above, plus working toolpaths for Facing and Turn Rough/Finish, drawn in the view and posted, before stopping.
+>   - Everything: All seven operations with toolpaths, simulation and a LinuxCNC lathe post in one go.
+> - The lathe Add list has "face" twice (face, turn rough, turn finish, face, groove, threading, parting). What was the second one meant to be?
+>   - Drill (centre): Drilling on the spindle axis with a drill in the tailstock/turret.
+>   - Bore: Internal turning with a boring bar.
+>   - Chamfer: A chamfer on an edge of the turned profile.
+>   - Just a typo: Only one Face; six operations.
+> - How is the lathe's spindle axis set, which the rod and every lathe toolpath follow?
+>   - From Set Origin (Recommended): Set Origin's Z is the spindle axis (picked from a cylindrical face, round edge or design axis, as today), its position the work zero (usually the part's face). Rod stock lies along that axis; its X is the radial direction. Toolpaths are the profile in the origin's XZ plane.
+>   - Assembly axis in the stock: The rod's dialog picks assembly X, Y or Z as the spindle axis; Set Origin only sets the zero along it.
+> - Lathe tools are a different shape from mills. Which tool types should a lathe machine have?
+>   - Turning insert: Insert shape/angle, nose radius, approach (lead) angle, holder hand (left/right/neutral). Used by Face and Turn.
+>   - Grooving / parting: Blade width, corner radius, max depth. Used by Groove and Parting.
+>   - Threading: Thread angle (60/55/29), tip width or radius, internal/external.
+>   - Boring bar: Insert as turning plus min bore diameter and reach. Only needed if Bore is wanted.
+
+### 🧑 Frank · 15:23
+
+> Answers:
+> - Lathe support is big. How much should this first change cover?
+>   **Plan the changes and save the plan.  We'll add and test them one at a time**
+> - twice (face, turn rough, turn finish, face, groove, threading, parting). What was the second one meant to be?
+>   **Add as many as you can think of.  We'll finalise the list as we go.**
+> - How is the lathe's spindle axis set, which the rod and every lathe toolpath follow?
+>   **From Set Origin (Recommended)**
+> - Lathe tools are a different shape from mills. Which tool types should a lathe machine have?
+>   **Turning insert,Grooving / parting,Threading,Boring bar**
+
+### 🤖 Claude
+
+> Now I'll write the plan.
+
+> Plan:
 >
-> | Package | Covers | Details |
-> |---|---|---|
-> | **AlibreObjectModel.Mcp** 2.0.1 | Alibre Design: parts, sketches, features, parameters, validation | 25 tools, runs as `alibre-cad-mcp`, Windows x64, .NET 8+, MIT licence |
-> | **AlibrePDMObjectModel.Mcp** 1.0.6 | Alibre PDM: safes, projects, files, properties, versions | 25 tools, drives Alibre over COM, needs Alibre Design 29.x with PDM |
+> # Lathe support: staged plan (save as `docs\LatheSupport.md`)
 >
-> For your setup, check the version first: you target Alibre 27.0.1, and the PDM package requires 29.x. The CAD package's summary didn't state an Alibre version, so it may have the same limit. Its tools also look aimed at creating and editing models, so they wouldn't help with CAMForAlibre's add-on code or with sorting configurations.
+> ## Context
 >
-> Sources:
-> - [AlibreObjectModel.Mcp on NuGet](https://www.nuget.org/packages/AlibreObjectModel.Mcp)
-> - [AlibrePDMObjectModel.Mcp on NuGet](https://nuget.org/packages/alibrepdmobjectmodel.mcp)
+> Frank wants CAMForAlibre to drive a lathe as well as a mill. The machine gets a type (Mill or Lathe). A lathe job gets rod stock and a single Add submenu of turning operations. He asked for the plan to be saved, then built and tested one stage at a time. The operation list isn't final yet ("add as many as you can think of").
+>
+> **Decided by Frank:**
+> - **The spindle axis comes from Set Origin.** Its Z is the spindle axis, picked from a cylindrical face, round edge or design axis as now. Its position is the work zero, and its X is the radial direction.
+> - **Lathe tool types:** turning insert, grooving/parting, threading, and boring bar.
+>
+> **What doing this now covers:**
+> - Write this plan to `docs\LatheSupport.md`.
+> - Link it from `TODO.md`.
+> - Run `BuildDiscussion.py`.
+>
+> No code changes until Frank picks the first stage.
+>
+> ---
+>
+> ## Approach
+>
+> - **A turning toolpath is a 2D profile.** It's built in the Set Origin's XZ plane: Z along the spindle, X the radius, positive away from the axis.
+>   - Stored as ordinary `ToolpathMove`s in the origin's frame, with Y = 0.
+>   - Drawing, saving, arc fitting (ZX plane, `ArcPlane::ZX`) and `SimplifyStraightRuns` all work unchanged.
+> - **The part's turned outline** is a new core `TurnedProfile`: the largest radius of the parts at each Z.
+>   - It comes from the parts' facets, already read by `ReadAssemblyPartFacets`.
+>   - Each triangle is swept round the axis, giving the radius envelope over Z.
+>   - The profile is sampled finely, then simplified.
+>   - It's used for outside work. Inside work (bore) takes the smallest radius of the hole.
+> - **Selected features stay optional.** Generate uses the whole turned profile limited to a Z range (Start Z / End Z, with Locate picks as now). Picked faces, if given, limit the Z range.
+> - **Every lathe operation shares the same tabs:** Tool, Feeds & Speeds, Clearance (lathe form), and its own tab.
+>
+> ## Stage 1: Machine type and rod stock
+>
+> - **Machine type** (`core\Machine`): `MachineType Mill|Lathe`, saved as `type`; a missing value reads as Mill.
+>   - The Machine tab gets a Type combo.
+>   - A lathe greys Axes/Rotary, travel Y, and the tool holder. Travel X becomes diameter capacity.
+>   - Machine format stays 3, as the field is optional.
+> - **Stock kinds** (`core\Stock`): `Rod` and `PartRod`.
+>   - **Rod Stock:** diameter and length, along the Set Origin's Z through its position. Front face offset from the work zero, as in Box Stock's corner.
+>   - **Part Rod Stock:** the cylinder round the chosen parts (all if none) about that axis. It has three offsets: radial, +Z end and −Z end, matching Part Box's ±.
+>   - **Import Stock:** as for a mill.
+>   - **Functions:** `RodStockCylinder`, `PartRodStockCylinder` (from the parts' points), `CylinderEdges` (two circles plus four lines) for drawing, and `CylinderMesh` for the simulation and the stock's top.
+>   - **Axis:** the Rod holds no axis of its own. It uses the first unsuppressed Set Origin (`WorkZeroIndex`). With none, the stock shows as unreadable and the tree warns.
+> - **Tree:** the Stock menu shows Rod Stock, Part Rod Stock and Import Stock on a lathe, and the box kinds on a mill.
+>   - A stock of the wrong kind for the machine gets a tree warning.
+>   - It's never deleted automatically.
+> - **Dialogs** (`addon\StockDialog`):
+>   - `CRodStockDlg` is modal, like `CBoxStockDlg`.
+>   - `CPartRodStockDlg` is modeless, reusing `CPartBoxStockDlg`'s part picking.
+>   - The tree text is `Stock - Rod Stock`.
+> - **Saving:** `setup.stock.kind` gains `rod`/`partRod`, with `rodDiameter`, `rodLength`, `rodFront` and the radial and end offsets. `.cam` format version 16.
+> - **Tests:** round trips, validation, the cylinders from the parts' points, and older files.
+>
+> ## Stage 2: The lathe Add menu, operations and tools
+>
+> - **Folder menu on a lathe:** one **Add Turning** submenu replaces Add Holes / 2 1/2 Axis / 3 Axis. It lists these operations:
+>   - Facing
+>   - Turn Roughing
+>   - Turn Finishing
+>   - Grooving
+>   - Threading
+>   - Parting
+>   - Boring (inside rough and finish)
+>   - Drilling (on the axis: peck, through the tailstock or turret)
+>   - Turn Chamfer (edge breaks on the profile's corners)
+>   - Grooving Face (axial grooves)
+>   - Knurling (a dwell pass, very simple)
+> - **On a mill, the folder menu doesn't change.**
+>   - Mill operations in a lathe job (or the reverse) get a tree warning, "Not for this machine's type", and Generate skips them.
+> - **New `StepType`s:** `LatheFacing`, `TurnRoughing`, `TurnFinishing`, `Grooving`, `Threading`, `Parting`, `Boring`, `LatheDrilling`, `TurnChamfer`, `FaceGrooving` and `Knurling`.
+>   - Tree images go in every strip, and help gets a section for each operation.
+> - **Tool types** (`core\ToolLibrary`; library and machine files version 4):
+>   - **Turning insert:** insert shape (C 80°, D 55°, V 35°, T 60°, W 80°, S 90°, R round), nose radius, approach (lead) angle, hand (left, right or neutral), and cutting edge length.
+>   - **Grooving / parting:** blade width, corner radius, maximum depth, and hand.
+>   - **Threading:** thread angle (60, 55 or 29), tip radius or flat, and internal or external.
+>   - **Boring bar:** as a turning insert, plus minimum bore diameter and reach.
+>   - **The lathe tools have:**
+>     - Their own drawings in `DrawToolDiagram`, with letters on the labels as now.
+>     - A tool offset (turret) number in place of the mill's T number, posted as `T0101`.
+>   - **Which list each machine type shows:**
+>     - The Tool dialog lists only the types for the machine's type.
+>     - The operation's Tool tab offers only the tools that fit the operation. For example, a Grooving operation offers only grooving tools.
+> - **Settings per operation** (core structs plus a dialog tab each), building the dialog before the toolpath as Drill and Facing were:
+>   - **Facing:** Start and End X (diameter), Z to face to, stepdown, finish pass, and direction (inward or outward).
+>   - **Turn Roughing:** Start and End Z, stock to leave in X and Z, depth of cut (radius), retract, outside or inside, and a Z or X direction (longitudinal or facing roughing).
+>   - **Turn Finishing:** Start and End Z, passes, stock to leave, and an optional spring pass.
+>   - **Grooving:** position by a picked face or Z, width (several plunges if wider than the tool), depth, peck, and dwell.
+>   - **Threading:** Start and End Z, pitch, thread form (ISO metric, UN, BSW, ACME), major and minor diameter (from the form or typed), number of passes or first depth with degression, infeed angle, spring passes, and internal or external.
+>   - **Parting:** Z, peck, a reduced feed near the centre, and stop diameter.
+>   - **Boring:** as Turn Roughing and Finishing, inside.
+>   - **Drilling:** depth, peck, dwell, and retract (reusing `DrillSettings`).
+> - **Saving:** `.cam` format version 17.
+>
+> ## Stage 3: The turned profile and Facing / Turn Roughing / Turn Finishing toolpaths
+>
+> - **`core\TurnedProfile`:** the radius envelope from the parts' triangles about the origin's Z, simplified to lines and arcs, with tests on a cylinder, a cone and a sphere.
+> - **`core\TurnToolpath`:**
+>   - **Facing:** passes across X at Z steps.
+>   - **Roughing:** horizontal passes at decreasing X, each clipped to the profile offset by the stock to leave and the tool's nose radius. The tool's back angle keeps it out of undercuts it can't reach, from the insert angle and approach.
+>   - **Finishing:** the profile offset by the nose radius (nose radius compensation done in the CAM), with lead in and lead out.
+> - **Drawing:** the profile in orange, and the toolpaths in the origin's XZ plane, so they show beside the part.
+>
+> ## Stage 4: Grooving, Parting, Drilling and Threading toolpaths
+>
+> - **Grooving:** plunges stepped by the blade width less overlap, then a finish across the bottom.
+> - **Parting:** pecks down to the stop diameter.
+> - **Drilling:** along −Z on the axis, reusing `GenerateDrillToolpath` with X = 0.
+> - **Threading:** passes with the form's depths, saved as moves with a new `MoveKind::Thread` (pitch). Posts write it as a canned cycle or a synchronised move.
+>
+> ## Stage 5: Lathe post
+>
+> - **`posts\LinuxCNC Lathe.post`:**
+>   - G18, G7 diameter mode, G21/G90, tool changes as `T0101 M6`.
+>   - G96/G97 constant surface speed with a maximum RPM, which needs the Feeds tab to offer surface speed on a lathe.
+>   - G2/G3 in the XZ plane, G33 or a G76 thread cycle, and G95 feed per revolution as an option.
+> - **`ScriptedPost`** gains: diameter mode (X doubled), `[thread]` and `[css]` sections, and the turret tool number.
+> - **Tests:** post output for each lathe operation.
+>
+> ## Stage 6: Lathe simulation
+>
+> - **Model:** the stock as a radius per Z (a 1D height field about the axis). Each move removes material by the insert's shape swept in XZ.
+> - **Drawing:** revolved into a mesh.
+> - **Checks:** the Compare against the turned profile, and a rapid into stock warning.
+> - Much simpler and faster than the voxel simulation, which stays for mills.
+>
+> ## Open questions for later stages, not needed for stage 1
+>
+> - **Live tooling or a C axis:** left out.
+> - **Where the tool sits:** a rear turret flips X. Should that be a machine setting, "Tool post: front/rear"?
+> - **Feed units:** per revolution or per minute by default.
+> - **The final operation list:** Frank will trim the 11 operations listed in Stage 2.
+>
+> ## Files (for the whole plan)
+>
+> - **Core:** `core\Machine`, `core\Stock`, `core\ToolLibrary`, `core\CamJob`, and new `core\TurnedProfile`, `core\TurnToolpath`, `core\LatheSettings` and `core\LatheSimulation`.
+> - **Add-on:** `addon\MachineDialog`, `addon\StockDialog`, `addon\ToolDialogs`, `addon\ToolDrawing`, `addon\OperationDialog`, `addon\CamTabCommand`, `addon\CAMForAlibre.rc`, `addon\resource.h`, and the tree and toolbar strips.
+> - **Posts and documentation:** `posts\`, help, `docs\SPEC.md` and the Claude doc, `CLAUDE.md`, and `TODO.md`.
+>
+> ## Verification (each stage)
+>
+> - **Build:** Debug and Release.
+> - **Tests:** run `CamCoreTests.exe`, with new tests per stage.
+> - **Install**, with Alibre closed first.
+> - **Frank in Alibre:** a numbered test list per stage. For stage 1:
+>   1. Switch the machine to Lathe and back.
+>   2. Add a Set Origin on a turned part's cylindrical face.
+>   3. Add a Rod Stock, then a Part Rod Stock: check how they're drawn and edited, and that they save and reload.
+>   4. Check the stock menus for each machine type, and the warnings.
+
+*(Frank turned the plan down.)*
+
+### 🧑 Frank · 15:25
+
+> Accept the plan and save it for later.
 
 ---
 
@@ -10600,6 +10785,25 @@ A forked copy of the session, kept apart from the main one.
 > The Debug build is also clean, and all 320 tests pass. The rename is complete in both builds; the installed copy is the Release build.
 
 ## 2026-11-10
+
+### 🧑 Frank · 08:13
+
+> Is there an MCP available for Alibre Design?
+
+### 🤖 Claude
+
+> Yes, there are community-looking packages on NuGet, though nothing in Claude's connector registry. I couldn't tell whether Alibre itself publishes them, and I've only read the search summaries, not tried either one.
+>
+> | Package | Covers | Details |
+> |---|---|---|
+> | **AlibreObjectModel.Mcp** 2.0.1 | Alibre Design: parts, sketches, features, parameters, validation | 25 tools, runs as `alibre-cad-mcp`, Windows x64, .NET 8+, MIT licence |
+> | **AlibrePDMObjectModel.Mcp** 1.0.6 | Alibre PDM: safes, projects, files, properties, versions | 25 tools, drives Alibre over COM, needs Alibre Design 29.x with PDM |
+>
+> For your setup, check the version first: you target Alibre 27.0.1, and the PDM package requires 29.x. The CAD package's summary didn't state an Alibre version, so it may have the same limit. Its tools also look aimed at creating and editing models, so they wouldn't help with CAMForAlibre's add-on code or with sorting configurations.
+>
+> Sources:
+> - [AlibreObjectModel.Mcp on NuGet](https://www.nuget.org/packages/AlibreObjectModel.Mcp)
+> - [AlibrePDMObjectModel.Mcp on NuGet](https://nuget.org/packages/alibrepdmobjectmodel.mcp)
 
 ### 🧑 Frank · 08:26
 
@@ -14224,3 +14428,1633 @@ A forked copy of the session, kept apart from the main one.
 ### 🧑 Frank · 08:58
 
 > Same problem.  We'll live with it for now.
+
+### 🤖 Claude
+
+> Noted. Show Scan stays as it is: it keeps the scan visible through Measure and other native commands, with one Alibre error after it's turned on.
+>
+> I've recorded it in ScanToAlibre's CLAUDE.md as a known issue: one "Object reference not set" error from Alibre's hover code (`GeometryListener.checkCurrentLocation`) after Show Scan is turned on, after which Alibre carries on. In TODO.md, "keep the scan showing" is replaced with an item to find a way past that error later. I also rebuilt `Discussion.md`. Nothing is committed in ScanToAlibre.
+>
+> Of the earlier list, what's left is making meshes from PLY point clouds, and the first modelling tools: sections through the scan turned into sketches to extrude or revolve.
+
+### 🧑 Frank · 08:59
+
+> Lets implement ply to mesh
+
+### 🤖 Claude
+
+> For an oriented point cloud (yours all have normals), I'll write the reconstruction myself, with no new third-party library. Here's how it works:
+> 1. **Signed distance:** at each point of a grid near the cloud, the weighted average of each nearby point's height above its own tangent plane (Hoppe et al., 1992, smoothed with a Gaussian weight). It's zero on the surface, positive outside and negative inside.
+> 2. **Surface nets:** a vertex in each grid cell the surface crosses, at the average of where it crosses the cell's edges, then a quad for each crossed grid edge. This is simpler and sturdier than marching cubes, with no large lookup tables.
+> 3. **Only near the data:** cells far from any point make no surface, so gaps and edges in the scan stay open instead of being bridged with invented surface.
+> 4. **Cell size:** from the cloud's point spacing, made coarser for very large clouds (your 6.9-million-point one) to keep memory sensible.
+>
+> The result is a mesh of about two triangles per point, which Refine can then decimate. A cloud without normals gets a message for now. Starting with the core and tests.
+
+> First the PLY reader keeps the normals. Then the reconstruction itself.
+
+> The rule is in. Now the point-cloud work: registering the reconstruction code and writing its tests.
+
+> All 51 tests pass, including the closed outward sphere, smoothing out noise, and a flat patch that stops at its edges. Now timing on your real point clouds, from small to the 6.9-million-point one:
+
+> That's expected: on a square grid the 12th neighbour gives 0.512 for a spacing of 0.5, within 3%. The test needed a looser tolerance. Fixing it, then rerunning the real clouds:
+
+> The comparison script hit the shell's backslash problem again. Rerunning it without backslashes:
+
+> I'll make the gap a setting (`gapCells`), so I can compare 1, 2 and 3 cells on the real cloud.
+
+> Two cells is the right setting: open edges drop from 12,582 to 4,126 for 1.7 times the time, and three cells gains little more. One test now fails; checking which:
+
+> The shell turned the `\n` escapes in the test into real line breaks. Fixing that test with the editor instead:
+
+> All tests pass. Now Load's log line and file filter in the add-on, then build and install.
+
+> Installed. Updating ScanToAlibre's spec, CLAUDE.md and TODO, then rebuilding both discussion files.
+
+> Load now turns point clouds into meshes. It's built and installed (9:11 am), and all 51 core tests pass, but it hasn't been tried in Alibre yet.
+>
+> **Discussion.md:** this ScanToAlibre conversation was already in CAMForAlibre's `Discussion.md` word for word, because it runs in that folder. ScanToAlibre now has its own `ScanToAlibre\Discussion.md` too, from your first message about it onward, built by its own `tools\BuildDiscussion.py`. It also picks up any later sessions opened in ScanToAlibre's folder. ScanToAlibre's CLAUDE.md now says to rebuild it every turn, and I've rebuilt both files.
+>
+> **Point clouds:** a PLY with points and normals but no faces is now made into a mesh, with no new library:
+> - At each point of a grid near the cloud, I work out how far it is above the nearby points' tangent planes, averaged so noise smooths out. Zero is the surface.
+> - Surface nets then draw the triangles through the grid. The grid is as fine as the points' spacing, and coarser for very large clouds.
+> - The surface bridges the gaps between the scanner's lines of points, but doesn't run past the scan's edges or into real holes. Areas the scanner didn't see stay open.
+>
+> On your clouds:
+>
+> | Cloud | Points | Triangles | Time |
+> |---|---|---|---|
+> | mt12cover `Optimization.ply` | 545,111 | 1.7 million | 3.1 s |
+> | hygro `model.ply` | 1.07 million | 3.6 million | 6.9 s |
+> | ps4 `Optimization.ply` | 6.9 million | 2.4 million, on a coarser 0.29 mm grid | 10 s |
+>
+> About 3 triangles per point; use Refine to decimate.
+>
+> Two things were fixed while measuring:
+> - My first spacing estimate made 9 triangles per point, because your scanner's points come in lines.
+> - A looser rule closed more holes but added a skirt past the scan's edges, which would also have shrunk real holes.
+>
+> **Limits:**
+> - The mt12cover mesh has 11,819 open edges. The scanner's own `Mesh.ply` is closed because the scanner fills holes itself; filling them here is a decision for later.
+> - Walls thinner than about two grid cells come out poorly.
+> - A cloud without normals is refused for now.
+>
+> **To test:**
+> 1. **Load** `D:\3dscanner\mt12cover\cwKogCnNx_zHDfTKt6_H3Ws1sp8_cS9tAi4q\result\Optimization.ply`. After a few seconds the mesh should appear, and the `[scan]` line in the log gives the points, grid and triangles.
+> 2. Compare it with the scanner's `Mesh.ply` from the same folder. Look for holes, bumps along the edges, and whether fine detail survived.
+> 3. **Refine**: decimate to about 20%, then save, close and reopen the part.
+> 4. Try the 6.9-million-point `ps4\...\Optimization.ply`. It should take about 10 seconds.
+>
+> I've updated ScanToAlibre's spec, CLAUDE.md, README and TODO.
+
+### 🧑 Frank · 09:16
+
+> It is fine with holes.
+
+### 🤖 Claude
+
+> Good, the holes stay. Meshing a point cloud leaves holes open wherever the scanner saw nothing.
+>
+> I've added that to ScanToAlibre's spec, marked point-cloud meshing as tested in its CLAUDE.md, and taken the item off TODO.md. Both `Discussion.md` files are rebuilt. Nothing is committed.
+>
+> The main item left on the list is the first modelling tool: sections through the scan turned into sketches to extrude or revolve. Smaller items include estimating normals for clouds that lack them, Refine's extras (filling holes, removing loose pieces and spikes), and an icon of ScanToAlibre's own.
+
+### 🧑 Frank · 09:16
+
+> lets start thinking about what tools and workflow we will provide to start building an alibre part
+
+### 🤖 Claude
+
+> This is a design question, so I'll check what we can build on first. There's an `MCPForAlibre` project beside ScanToAlibre, and this session's Alibre tools (create sketch, sketch figures, constraints, dimensions, extrude, revolve, hole) suggest it already drives part creation through the 27.0.1 API. Checking what it has proven:
+
+> Questions:
+> - Who should make the solid features (extrude, revolve, holes)?
+>   - Alibre, from our sketches (Recommended): ScanToAlibre makes sketches and reference geometry (design planes, axes, points) from the scan; you make the features with Alibre's own Extrude, Revolve and Hole, which stay fully editable and show their previews. ScanToAlibre measures depths for you (shown in the dialog) but doesn't make the feature.
+>   - ScanToAlibre makes them too: Buttons such as Extrude from Scan and Revolve from Scan create the feature directly, with depths and angles measured from the scan. Faster, but every option Alibre's own dialogs offer would need building.
+>   - Both: Sketches and reference geometry first; feature buttons for the common cases (extrude to the scan's extent, a hole from a fitted cylinder) later.
+> - Which tool should come first?
+>   - Section to sketch (Recommended): Choose a plane (Alibre's or a fitted one, at an offset), slice the scan, fit lines and arcs to the slice, and send them to an Alibre sketch on that plane. Covers most prismatic and turned parts (extrude or revolve the sketch).
+>   - Reference geometry to Alibre: Send fitted planes, axes and points (and the box's) to the part as Alibre design planes, axes and points, to sketch on and extrude to. Small, and useful with any later tool.
+>   - Holes from cylinders: A fitted hole (axis and diameter) becomes an Alibre hole on the face it's in, at the measured depth.
+>   - Deviation map: Colour the scan by how far it is from the Alibre part as you build it, to see what's still missing or off.
+> - How much design intent should a section's sketch carry?
+>   - Constrained, rounded (Recommended): Lines and arcs fitted to the slice, then snapped: near-horizontal or vertical made so, tangent joins kept tangent, arcs concentric where they nearly are, and dimensions rounded (to 0.1 mm or a choice), with Alibre constraints and dimensions added so the sketch is editable.
+>   - Fitted geometry only: The fitted lines and arcs as they are, no constraints or dimensions. Simplest; you constrain in Alibre.
+>   - A choice per sketch: A dialog setting for snapping and rounding (off, snap only, snap and dimension).
+> - Where should the part-building tools live?
+>   - 4 Sketch on the ribbon (Recommended): The next workflow step after Orient: a modeless dialog (one at a time, like Refine and Orient) for sections and reference geometry, with later steps (5 Features, 6 Compare) added as they're built.
+>   - Inside Orient: More tabs or groups in the Orient dialog, keeping fitting and building together.
+
+### 🧑 Frank · 09:22
+
+> Answers:
+> - Who should make the solid features (extrude, revolve, holes)?
+>   **Alibre, from our sketches (Recommended)**
+> - Which tool should come first?
+>   **Section to sketch (Recommended)**
+> - How much design intent should a section's sketch carry?
+>   **#1, but the original cross section should be shown as a reference geometry**
+> - Where should the part-building tools live?
+>   **The should be buttons for each action**
+
+### 🤖 Claude
+
+> Plan:
+>
+> # ScanToAlibre: building the Alibre part (first tool: Section to sketch)
+>
+> ## Context
+>
+> ScanToAlibre can load a scan (STL, PLY meshes and point clouds), refine it (decimate, smooth), and orient it (fitted box, planes and cylinder axes, 3-2-1 alignment to Alibre's planes and axes), all saved inside the part. The next stage is building the real Alibre part from the oriented scan. Frank's decisions (14 November 2026):
+>
+> - **Alibre makes the solid features.** ScanToAlibre makes sketches and reference geometry from the scan; Frank extrudes, revolves and drills with Alibre's own commands, which stay fully editable. ScanToAlibre can show measured depths, but doesn't make features.
+> - **First tool: section to sketch.** Slice the scan with a plane, fit lines and arcs, and send them to an Alibre sketch on that plane.
+> - **Sketches carry design intent:** constrained and rounded (near-horizontal or vertical made so, tangent joins tangent, near-concentric arcs concentric, dimensions rounded), **and the original cross-section goes into the sketch as reference geometry**, so the fit can be judged against the scan.
+> - **A ribbon button for each action**, after 1 Load, 2 Refine, 3 Orient. Section is the first; later ones (reference geometry, holes, compare) get their own buttons.
+>
+> ## What's already proven to build on
+>
+> - MCPForAlibre (`D:\Projects\alibre\MCPForAlibre`, C#, same 27.0.1 API) has proven, from an add-on: sketches on design planes and faces; lines, arcs, circles, splines, construction lines; horizontal, collinear and symmetric constraints; linear and diametric dimensions; design planes (offset, angle, 3 points), axes and points; extrude, revolve, holes. Its `CLAUDE.md` lists the traps: angles in radians; constraints, dimensions and `Analyze` need `BeginChange`/`EndChange`; construction figures and line end points have no ID; sketch constraints refuse design axes and points (bring them in as fixed construction geometry); holes need a face sketch. Port the patterns from its `Commands.*.cs` to C++.
+> - ScanToAlibre: the scan, fitted planes and axes (`ScanDocument::fitted`, `core\Orient` `Feature`), the step-dialog pattern (`addon\StepDialog`, one at a time), push-down click modes (`ScanDocument::ClickMode`), picking Alibre's selection (`OnSelectionChange`), and drawing overlays in the scan view (`DrawOrient`).
+> - CAMForAlibre's `core\ArcFit` (`FitArcs`: least-squares circles through a run's ends, within a tolerance, doubling then binary search) and `core\Boundary` (paths with arcs): port for fitting lines and arcs to a slice.
+>
+> ## Section (ribbon button 4 Section, a modeless step dialog)
+>
+> 1. **Choose the plane:** push **Plane**, then click an Alibre design plane or a flat face (Alibre's selection), or push **Scan** and click one of the scan's box or fitted planes (those get an Alibre design plane made for them, named after the fitted plane, since a sketch needs Alibre geometry). An **Offset** (mm) moves the section along the normal; **Flip** turns the sketch's normal.
+> 2. **Slice:** the scan is cut by the plane into polylines (`SliceMesh` in a new `core\Section`: triangle-plane crossings chained into closed loops and open runs), drawn in the view over the scan as soon as the plane or offset changes.
+> 3. **Fit:** each polyline becomes lines and arcs within a **Tolerance** (mm, default 0.05): Douglas-Peucker to lines, then arcs fitted over runs (ported `ArcFit`), joined end to end. Drawn over the slice in a second colour, with the largest deviation shown.
+> 4. **Snap and round** (design intent, each a check box): lines within 2 degrees of the sketch's horizontal or vertical made so; joins within 3 degrees made tangent; arcs whose centres are within the tolerance made concentric; arc and circle sizes rounded to a **Round to** step (0.1 mm default, 0.01, or off).
+> 5. **Create Sketch:** a new Alibre sketch on the plane: the fitted lines and arcs with coincident ends, the snapping as Alibre constraints (horizontal, vertical, tangent, concentric) and the rounded sizes as dimensions, inside `BeginChange`/`EndChange`. **The original slice is added as reference geometry:** construction lines along the slice, simplified to 0.01 mm so there are hundreds, not thousands. The sketch's 2D frame comes from `IADSketch::MapFromSketchToWorld` on its origin and unit points (unproven), so the scan's world coordinates land in the right place.
+> 6. Frank then extrudes or revolves the sketch with Alibre's own commands. The dialog shows the scan's extent along the plane's normal (from the section to the scan's far side) as a suggested depth.
+>
+> Core, all in `core\` with tests (no Alibre): `SliceMesh`, `FitProfile` (lines and arcs, tolerance, joined), `SnapProfile` (horizontal, vertical, tangent, concentric, rounding; reports which constraints to add), and the reference simplification. Add-on: `addon\SectionDialog` (step dialog), the Section ribbon button (next menu ID after Orient), a `SketchWriter` that makes the Alibre sketch, figures, constraints and dimensions, and drawing the slice and fit in `ScanViewCommand`.
+>
+> ## Later buttons (not in this step)
+>
+> - **Reference Geometry:** send the scan's fitted planes, axes and points to the part as Alibre design planes, axes and points.
+> - **Hole:** a fitted hole axis and diameter becomes an Alibre hole on the face it's in (needs a face sketch).
+> - **Compare:** colour the scan by its distance from the Alibre part (`GetFacetData`), to see what's missing.
+> - **Freeform surface:** fit a B-spline patch to a region and insert it (`DesignSurfaces.InsertFromFile`, proven) to extrude up to.
+>
+> ## To prove early in Alibre
+>
+> - `AddSketch` on a design plane made from a fitted plane, and the sketch frame from `MapFromSketchToWorld`.
+> - Construction lines in bulk (hundreds) in one sketch: speed and whether Alibre stays responsive.
+> - Tangent and concentric constraints, and radius dimensions, from C++ (MCPForAlibre proved horizontal, collinear, symmetric, linear and diametric).
+>
+> ## Verification
+>
+> - Core tests: slices of a box, a cylinder and a turned profile at known planes give the expected loops; `FitProfile` on sampled lines and arcs gives back the lines and arcs within the tolerance; snapping makes the expected constraints and rounded sizes; reference simplification stays within 0.01 mm.
+> - In Alibre (Frank): section the popsicle scan through its middle on ZX, create the sketch, check the fitted profile against the construction slice, and revolve or extrude it with Alibre's commands; check the dimensions came out rounded and the constraints hold.
+> - The log records each slice, fit (segments, largest deviation) and sketch (figures, constraints, dimensions, time).
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Now the core: `core\Section`, with slicing, fitting, constraint finding, rounding and simplification.
+
+> Now I'll add junction refinement (so a line doesn't run past a tangent point into the arc) and merging of the loop's first and last segments when they're one piece.
+
+> Section core is written. Next I'm writing its tests.
+
+> The fitter's structure is right; I'm tuning where lines meet arcs so tangent joins come out tangent.
+
+> Nearly there: one of eight noisy joins misses tangency. Checking which.
+
+> All pass. Now: remove the debug prints, use the least-squares centres and radii for concentric and rounding too, add a non-tangent line-to-arc case and a timing on a real scan.
+
+> Slicing and fitting take milliseconds on the popsicle scan. One odd result: the slice through the X middle came back empty, so I'm checking that.
+
+> Correct result: the scan has no material at the X middle (a separate tab sits at x = -28), so there's nothing to slice there. Removing the debug line, then updating the docs.
+
+> The core of 4 Section is built. It's tested on its own, without Alibre: all 63 core tests pass. Nothing has been added to Alibre yet, so there's nothing for you to test there.
+>
+> New file: `core\Section.h/.cpp`.
+>
+> - **Slicing:** `SliceMesh` cuts the scan with a plane and joins the cuts into closed loops and open runs.
+> - **Fitting:** `FitProfile` turns each loop or run into lines and arcs within the tolerance (0.05 mm by default), joined end to end. A loop that's round all the way comes out as one circle.
+> - **Joins:** at first a line ran a little way into the arc after it, which tilted the arc. Each join now moves to where its two pieces fit best, so in the tests a turned shoulder comes out as a line, a 3.000 mm arc and a line, meeting exactly where they should.
+> - **Design intent:** `FindConstraints` finds the following, each one on or off:
+>   - lines within 2° of horizontal or vertical;
+>   - joins within 3° of tangent;
+>   - arcs whose centres are within 0.05 mm, made concentric;
+>   - radii rounded to 0.1 mm.
+> - **Tangency on noisy scans:** the joins can only be placed within the noise (about 0.4 mm). That tilted the arcs' ends by up to 3°, so one of eight tangent joins in the noisy test was missed. Tangency is now judged from a best-fit line and circle (is the line one radius from the arc's centre?), which doesn't depend on where the join falls.
+> - **Reference slice:** `SimplifyPolyline` cuts the raw slice down to the fewest points that stay within 0.01 mm. That's what will go into the sketch as construction lines.
+>
+> **On the popsicle scan:** each slice and fit takes a few milliseconds. The ZX section through the middle gave 17 pieces and 16 constraints, and its reference slice dropped from 337 points to 30. The YZ section through the middle is empty because the scan has no material there (a separate tab sits at x = −28), so you'll need to pick the plane or offset carefully in the dialog.
+>
+> **Still to build:**
+> - the Section dialog;
+> - the 4 Section ribbon button;
+> - writing the Alibre sketch.
+>
+> None of the sketch calls have been proven yet: making a sketch on a plane, getting its frame, tangent and concentric constraints, and radius dimensions. Whether Alibre stays responsive with hundreds of construction lines is also unknown.
+>
+> I've updated `CLAUDE.md`, `TODO.md` and both `Discussion.md` files.
+
+### 🧑 Frank · 09:37
+
+> Yes, build it
+
+### 🤖 Claude
+
+> I'm reading MCPForAlibre's proven sketch code to port its patterns to C++.
+
+> Still gathering the exact Alibre sketch API signatures from the 27.0.1 headers before writing the sketch writer.
+
+> I have what I need from MCPForAlibre (including the proven `MapFromWorldToSketch`). Now looking at how the ribbon buttons are wired.
+
+> Now writing: first a core `SectionMesh` (slice, fit, reference, reach in one call), then the add-on pieces.
+
+> Now the sketch writer.
+
+> Now the Section dialog.
+
+> Now the resources, the ribbon button and the view's drawing and picking.
+
+> Windows' `max` macro; wrapping it.
+
+> Everything builds. Running the tests and checking whether Alibre is open before installing.
+
+> Installed (the installed DLL matches the build). Now the docs.
+
+> 4 Section is built and installed, but none of it has run in Alibre yet. All 64 core tests pass. Restart Alibre to pick up the new add-on.
+>
+> **What's new:**
+> - **4 Section button** on the ScanToAlibre ribbon, after 3 Orient. It's greyed until the part has a scan.
+> - **Section to Sketch dialog** (`addon\SectionDialog`):
+>   - **Choosing the plane:** push **Alibre Plane** and click a design plane or a flat face, or push **Scan Plane** and click one of the scan's box or fitted planes.
+>   - **Offset:** moves the section along the plane's normal.
+>   - **Tolerance:** 0.05 mm by default. It also sets how close arc centres must be to count as concentric.
+>   - **Check boxes:** horizontal and vertical, tangent, and concentric, each on or off, plus **Round radii to** 0.1 mm, 0.01 mm or off.
+>   - **Counts:** how many lines, arcs and circles, how closely they follow the slice, and how far the scan reaches either side of the plane (a guide for the extrude depth).
+> - **Preview in the view:** the plane in yellow, the raw slice in red and the fitted lines and arcs in green. It updates whenever you change the plane, offset or settings.
+> - **Create Sketch** (`addon\SketchWriter`):
+>   - It adds a sketch named "Scan Section n" on the plane. For an offset, or for a scan plane, it first makes a design plane to sketch on.
+>   - It reads the sketch's own axes back from Alibre and refits in them, so horizontal and vertical are the sketch's.
+>   - In the sketch: the fitted figures with their ends joined, the constraints, the rounded radii as dimensions, and the slice itself as construction lines.
+>
+> **Changes from the plan:**
+> - I left out **Flip**. Alibre decides which way a sketch faces, and Extrude can go either way anyway. The spec now says so.
+> - The tolerance doubles as the concentric distance. The spec already said "within the tolerance".
+>
+> **Unproven (watch `[section]` in the log):**
+> - Every sketch call from C++.
+> - Making a design plane through three plain points; if Alibre refuses, it falls back to three design points, which will appear in the part.
+> - Which way Alibre's plane offset goes. The code checks and remakes the plane the other way if it's wrong.
+> - Whether a face's normal points out of the part.
+> - Whether ends drawn at the same point are already joined. If they are, some "coincident" constraints may be counted as refused.
+> - Speed with hundreds of construction lines.
+>
+> **To test:**
+> 1. Open the popsicle part with its scan and click **4 Section**. The dialog should open.
+> 2. Push **Scan Plane** and click a box plane. The yellow outline, red slice and green fit should appear, and the counts should fill in.
+> 3. Change the Offset and Tolerance and tick and untick the check boxes. The drawing and counts should follow.
+> 4. Push **Alibre Plane** and click the ZX plane, then a flat face of a part if there is one.
+> 5. Click **Create Sketch**. Check:
+>    - the sketch is on the right plane;
+>    - the green fit lines up with the construction lines;
+>    - horizontal, vertical and tangent constraints appear;
+>    - radii are rounded;
+>    - the status line's counts, and whether anything was refused.
+> 6. Try a non-zero offset on an Alibre plane: the new design plane should be on the side the offset says.
+> 7. Try a scan plane: see whether a design plane alone is made, or three design points too.
+> 8. Extrude or revolve the sketch with Alibre's own command.
+>
+> If anything fails, I'll start with the `[section]` lines in `%LOCALAPPDATA%\ScanToAlibre\ScanToAlibre.log`. There's still no help page for ScanToAlibre. I've updated `CLAUDE.md`, `docs\SPEC.md`, `TODO.md`, `README.md` and both `Discussion.md` files.
+
+### 🧑 Frank · 09:53
+
+> That worked
+
+### 🤖 Claude
+
+> The log also shows seven clicks where Alibre's selection was neither a design plane nor a face. I'll log what it actually was, so we can see.
+
+> Alibre Design is closed, so I'll install the fix.
+
+> Installed. Recording what Frank's run proved, then rebuilding the discussions.
+
+> Good. Your run proved the main sketch calls work from C++, but the log shows the sketch didn't get its constraints. I've fixed that and installed it, but it hasn't been tested yet.
+>
+> **What your run proved:**
+> - Making a sketch on a design plane works (`Plane<1>`).
+> - Reading the sketch's own axes back from Alibre works, and the scan was sliced exactly on the sketch's plane.
+> - Lines, arcs, a circle and 133 construction lines went in, in 0.66 s.
+>
+> **What went wrong:** the sketch got **0 constraints and 0 dimensions**, and Alibre refused none. That means the constraint step never found the figures it had just added. My guess is that Alibre doesn't give a figure its ID until the edit is finished, so the IDs I saved were empty.
+>
+> **The fix:** each fitted piece now keeps the figure Alibre returned, the IDs are read again after the edit, and the figure itself is used if there's still no ID. The log will now say whether the IDs were empty during and after the edit, and how many lookups failed. Alibre was closed, so I installed it.
+>
+> **Two other things from the log:**
+> - Seven of your clicks while picking a plane came through as something that's neither a design plane nor a face, so nothing happened. The log now records what type it actually was.
+> - Slicing on "Plane 1", a plane fitted to a flat area of the scan, gave 882 scraps. The cut runs right along that flat surface, so put in a small offset (say 0.5 mm) to slice through the part instead.
+>
+> **To test:**
+> 1. Make a section sketch on a design plane again. The status line should now show constraints and dimensions.
+> 2. In the sketch, check the ends are joined, the horizontal, vertical and tangent constraints are there, and the radii are rounded dimensions.
+> 3. Check whether the status line says Alibre refused any constraints. The likeliest refusals are for ends that were already joined.
+> 4. Try Alibre Plane on a flat face of the part. If it isn't taken, I'll check the log for what type Alibre sent.
+> 5. Try a scan plane with an offset, and see whether Alibre makes just a design plane or three design points as well.
+>
+> I've recorded what's proven in `CLAUDE.md` and rebuilt both `Discussion.md` files.
+
+### 🧑 Frank · 09:56
+
+> <local-command-stdout>Compacted </local-command-stdout>
+
+> There is an issue with selecting planes.  I can't click through the wireframe of the plane in front to get to the planes in the background.
+
+### 🤖 Claude
+
+> Your usage limit has been reached, so I only got part of this fix done.
+>
+> **The likely cause:** our own drawings in the view count when Alibre works out what you clicked. The yellow section-plane square sits in front of Alibre's planes and catches the click. That probably also explains the seven earlier clicks that came through as neither a plane nor a face.
+>
+> **What's changed:** in [ScanViewCommand.cpp](../ScanToAlibre/addon/ScanViewCommand.cpp), `DrawSection` no longer draws the yellow square while **Alibre Plane** is pushed down. The red slice and green fit are still drawn. The square comes back when you press Alibre Plane again to release it, or switch to Scan Plane.
+>
+> **Not done:**
+> - Not built, installed or tested.
+> - Line endings not checked: the file needs to stay CRLF.
+> - `CLAUDE.md` not updated, and `BuildDiscussion.py` not run in either repository.
+>
+> **To test, once it's built and installed (with Alibre closed):**
+> 1. Push Alibre Plane and click a design plane that sits behind another one. It should be picked.
+> 2. If clicks still get caught, look at the `[section]` log line for the type Alibre sent. The red slice and green fit lines might also be in the way, or it might be Alibre's own plane wireframe, which we can't change.
+
+### 🧑 Frank · 12:40
+
+> The problem was with the scan geometry.  I can't select a scan plane that is behind another scan plane, and embedded in the scan
+
+### 🤖 Claude
+
+> Frank says the earlier square change wasn't the problem, so I'll put the square back. Then I'll build.
+
+> The build succeeded. I'll check that Alibre is closed before installing.
+
+> The administrator prompt was cancelled, so the add-on isn't installed. Next I'll update `CLAUDE.md` and rebuild the discussions.
+
+> You can now pick a scan plane that's behind another one or inside the scan. It's built, but the administrator prompt was cancelled, so it isn't installed and hasn't been tried in Alibre.
+>
+> **The cause:** a click went to the nearest plane whose square contained the clicked point. A plane further back or inside the scan always lost to the one in front.
+>
+> **How picking works now:**
+> - **By its lines first:** a plane's outline and cross count like an axis. The nearest drawn line within 8 pixels of the click wins, whatever is in front of it.
+> - **Inside the square second:** if no line is that close, the click goes to the nearest plane whose square it's in, as before. Clicking again in the same spot moves to the next plane behind it, and then wraps back to the front.
+>
+> This applies to Scan Plane in Section and to Scan in Orient, in [ScanViewCommand.cpp](../ScanToAlibre/addon/ScanViewCommand.cpp). I put the yellow section square back to how it was. I've also noted this in `CLAUDE.md` and rebuilt both `Discussion.md` files.
+>
+> To install, close Alibre, run this and accept the administrator prompt:
+>
+> ```bash
+> powershell -ExecutionPolicy Bypass -File D:\Projects\alibre\ScanToAlibre\deploy\install.ps1
+> ```
+>
+> **To test:**
+> 1. In Section, push Scan Plane and click the outline or cross of a plane that sits behind another. It should be picked.
+> 2. Click a plane that's inside the scan by its lines.
+> 3. Click repeatedly in one spot where several planes overlap. Each click should take the next plane behind, then go back to the front one.
+> 4. In Orient, check that axes and the centre marker still pick as before.
+
+### 🧑 Frank · 12:57
+
+> <local-command-stdout>Compacted </local-command-stdout>
+
+> test passed.
+
+### 🤖 Claude
+
+> Good. Scan plane picking is now marked in ScanToAlibre's `CLAUDE.md` as installed and tested by you. I also rebuilt both `Discussion.md` files.
+>
+> One earlier fix still needs testing: the sketch from 4 Section getting its constraints and dimensions. When you try it, make a section with Create Sketch. Check that the sketch has horizontal, vertical and tangent constraints and rounded radius dimensions, and that the `[section]` lines in the log show constraints added rather than 0.
+
+### 🧑 Frank · 13:00
+
+> dimension worked correctly.
+
+### 🤖 Claude
+
+> Good, the dimensions work. I checked the log and the constraints went in too: your last two sketches each got 14 constraints and 5 dimensions, with none refused. Each also had 387 construction lines and took about 4 seconds. I've recorded this in ScanToAlibre's `CLAUDE.md` and rebuilt both `Discussion.md` files.
+>
+> The log also showed:
+> - **Making the plane from plain points always fails.** When the section plane comes from the scan, the code first asks Alibre for a plane through three plain points. Alibre refuses every time with "Cannot create plane with Collinear points", although the points aren't in a line. The code then makes three design points and builds the plane through those, which works every time. So the first attempt only adds a log line and about 0.1 s.
+> - **One sketch at 12:53 failed while adding the figures.** Its error was the same "collinear points" text, probably left over from the refused plane, so the real cause wasn't logged. The two runs after it worked. If the plain-point attempt is removed, a failure like that would show its own error.
+> - **Finding figures by ID doesn't work.** Every figure had an ID, but 31 lookups by ID failed, so the fallback that finds a figure by its object is what added the constraints.
+>
+> No code changed this turn.
+
+### 🧑 Frank · 13:01
+
+> Leave it
+
+### 🤖 Claude
+
+> OK, I've left it as it is. If a sketch fails again, its error message may still be the leftover "collinear points" text rather than the real cause, so I'll look further back in the log.
+
+### 🧑 Frank · 13:05
+
+> Next we want to add surfaces.  Go into select mode - faces can be continuously selected.  An alibre surface will be fit to the selected scan geometry.  It is controlled by a dialog.  dialog options include - check boxes foir symmetry across  XY YZ ZX planes.  Radio options for surface perimeter - use scan projection, use scan bounding rectangle.
+
+### 🤖 Claude
+
+> I've looked at how the scan is selected now, and at the surface insert that already works. A few choices decide the design, so I'll ask them before writing the plan.
+
+> Questions:
+> - In the surface's select mode, what should one click on the scan select? Each click adds to the selection, and clicking a selected area removes it.
+>   - Smooth area (Recommended): Grows from the clicked triangle over neighbours whose normals bend less than an angle from one triangle to the next. It stops at sharp edges, so one click takes a whole curved surface.
+>   - Brush circle: Takes the connected triangles within a radius (mm) of the click, so you build the area up by clicking around it.
+>   - Both, chosen in dialog: Two push-down buttons, Smooth Area and Brush, like Orient's Area and Cylinder buttons.
+> - The surface is fitted as heights above a base plane. Which plane should the scan be projected onto?
+>   - Fitted to selection (Recommended): The least-squares plane through the selected triangles. It's chosen automatically and suits a surface tilted any way.
+>   - Nearest XY, YZ or ZX: The world plane closest to square to the selection's average normal, so symmetry planes are always square to it.
+>   - Chosen in the dialog: Radio buttons for XY, YZ and ZX, plus Auto.
+> - What should the perimeter option 'use scan projection' make? 'Use scan bounding rectangle' would be the rectangle round the projected selection.
+>   - Trimmed to outline (Recommended): The surface is cut to the outline of the selection's projection, written as an IGES trimmed surface. Whether Alibre's IGES import keeps the trim isn't proven yet, so it's tried first.
+>   - Rectangle, fitted only: The surface is still a rectangle, but its fit uses only the selection, and outside it the surface just extends smoothly.
+> - How should the surface's detail and smoothness be controlled?
+>   - Tolerance, auto points (Recommended): Set a tolerance (mm) and a smoothing amount. Control points are added until the fit is within the tolerance, and the largest deviation is shown.
+>   - Control point counts: Set the counts across and along (such as 12 x 12) and a smoothing amount. The deviation is shown.
+>   - Both: A tolerance with automatic points, which can be overridden with fixed counts.
+
+### 🧑 Frank · 13:10
+
+> Answers:
+> - In the surface's select mode, what should one click on the scan select? Each click adds to the selection, and clicking a selected area removes it.
+>   **Both, chosen in dialog**
+> - The surface is fitted as heights above a base plane. Which plane should the scan be projected onto?
+>   **Chosen in the dialog**
+> - What should the perimeter option 'use scan projection' make? 'Use scan bounding rectangle' would be the rectangle round the projected selection.
+>   **Trimmed to outline (Recommended)**
+> - How should the surface's detail and smoothness be controlled?
+>   **Tolerance, auto points (Recommended)**
+
+### 🤖 Claude
+
+> Now writing the plan.
+
+> Plan:
+>
+> # ScanToAlibre: 5 Surface (fit an Alibre surface to selected scan areas)
+>
+> ## Context
+>
+> 4 Section is built and tested. Next, Frank wants freeform surfaces. You select areas of the scan in a select mode where clicks keep adding to the selection. A B-spline surface is fitted to them and inserted into the part as an Alibre design surface, which Alibre's Extrude can then run up to (To Geometry). A dialog controls it.
+>
+> Frank's choices (14 November 2026):
+> - **Selecting:** both kinds, chosen by two push-down buttons in the dialog.
+>   - **Smooth Area** grows over neighbouring triangles that bend less than an angle from one to the next.
+>   - **Brush** takes the connected triangles within a radius of the click.
+>   - Each click adds to the selection, and clicking a selected triangle removes that area.
+> - **Base plane:** the surface is a height field over a plane chosen in the dialog: **Auto** (fitted to the selection), **XY**, **YZ** or **ZX**.
+> - **Symmetry:** check boxes for **XY**, **YZ** and **ZX** symmetry.
+> - **Perimeter:** radio buttons.
+>   - **Use scan projection:** the surface is trimmed to the outline of the selection projected onto the base plane.
+>   - **Use scan bounding rectangle:** an untrimmed rectangle round that projection.
+> - **Smoothness:** a tolerance (mm) and a smoothing amount. Control points are added until the fit is within the tolerance. The largest and RMS deviation are shown.
+>
+> ## What's already there to build on
+>
+> - **Inserting:** `core\BSplineSurface` (`BSplineSurface`, `ClampedUniformKnots`, `Evaluate`), `core\Iges` (`WriteIgesSurface`, one entity 128 in mm) and `addon\SurfaceTest`. `InsertFromFile` is proven: it gives one `Surface<n>` with 1 face and 4 edges, in 0.25 s. Copy its insert code.
+> - **Selecting:** `ScanDocument::selection` (sorted triangle numbers), `SetSelection`, `SelectionArrays` (drawn orange by `DrawOrient`), `Neighbours()`, `GrowAt` (`addon\ScanViewCommand.cpp`; union, or difference when the clicked triangle is already selected) and `IntersectLine`/`FitView` for the clicked triangle.
+> - **Dialog and ribbon:** the `CStepDialog` pattern and the `ToggleClickMode`/`ShowClickMode` push-down buttons (`addon\OrientDialog`, `addon\SectionDialog`). Section is ribbon menu ID 107. The next resource ID is 13090.
+> - **Plane fit:** `FitPlane` (`core\Orient`), used for Auto.
+>
+> ## Core (`core\SurfaceFit.h/.cpp`, with tests in `tests\SurfaceFitTests.cpp`)
+>
+> - `GrowSmoothArea(mesh, neighbours, seed, angleDegrees)`: crosses an edge when the two triangles' normals differ by less than the angle (default 15°).
+> - `BrushArea(mesh, neighbours, seed, hitPoint, radius)`: connected triangles with a corner within the radius.
+> - `SurfaceFitOptions`: base (Auto, XY, YZ, ZX), symmetry flags, perimeter (Projection or Rectangle), tolerance (0.05 mm), smoothing (0 to 1, default 0.2), at most 40 x 40 control points.
+> - `FitScanSurface(mesh, triangles, options) -> SurfaceFitResult`:
+>   - **The base frame (origin, u, v, n).** Auto uses `FitPlane`, with its normal turned to lie in each ticked symmetry plane. XY, YZ and ZX use world axes. A symmetry plane parallel to the base is refused with a message, and the dialog greys it.
+>   - **Samples.** The selected triangles' corners and middles, area weighted and thinned to at most 60,000. Each is (u, v, height). A selection that folds over the base is refused, with a message naming the angle: if more than 2% of the area faces away from the normal by more than 85°.
+>   - **Symmetry.** The samples are mirrored across each ticked plane (all world planes through the origin, as the scan is oriented). The domain is made symmetric about each plane's line on the base, so the uniform knots are symmetric, and the least-squares answer is then exactly symmetric.
+>   - **The domain.** The bounding rectangle of the (mirrored) projection, plus a 2% margin.
+>   - **The fit.** A bicubic with clamped uniform knots. The heights are solved by penalized least squares: the data, plus smoothing times a second-derivative (thin-plate) energy integrated over the domain, which also fills holes and corners outside the data. The equations are dense and solved by Cholesky (written here; at 40 x 40 that's 1,600 unknowns, well under a second). The fit starts at 4 x 4 and grows each way by about 1.5 times until the largest deviation is within the tolerance or the cap is reached. It reports the counts, largest and RMS deviation, and time.
+>   - **The 3D surface.** Control points are mapped back as origin + u·U + v·V + h·N.
+> - **Outline, for Projection.** `ProjectionOutline`: the projected triangles (and their mirrors) are rasterised on a grid about 1/200 of the domain's size, inner holes are filled (scanner gaps), and the outer boundary is traced by marching squares and simplified to the tolerance. It's kept in (u, v) and as 3D points on the surface. Only the outer loop is kept.
+> - `WriteIgesSurface` gains an optional trim. With a trim, the file has entity 128, then the boundary as a degree 1 entity 126 in parameter space and in 3D, one entity 142 (curve on surface) and one entity 144 (trimmed surface, outer boundary only). The directory entries are numbered and the 128 is marked as a physically dependent child. Without a trim it writes as now.
+>
+> ## Add-on
+>
+> - **`addon\SurfaceDialog.h/.cpp`** (`CSurfaceDlg`, `IDD_SURFACE`, IDs from 13090) is a step dialog.
+>   - **Select group:** Smooth Area and Brush push-down buttons (`ClickMode::Smooth`, `ClickMode::Brush`), Angle (°), Radius (mm), Clear, and the selected count.
+>   - **Base Plane radios:** Auto, XY, YZ, ZX.
+>   - **Symmetry check boxes:** XY, YZ, ZX. The base plane's own box is greyed.
+>   - **Perimeter radios:** Use scan projection, Use scan bounding rectangle.
+>   - **Fit group:** Tolerance, Smoothing, and a result line (for example "16 x 12 control points; largest 0.042 mm, RMS 0.011 mm").
+>   - **Create Surface button.**
+>   - The fit runs again when the selection or an option changes. Selections over about 60,000 samples are thinned, so a refit stays well under a second.
+> - **`ScanDocument`:** `surfacing`, a `Surface` struct (options, result, outline, surfaces made), and `ClickMode::Smooth` and `Brush`.
+> - **`ScanViewCommand`:** in `OnClick`, while surfacing, Smooth or Brush runs `GrowAt`'s union or difference with the new area functions. `DrawSurface` draws the selection (orange, as now), the fitted surface as a 20 x 20 line grid (green) and the outline (yellow).
+> - **Create Surface:** writes `scan-surface-n.igs` beside the log (`WriteFileAtomically`), calls `InsertFromFile` (as `SurfaceTest`), then logs `[surface]` (counts, deviation, trim, the design surface's faces and edges, time) and reports in the dialog. If the trimmed file goes in with no face or fails, it's logged, the dialog says so, and the rectangle is offered (the trim is unproven).
+> - **Ribbon:** "5 Surface", menu ID 108, needs a scan, after 4 Section.
+> - **Files:** new files go in both vcxprojs and the filters. Source files are CRLF.
+> - **Docs:** `docs\SPEC.md` gets a 5 Surface section with Frank's choices. `CLAUDE.md` current state, `TODO.md` and `README.md` are updated.
+>
+> ## Unproven, to watch in the log
+>
+> - Whether Alibre's IGES import keeps an entity 144 trim, and gives a face bounded by the outline.
+> - Whether `IntersectLine` stays fast enough for brush clicks on 1 million triangles (it already serves Orient's clicks).
+>
+> ## Verification
+>
+> 1. **Core tests (`ScanCoreTests.exe`), no Alibre:**
+>    - A sampled bicubic is fitted back within 0.001 mm.
+>    - Noise of 0.02 mm gives an RMS near 0.02.
+>    - A half dome with YZ symmetry is symmetric to 1e-9.
+>    - A disc-shaped selection's outline is a near circle.
+>    - A folded selection is refused.
+>    - Smooth Area stops at a box's edge.
+>    - Brush takes a disc.
+>    - The trimmed IGES has the expected entity numbers and sections.
+>    - A timing case: 60,000 samples at 40 x 40.
+> 2. **Build Release and install** (Alibre closed, UAC accepted).
+> 3. **Frank in Alibre:**
+>    1. Open 5 Surface. Push Smooth Area and click a curved region several times, then click a selected part to remove it.
+>    2. Switch to Brush and add patches.
+>    3. Change Base Plane and Symmetry, and watch the green grid and deviation.
+>    4. Create Surface with the rectangle perimeter. Check `Surface<n>` appears and an Extrude To Geometry stops on it.
+>    5. Create Surface with the scan projection perimeter, and check whether the surface is trimmed to the outline. Read `[surface]` in the log.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> Now the view command's drawing and the existing surface insert.
+
+> Now writing the core fitting code.
+
+> Now the IGES trim. I'll restructure the writer to handle several entities.
+
+> I'll write the script to the scratchpad and run it from there.
+
+> Now the core tests.
+
+> Only one check failed: the outline's heights on a saddle sit 0.03 to 0.05 mm low at the rim. That's the smoothing's pull, about the tolerance, so I'll check it against the tolerance instead.
+
+> The core passes: 72 test cases, and the timing case fits 36,000 samples to 40 x 40 control points in 0.35 s. Now the add-on side.
+
+> Now the dialog.
+
+> It built. One warning to clean up, from turning the file name into a narrow string.
+
+> Clean build, tests pass. Checking whether Alibre is running before installing.
+
+> Installed (639,488 bytes, 1:29 PM). Now the spec and notes.
+
+> **5 Surface** is built and installed, after 4 Section on the ribbon. The core tests pass, but nothing has been tried in Alibre yet. The one real unknown is whether Alibre keeps the trim when it inserts a trimmed IGES surface.
+>
+> **How it works:**
+> - **Select:**
+>   - **Smooth Area** and **Brush** are push-down buttons, one down at a time.
+>   - Smooth Area takes the area round the click, stopping where the surface bends by more than the angle between neighbouring triangles (default 15°).
+>   - Brush takes the joined triangles within the radius of the click (default 3 mm).
+>   - Each click adds to the selection, clicking a selected triangle takes that area away, and Clear empties it.
+> - **Base plane:** Auto (fitted to the selection), XY, YZ or ZX. The surface is a height over this plane. A selection that folds over it is refused with a message, such as a tube's side over XY.
+> - **Symmetry:** XY, YZ and ZX check boxes. The selection is mirrored across those world planes, so the surface comes out exactly symmetric. The base plane's own box is greyed, and three at once is refused.
+> - **Surface perimeter:** Use scan projection trims the surface to the outline of the selection projected onto the base plane, with holes filled. Use scan bounding rectangle leaves an untrimmed rectangle.
+> - **Fit:** Tolerance (default 0.05 mm) and Smoothing (0 to 1). Control points are added until 99% of the selection is within the tolerance, up to 40 each way. The dialog shows the count, the 99% figure, the largest and the RMS deviation. A test fitting 36,000 points to 40 x 40 control points took 0.35 s.
+> - **In the view:** the selection is orange, the fitted surface a green grid, and the trim outline yellow. It fits again after every click or option change.
+> - **Create Surface** writes `scan-surface-n.igs` beside the log and inserts it the same way Insert Test Surface did. If a trimmed one fails or comes in with no face, the dialog says so and suggests the rectangle.
+>
+> Two choices I made that you may want changed:
+> - The tolerance applies to 99% of the selection, not the largest error, because scan noise would otherwise push every fit to 40 x 40.
+> - The selection is shared with Orient's Select Area.
+>
+> I updated the spec, `CLAUDE.md`, `TODO.md` and `README.md`, and rebuilt both `Discussion.md` files. The new code is mainly in [SurfaceFit.cpp](../ScanToAlibre/core/SurfaceFit.cpp) and [SurfaceDialog.cpp](../ScanToAlibre/addon/SurfaceDialog.cpp).
+>
+> **To test** (restart Alibre first):
+> 1. Open 5 Surface on a part with a scan. Push Smooth Area and click a curved area a few times, then click a selected part to take it away.
+> 2. Switch to Brush, add a few patches, change the radius, and try Clear.
+> 3. Change Base plane, Symmetry, Tolerance and Smoothing, and check the green grid and the numbers update.
+> 4. Choose Use scan bounding rectangle, then Create Surface. Check a `Surface<n>` appears, and that an Extrude To Geometry stops on it.
+> 5. Choose Use scan projection, then Create Surface. Check whether the surface is cut to the yellow outline. The `[surface]` lines in the log give the face and edge counts.
+> 6. Tick a symmetry plane on a part that's symmetric about it and check the surface comes out mirrored.
+
+### 🧑 Frank · 13:37
+
+> That tested fine.  Add another Surface Perimeter option - bounding box - use the projected rectangle from the bounding box. Also allow an edit box to add an additional offset to the make the perimeter bigger - this applies to all surface perimeter options
+
+### 🤖 Claude
+
+> Now the core edits.
+
+> The closing lambda is also called `grow`; renaming the parameter.
+
+> All 73 pass. Now the dialog.
+
+> That edit took iterators from two separate temporary copies of the corners. Fixing that.
+
+> Installed. Now the docs.
+
+> Good. Both changes are built and installed, and the core tests pass, but they haven't been tried in Alibre yet.
+>
+> **Use scan bounding box** is a third Surface perimeter option. The surface is the untrimmed rectangle round the scan's box projected onto the base plane, so it covers the whole scan. I used the box Orient fits and draws, not a box lined up with X, Y and Z. Once the scan is oriented the two are usually the same, but tell me if you meant the X, Y, Z one. If the selection reaches past the box's projection, the rectangle grows to cover it too. With symmetry ticked, it's made symmetric.
+>
+> **Offset** is an edit box (mm, default 0) beside it, and it works for all three options:
+> - **Bounding rectangle and bounding box:** the rectangle is that much bigger on every side.
+> - **Scan projection:** the outline grows outward by the offset all round, with rounded corners. Pieces of the selection that are closer together than twice the offset merge into one outline.
+>
+> Beyond the scan, the surface continues smoothly in the direction it was heading at the scan's edge.
+>
+> The dialog is a little taller to fit the new row. I updated the spec, `CLAUDE.md` (which now records your test of Surface), `TODO.md` and `README.md`, and rebuilt both `Discussion.md` files.
+>
+> **To test** (restart Alibre first):
+> 1. Select an area, choose **Use scan bounding box**, and check the green grid covers the whole scan's box from the base plane's view. Then Create Surface.
+> 2. Set an Offset of, say, 5 with **Use scan bounding rectangle**, and check the grid grows 5 mm each side.
+> 3. With **Use scan projection** and an offset, check the yellow outline grows outward evenly, then Create Surface and check the trimmed surface follows it.
+> 4. Use the offset with a symmetry plane ticked and check it stays symmetric.
+
+### 🧑 Frank · 13:44
+
+> The "Use scan projection" should be perimeter of mesh model projected on to the fit surface.  Add another Surface perimeter option - "Use Selection" which will create a perimeter around selection.
+
+### 🤖 Claude
+
+> Rasterising the whole mesh with its mirrors as separate triangle copies would take hundreds of MB on a million-triangle scan. So the outline will project each vertex once and index into those points.
+
+> Now the tests: the existing outline tests become Selection, plus one for the whole-scan outline.
+
+> All 74 pass. One test comment mentions a hole I didn't make; fixing it, then the dialog.
+
+> Built clean. Installing.
+
+> The administrator prompt was cancelled, so the install didn't happen. I'll finish the docs.
+
+> Done, and the core tests pass, but it isn't installed: the administrator prompt was cancelled, so Alibre still has the previous build.
+>
+> - **Use scan projection** now trims the surface to the outline of the whole scan projected onto the base plane, with holes filled. Only the selection is fitted, and the surface carries on smoothly beyond it to the scan's outline.
+> - **Use selection** is the new option. It trims to the selection's outline, which is what Use scan projection did before. I made it the default, since it's the closest to the old default.
+> - **Offset** works with all four options.
+> - **Dialog:** the perimeter options are now in two rows, with the Offset on a row of its own below them.
+>
+> On a million-triangle scan, the whole-scan outline is worked out from each point of the scan projected once, rather than copying every triangle. The fit still only uses the selection.
+>
+> I updated the spec, `CLAUDE.md`, `TODO.md` and `README.md`, and rebuilt both `Discussion.md` files.
+>
+> To install, close Alibre, run this and accept the administrator prompt:
+>
+> ```bash
+> powershell -ExecutionPolicy Bypass -File D:\Projects\alibre\ScanToAlibre\deploy\install.ps1
+> ```
+>
+> **To test:**
+> 1. Select a small area, choose **Use scan projection**, and check the yellow outline follows the whole scan's edge as seen from the base plane. Then Create Surface.
+> 2. Choose **Use selection** and check the outline goes back to just round the selection.
+> 3. Add an Offset with each option and check the outline or rectangle grows.
+> 4. With a symmetry plane ticked, check Use scan projection's outline includes the mirrored scan.
+
+### 🧑 Frank · 14:13
+
+> That is all correct.  Next, can you add the yellow outline to all perimeter options.
+
+### 🤖 Claude
+
+> The yellow outline now shows for all four perimeter options. It's built but not installed, because the administrator prompt was cancelled again.
+>
+> For **Use scan bounding rectangle** and **Use scan bounding box**, the yellow line follows the surface's four edges. It lies on the surface, so it rises and falls with it rather than being a flat rectangle. It's only drawn in the view: the surface written to the IGES file stays untrimmed for those two. The trimmed options draw their outline as before.
+>
+> I updated `CLAUDE.md`, the spec and `TODO.md`, and recorded your test of all four perimeters and the offset. Both `Discussion.md` files are rebuilt.
+>
+> To install, close Alibre, run this and accept the administrator prompt:
+>
+> ```bash
+> powershell -ExecutionPolicy Bypass -File D:\Projects\alibre\ScanToAlibre\deploy\install.ps1
+> ```
+>
+> **To test:**
+> 1. Choose Use scan bounding rectangle and check the yellow line runs round the green grid's edge.
+> 2. Do the same with Use scan bounding box, then add an offset and check the yellow line grows with the grid.
+> 3. Check Use scan projection and Use selection still show their trim outlines.
+
+### 🧑 Frank · 14:21
+
+> tested correctly
+
+### 🤖 Claude
+
+> Good. I've recorded the yellow perimeter as tested in `CLAUDE.md`, taken it off `TODO.md`, and rebuilt both `Discussion.md` files. Every part of 5 Surface you've asked for has now passed your tests, and nothing is committed yet.
+
+### 🧑 Frank · 14:23
+
+> <local-command-stdout>Compacted </local-command-stdout>
+
+> What other useful operations can we add to help convert the scan to an alibre part?
+
+### 🤖 Claude
+
+> Here's what I'd consider adding, grouped by how much it would help with typical scanned parts. Each idea reuses code that already exists.
+>
+> **Most likely to pay off**
+> 1. **Revolve profile (turned parts).** You pick a fitted axis (Fit Axis already makes these). Every scan point is swung round that axis into one half-plane, giving radius against distance along the axis. The profile is then fitted with lines and arcs, using Section's fitter, design-intent rules and SketchWriter. The result is a sketch on a plane through the axis, ready for Alibre's Revolve. For shafts, knobs, bushes and covers this is more accurate than a single slice, because it uses the whole surface rather than one cut.
+> 2. **Silhouette sketch (outline in plan).** This takes the scan's outline as seen along a plane's normal, using the same outline code as 5 Surface, then fits and writes it as a sketch, like Section does. It suits plates, brackets and flat parts where a slice at one height misses tabs or flanges at other heights.
+> 3. **Compare (deviation map).** Once you've built the part, its facets are read through `GetFacetData` and the scan is coloured by its distance from them, from blue through green to red, with a tolerance band and a histogram or largest-deviation readout. This is the "is my model right?" step, and it's already on the spec's later list.
+> 4. **Hole.** From a fitted hole axis, this makes a sketch on the face the hole enters through. The sketch has a point at the axis, with the diameter rounded to a standard drill or tap size, and the depth measured from the scan and shown, ready for Alibre's Hole command.
+>
+> **Useful additions**
+>
+> 5. **More shapes to fit.** Sphere, cone and torus fits, alongside Fit Plane and Fit Axis. These give centre points, cone axes and angles, and fillet radii. Clicking a blend and reading off its radius tells you what to type into Alibre's Fillet.
+> 6. **Multiple sections for Loft.** Section at N evenly spaced offsets, or along a fitted axis, creates one sketch per slice for Alibre's Loft. This suits ducts, handles and organic shapes.
+> 7. **Refine extras** (from TODO): fill holes, remove loose pieces, remove spikes.
+> 8. **Measure.** Wall thickness, the distance between two fitted planes, the angle between planes or axes, and draft angle, all shown without making anything in Alibre.
+> 9. **Auto symmetry plane.** Finds the scan's mirror plane so Orient can align to it. It also feeds 5 Surface's symmetry options and Section's design intent.
+
+> Questions:
+> - Which of these new ScanToAlibre operations should I plan first? (Revolve profile, Silhouette sketch, Compare deviation map, Hole, or another from the list)
+>   - Revolve profile: Collapse the scan about a fitted axis into an r-z profile, fit lines/arcs, write a sketch for Alibre's Revolve.
+>   - Silhouette sketch: Outline of the scan seen along a plane's normal, fitted and written as a sketch for Extrude.
+>   - Compare: Colour the scan by its distance from the built Alibre part, with tolerance band and stats.
+>   - Hole: From a fitted hole axis: sketch point on the entry face, rounded standard size, measured depth.
+
+### 🧑 Frank · 14:24
+
+> Answers:
+> - Which of these new ScanToAlibre operations should I plan first? (Revolve profile, Silhouette sketch, Compare deviation map, Hole, or another from the list)
+>   **Silhouette sketch,Compare**
+
+### 🤖 Claude
+
+> I'm looking at how the outline and drawing code work, so the Silhouette and Compare plan can reuse them.
+
+> Questions:
+> - Where should Silhouette go: as a mode inside 4 Section (radio buttons Slice / Silhouette, sharing its plane picking, line-and-arc fit, design intent and Create Sketch), or as its own ribbon button?
+>   - Mode in 4 Section (Recommended): Slice / Silhouette radio buttons in the Section dialog; everything else is shared.
+>   - Own ribbon button: A separate dialog with its own plane picking and fit settings, duplicating Section's.
+> - What should the silhouette sketch contain?
+>   - All pieces and through-holes (Recommended): Every separate outline, plus holes you can see right through along the normal, as inner loops.
+>   - Outer outline only: Just the largest piece's outside boundary, holes filled (as 5 Surface does).
+> - How should Compare show and report the scan's distance from the Alibre part?
+>   - Colour bands (Recommended): Signed distance, scan coloured in bands: green within tolerance, blue inside to red outside up to a range; beyond the range grey (not modelled yet).
+>   - Statistics: Largest + and -, RMS, and percent within tolerance, in the dialog and the log.
+>   - Click to probe: Clicking the scan shows the distance at that point in the dialog.
+>   - Update button: Re-read the part after editing it in Alibre (otherwise read when the dialog opens).
+
+### 🧑 Frank · 14:30
+
+> Answers:
+> - Where should Silhouette go: as a mode inside 4 Section (radio buttons Slice / Silhouette, sharing its plane picking, line-and-arc fit, design intent and Create Sketch), or as its own ribbon button?
+>   **Own ribbon button**
+> - What should the silhouette sketch contain?
+>   **All pieces and through-holes (Recommended)**
+> - How should Compare show and report the scan's distance from the Alibre part?
+>   **Colour bands (Recommended),Statistics,Click to probe**
+
+### 🤖 Claude
+
+> Plan:
+>
+> # ScanToAlibre: 6 Silhouette and 7 Compare
+>
+> ## Context
+>
+> Frank asked what else would help turn a scan into an Alibre part. He chose two of the suggestions (14 November 2026):
+>
+> - **Silhouette sketch.** The scan's outline seen along a plane's normal, fitted with lines and arcs and written as an Alibre sketch for Extrude. A slice at one height misses tabs and flanges that sit at other heights; the silhouette catches them. Frank's choices:
+>   - It gets its own ribbon button.
+>   - It includes every separate piece and every through-hole.
+> - **Compare.** The scan coloured by its signed distance from the part as built so far in Alibre. Frank's choices:
+>   - Colour bands.
+>   - Statistics.
+>   - Click to probe the distance at a point.
+>   - No Update button: the part is read when the dialog opens.
+>
+> ## 6 Silhouette
+>
+> ### Core: `core\Silhouette.h/.cpp`, with tests in `tests\SilhouetteTests.cpp`
+>
+> `SectionResult SilhouetteMesh(const Mesh&, const SectionFrame&, double tolerance, double referenceTolerance, double smallestHole)` returns Section's own result type. That way FitProfile, FindConstraints, the drawing and the sketch writer all work on it unchanged.
+>
+> 1. **Project** every triangle onto the frame with `SectionFrame::ToPlane`.
+> 2. **Rasterise** onto a grid. The cell is the larger of the tolerance and the extent divided by 4000.
+>    - Take the rasteriser, the one-cell gap closing and the loop chaining out of `ProjectionOutline` (`core\SurfaceFit.cpp:837`) as shared helpers, so 5 Surface's behaviour stays the same.
+> 3. **Find the pieces and holes.** Every piece is kept. An empty region the outside can't reach is a through-hole. It's kept if its area is at least that of a circle of `smallestHole` (default 1 mm diameter); smaller ones (pinholes, scanner gaps) are filled.
+> 4. **Trace every boundary loop** (outer loops and hole loops) with the chaining code.
+> 5. **Snap the loops to sub-cell accuracy.** The contour edges are:
+>    - the mesh's edges where the two triangles face opposite ways along the normal;
+>    - open edges.
+>
+>    They're projected into 2D and put in buckets. Each loop point moves to the nearest projected contour edge within 1.5 cells, and keeps its raster position if there's none. A light smoothing pass follows.
+> 6. **Fill the result** for each loop:
+>    - `slices`: the loop in 3D, as `ToWorld` points on the plane.
+>    - `profiles`: `FitProfile(loop, closed=true, tolerance)`.
+>    - `reference`: `SimplifyPolyline`.
+>    - `behind` and `ahead`: the extent along the normal, as Section reports.
+>
+> ### Add-on
+>
+> **`ScanDocument`**
+> - Add `bool silhouetting` and a second `Section silhouette` beside `section`. Each dialog keeps its own plane and settings.
+> - Add a `kind` (Slice or Silhouette) and `smallestHole` to `Section`.
+> - `ScanDocument::ActiveSection()` returns whichever is open.
+> - `UpdateSection` calls `SilhouetteMesh` for the Silhouette kind.
+>
+> **`CSectionDlg`** (`addon\SectionDialog`)
+> - It takes the kind and a template ID, so the Silhouette button opens the same class on `IDD_SILHOUETTE`.
+> - `IDD_SILHOUETTE` is Section's template plus a "Smallest hole" mm field.
+>
+> **`ScanViewCommand`**
+> - `ReadSectionPlane`, the Scan-plane click (`ScanViewCommand.cpp:279`, `:338`, `:476`) and `DrawSection` use `ActiveSection()`.
+> - The silhouette loops are drawn red and the fit green, as now.
+>
+> **`SketchWriter`**
+> - `CreateSectionSketch` takes the `Section&` instead of `scan.section`.
+> - It calls `SilhouetteMesh` for that kind where it now calls `SectionMesh` (`SketchWriter.cpp:215`).
+> - Sketches are named "Scan Silhouette n".
+> - Holes go in as inner loops of the same sketch.
+>
+> **Ribbon:** "6 Silhouette", menu ID 109, after 5 Surface. It needs a scan.
+>
+> ## 7 Compare
+>
+> ### Core: `core\Compare.h/.cpp`, with tests in `tests\CompareTests.cpp`
+>
+> **`MeshFromFacets(values, mmPerUnit)`**
+> - Builds a triangle soup from the facets: 9 doubles a triangle, in model units, converted to mm.
+> - Corners are merged within 1e-6 mm.
+> - The winding is made outward by the signed volume, because Alibre's facet winding is unproven. CAMForAlibre does the same.
+>
+> **`Deviations(scanPoints, part, range) -> std::vector<float>`**
+> - Each value is the signed distance from a scan point to the nearest point on the part's triangles. Positive means outside the part.
+> - Triangles go into a uniform grid with cells about the range. A point searches only within the range; past it the value is NaN, meaning "not modelled".
+> - Sign: where several triangles are about equally near (an edge or corner), take the triangle with the largest |dot| of `(p − closest)` with its normal.
+> - Runs on all cores with `std::execution::par`.
+>
+> **`DeviationStats`**
+> - Counts of compared and not-compared points.
+> - The largest + and the largest −.
+> - The RMS.
+> - The percent within the tolerance.
+>
+> **`DeviationBand(value, tolerance, range)`** picks one of 8 bands:
+>
+> | Band | Values |
+> |---|---|
+> | Dark blue | −range to −range/2 |
+> | Blue | −range/2 to −tol |
+> | Green | ±tol |
+> | Yellow | tol to range/3 |
+> | Orange | range/3 to 2·range/3 |
+> | Red | 2·range/3 to range |
+> | Grey | beyond the range, or NaN |
+>
+> ### Add-on
+>
+> **Reading the part**
+> - `IADPartSession::GetFacetData()` (`AlibreX_64.tlh:11882`, unproven on the live session) is read with `ReadNumbers`, as CAMForAlibre does.
+> - It's logged as `[compare] part facets: n triangles`.
+> - With no solid, the dialog says "Nothing to compare: the part has no solid yet".
+>
+> **`ScanDocument::Compare`**
+> - `tolerance` (0.1 mm) and `range` (1.0 mm).
+> - `part` (Mesh), and per-vertex deviations for `mesh` (statistics and probe) and for `display` (colours).
+> - `stats`, and the band draw arrays (one `DrawArrays` per band).
+> - `bool comparing`.
+> - Changing the tolerance or range only re-bands the triangles, without searching again.
+> - Re-searching happens when the dialog opens, and when Refine or Orient changes the scan (`DrawingChanged` clears it).
+>
+> **Drawing**
+> - While comparing, `Refresh` draws the band meshes in place of the grey scan. Each band is its own segment, coloured with `SetSegmentColor` (the proven way, as the orange selection is drawn).
+> - A triangle's band comes from the mean of its three corners.
+> - The probe point is drawn as a marker.
+>
+> **`addon\CompareDialog.h/.cpp`** (`CCompareDlg`, a `CStepDialog`, `IDD_COMPARE`)
+> - Tolerance and Range fields.
+> - A legend: an owner-drawn strip of the band colours with their values.
+> - The statistics, for example: "Compared 812,344 points (93%); largest +0.412 / −0.287 mm; RMS 0.061 mm; 88.4% within ±0.1 mm".
+> - A **Probe** push-down button (`ClickMode::Probe`). A click on the scan uses `IntersectLine` to find the triangle, interpolates the full mesh's deviations at the hit point, and shows "At (x, y, z): +0.134 mm" or "not modelled".
+> - Close.
+>
+> **Logging:** `[compare]` lines with the counts, the statistics and the time.
+>
+> **Ribbon:** "7 Compare", menu ID 110, after 6 Silhouette. It needs a scan.
+>
+> ## Shared
+>
+> **Resource IDs from 13115**
+> - `IDD_SILHOUETTE`, `IDC_SIL_SMALLEST_HOLE`.
+> - `IDD_COMPARE`, `IDC_CMP_TOLERANCE`, `IDC_CMP_RANGE`, `IDC_CMP_LEGEND`, `IDC_CMP_STATS`, `IDC_CMP_PROBE`, `IDC_CMP_STATUS`.
+>
+> **Project files:** the new files go in `core\ScanCore.vcxproj`, `tests\ScanCoreTests.vcxproj`, `addon\ScanToAlibre.vcxproj` and its filters. All are CRLF with no BOM, and non-ASCII characters are written as escapes (for example `L"−"` and `L"±"`).
+>
+> **Docs**
+> - `docs\SPEC.md`: 6 Silhouette and 7 Compare sections with Frank's choices; Compare comes off the "later buttons" list.
+> - `CLAUDE.md`: current state and the ribbon line (menu IDs 103, 105, 106, 107, 108, 109, 110, 104, 101).
+> - `TODO.md` and `README.md`: updated to match.
+>
+> ## Unproven, to watch in the log
+>
+> - That `IADPartSession::GetFacetData` on the open part gives the solid's facets, in model units, and whether inserted surfaces are included.
+> - Alibre's facet winding. It's made outward by the signed volume, so this matters only for the log.
+> - How fast 8 band meshes redraw on a scan of 1 million triangles. Only the simplified display mesh is drawn, as now.
+>
+> ## Verification
+>
+> 1. **Core tests (`ScanCoreTests.exe`), no Alibre needed:**
+>    - The silhouette of an L-bracket mesh along each axis gives the expected outline within 0.05 mm, and its tab, which a slice misses, appears.
+>    - A plate with a 5 mm through-hole keeps the hole, while a 0.5 mm pinhole is filled.
+>    - Two separate blocks give two loops.
+>    - A cylinder seen end-on fits one circle.
+>    - The deviations of a box scan against a box part 0.2 mm smaller are +0.2 everywhere; against a larger one they're −0.2.
+>    - Points beyond the range are NaN.
+>    - A part mesh with inward winding gets the same signs.
+>    - The band edges are as in the table.
+>    - The statistics are checked on known values.
+>    - Timing (skipped): 1 million points against a 50,000-triangle part.
+>    - The existing 74 cases still pass.
+> 2. **Build:** Release x64 via MSBuild. **Install:** Alibre closed, UAC accepted.
+> 3. **Frank in Alibre:**
+>    1. 6 Silhouette: pick XY and click Create Sketch. Check that every piece and through-hole is in the sketch, with its constraints, and extrude it.
+>    2. 6 Silhouette: pick one of the scan's planes, change Smallest hole and the offset, and watch the preview.
+>    3. 7 Compare on a partly modelled part: check the colours, that unmodelled areas are grey, and the statistics. Change the tolerance and range.
+>    4. 7 Compare: push Probe and click a few places; compare the values with Alibre's Measure.
+>    5. Read `[compare] part facets` in the log.
+
+*(Frank turned the plan down.)*
+
+### 🧑 Frank · 14:39
+
+> Also add - Auto symmetry plane. Finds the scan’s mirror plane so Orient can align to it. It also feeds 5 Surface’s symmetry options and Section’s design intent. Or manual methods to move the object and so found axis/planes can be use in symmetry alignment.  Also add the ability to delete added axis and planes
+
+### 🤖 Claude
+
+> Adding the symmetry and delete work to the plan file, then handing it over for approval.
+
+> Plan:
+>
+> # ScanToAlibre: 6 Silhouette, 7 Compare, symmetry planes and deleting fitted geometry
+>
+> Build order: Delete first, then Find Symmetry and Mid Plane, then 6 Silhouette, then 7 Compare, then Detect in 5 Surface and the Symmetric intent in Section. Compare's distance search is built with Find Symmetry, which needs it.
+>
+> ## Context
+>
+> Frank asked what else would help turn a scan into an Alibre part. He chose two of the suggestions (14 November 2026):
+>
+> - **Silhouette sketch.** The scan's outline seen along a plane's normal, fitted with lines and arcs and written as an Alibre sketch for Extrude. A slice at one height misses tabs and flanges that sit at other heights; the silhouette catches them. Frank's choices:
+>   - It gets its own ribbon button.
+>   - It includes every separate piece and every through-hole.
+> - **Compare.** The scan coloured by its signed distance from the part as built so far in Alibre. Frank's choices:
+>   - Colour bands.
+>   - Statistics.
+>   - Click to probe the distance at a point.
+>   - No Update button: the part is read when the dialog opens.
+>
+> ## 6 Silhouette
+>
+> ### Core: `core\Silhouette.h/.cpp`, with tests in `tests\SilhouetteTests.cpp`
+>
+> `SectionResult SilhouetteMesh(const Mesh&, const SectionFrame&, double tolerance, double referenceTolerance, double smallestHole)` returns Section's own result type. That way FitProfile, FindConstraints, the drawing and the sketch writer all work on it unchanged.
+>
+> 1. **Project** every triangle onto the frame with `SectionFrame::ToPlane`.
+> 2. **Rasterise** onto a grid. The cell is the larger of the tolerance and the extent divided by 4000.
+>    - Take the rasteriser, the one-cell gap closing and the loop chaining out of `ProjectionOutline` (`core\SurfaceFit.cpp:837`) as shared helpers, so 5 Surface's behaviour stays the same.
+> 3. **Find the pieces and holes.** Every piece is kept. An empty region the outside can't reach is a through-hole. It's kept if its area is at least that of a circle of `smallestHole` (default 1 mm diameter); smaller ones (pinholes, scanner gaps) are filled.
+> 4. **Trace every boundary loop** (outer loops and hole loops) with the chaining code.
+> 5. **Snap the loops to sub-cell accuracy.** The contour edges are:
+>    - the mesh's edges where the two triangles face opposite ways along the normal;
+>    - open edges.
+>
+>    They're projected into 2D and put in buckets. Each loop point moves to the nearest projected contour edge within 1.5 cells, and keeps its raster position if there's none. A light smoothing pass follows.
+> 6. **Fill the result** for each loop:
+>    - `slices`: the loop in 3D, as `ToWorld` points on the plane.
+>    - `profiles`: `FitProfile(loop, closed=true, tolerance)`.
+>    - `reference`: `SimplifyPolyline`.
+>    - `behind` and `ahead`: the extent along the normal, as Section reports.
+>
+> ### Add-on
+>
+> **`ScanDocument`**
+> - Add `bool silhouetting` and a second `Section silhouette` beside `section`. Each dialog keeps its own plane and settings.
+> - Add a `kind` (Slice or Silhouette) and `smallestHole` to `Section`.
+> - `ScanDocument::ActiveSection()` returns whichever is open.
+> - `UpdateSection` calls `SilhouetteMesh` for the Silhouette kind.
+>
+> **`CSectionDlg`** (`addon\SectionDialog`)
+> - It takes the kind and a template ID, so the Silhouette button opens the same class on `IDD_SILHOUETTE`.
+> - `IDD_SILHOUETTE` is Section's template plus a "Smallest hole" mm field.
+>
+> **`ScanViewCommand`**
+> - `ReadSectionPlane`, the Scan-plane click (`ScanViewCommand.cpp:279`, `:338`, `:476`) and `DrawSection` use `ActiveSection()`.
+> - The silhouette loops are drawn red and the fit green, as now.
+>
+> **`SketchWriter`**
+> - `CreateSectionSketch` takes the `Section&` instead of `scan.section`.
+> - It calls `SilhouetteMesh` for that kind where it now calls `SectionMesh` (`SketchWriter.cpp:215`).
+> - Sketches are named "Scan Silhouette n".
+> - Holes go in as inner loops of the same sketch.
+>
+> **Ribbon:** "6 Silhouette", menu ID 109, after 5 Surface. It needs a scan.
+>
+> ## 7 Compare
+>
+> ### Core: `core\Compare.h/.cpp`, with tests in `tests\CompareTests.cpp`
+>
+> **`MeshFromFacets(values, mmPerUnit)`**
+> - Builds a triangle soup from the facets: 9 doubles a triangle, in model units, converted to mm.
+> - Corners are merged within 1e-6 mm.
+> - The winding is made outward by the signed volume, because Alibre's facet winding is unproven. CAMForAlibre does the same.
+>
+> **`Deviations(scanPoints, part, range) -> std::vector<float>`**
+> - Each value is the signed distance from a scan point to the nearest point on the part's triangles. Positive means outside the part.
+> - Triangles go into a uniform grid with cells about the range. A point searches only within the range; past it the value is NaN, meaning "not modelled".
+> - Sign: where several triangles are about equally near (an edge or corner), take the triangle with the largest |dot| of `(p − closest)` with its normal.
+> - Runs on all cores with `std::execution::par`.
+>
+> **`DeviationStats`**
+> - Counts of compared and not-compared points.
+> - The largest + and the largest −.
+> - The RMS.
+> - The percent within the tolerance.
+>
+> **`DeviationBand(value, tolerance, range)`** picks one of 8 bands:
+>
+> | Band | Values |
+> |---|---|
+> | Dark blue | −range to −range/2 |
+> | Blue | −range/2 to −tol |
+> | Green | ±tol |
+> | Yellow | tol to range/3 |
+> | Orange | range/3 to 2·range/3 |
+> | Red | 2·range/3 to range |
+> | Grey | beyond the range, or NaN |
+>
+> ### Add-on
+>
+> **Reading the part**
+> - `IADPartSession::GetFacetData()` (`AlibreX_64.tlh:11882`, unproven on the live session) is read with `ReadNumbers`, as CAMForAlibre does.
+> - It's logged as `[compare] part facets: n triangles`.
+> - With no solid, the dialog says "Nothing to compare: the part has no solid yet".
+>
+> **`ScanDocument::Compare`**
+> - `tolerance` (0.1 mm) and `range` (1.0 mm).
+> - `part` (Mesh), and per-vertex deviations for `mesh` (statistics and probe) and for `display` (colours).
+> - `stats`, and the band draw arrays (one `DrawArrays` per band).
+> - `bool comparing`.
+> - Changing the tolerance or range only re-bands the triangles, without searching again.
+> - Re-searching happens when the dialog opens, and when Refine or Orient changes the scan (`DrawingChanged` clears it).
+>
+> **Drawing**
+> - While comparing, `Refresh` draws the band meshes in place of the grey scan. Each band is its own segment, coloured with `SetSegmentColor` (the proven way, as the orange selection is drawn).
+> - A triangle's band comes from the mean of its three corners.
+> - The probe point is drawn as a marker.
+>
+> **`addon\CompareDialog.h/.cpp`** (`CCompareDlg`, a `CStepDialog`, `IDD_COMPARE`)
+> - Tolerance and Range fields.
+> - A legend: an owner-drawn strip of the band colours with their values.
+> - The statistics, for example: "Compared 812,344 points (93%); largest +0.412 / −0.287 mm; RMS 0.061 mm; 88.4% within ±0.1 mm".
+> - A **Probe** push-down button (`ClickMode::Probe`). A click on the scan uses `IntersectLine` to find the triangle, interpolates the full mesh's deviations at the hit point, and shows "At (x, y, z): +0.134 mm" or "not modelled".
+> - Close.
+>
+> **Logging:** `[compare]` lines with the counts, the statistics and the time.
+>
+> **Ribbon:** "7 Compare", menu ID 110, after 6 Silhouette. It needs a scan.
+>
+> ## Orient: symmetry planes, and deleting fitted planes and axes
+>
+> Frank asked for these on 14 November 2026. Four pieces, all in 3 Orient, with what they feed further down.
+>
+> **1. Delete.** A **Delete** button in Orient removes the chosen fitted plane or axis (`scan.chosen`, picked with Scan down) from `ScanDocument::fitted`.
+> - The box's planes, axes and centre can't be deleted; the button is greyed for them.
+> - Delete is kept for Undo (`Remember()`), clears `chosen`, marks the scan unsaved, and is logged as `[orient] deleted <name>`.
+> - A plane or axis already used by an alignment step stays aligned. The step moved the scan, not the feature.
+> - The other dialogs that list planes (Section's Scan plane click, and the new Silhouette) see it gone.
+>
+> **2. Auto symmetry plane.** A **Find Symmetry** button in Orient.
+>
+> `FindSymmetryPlane(mesh, box, fitted) -> std::vector<SymmetryCandidate>` goes in `core\Symmetry.h/.cpp`. Each candidate holds a plane, its RMS, the percent of points within 0.2 mm and the percent of points matched.
+> 1. **Candidates:** the box's three centre planes, the planes through the scan's centroid square to the principal directions, and the planes through each fitted plane's and axis's direction.
+> 2. **Scoring:** 20,000 vertices, area weighted, are mirrored. Each mirror's distance to the mesh comes from Compare's `Deviations` grid search, run against the scan itself.
+> 3. **Refining:** the best few are refined by mirror ICP. Pair each point with its mirror's nearest point, then refit the plane through the pairs' midpoints, with its normal along the mean of `p − q`. This repeats until the plane moves less than 0.001 mm and 0.001 degrees, at most 30 times. Pairs farther than three times the RMS are dropped.
+>
+> The best candidate is added as a fitted plane named "Symmetry plane n". It's then an ordinary plane: Align can put it on Alibre's YZ (for example), Section can slice on it, and Delete can remove it. The dialog shows its RMS and match percent. A score worse than 30% within 0.2 mm is refused with "No symmetry found".
+>
+> **3. Manual symmetry: Mid Plane.** A **Mid Plane** button in Orient makes the plane halfway between two scan features.
+> - With one feature chosen (Scan down), push Mid Plane, then click a second.
+> - **Two planes**, for example a part's two side faces fitted with Fit Plane: the plane bisecting them, square to the mean of their normals (flipped to agree), through the midpoint of their points.
+> - **Two axes**, for example two matching holes: the plane square to the line joining them, through its middle.
+> - **Two points:** the same, through the middle.
+> - A plane and an axis are refused.
+> - The result is added as "Mid plane n", ready for Align.
+>
+> This, with Move and Rotate (which already exist), is the manual way.
+>
+> **4. Using symmetry later.**
+> - **5 Surface:** a **Detect** button beside the symmetry boxes. It scores the three world planes (XY, YZ, ZX) on the whole scan with the same mirror score and ticks the ones with at least 80% within 0.2 mm. Each score is shown, for example "YZ: 94% within 0.2 mm".
+> - **4 Section and 6 Silhouette:** a design intent check box, **Symmetric**, used when the sketch plane is square to a symmetry plane (any fitted plane named Symmetry or Mid plane, or one of the world planes Detect found).
+>   - Pairs of segments that mirror each other across the symmetry plane's line are found: lines within 2 degrees and the tolerance, and arcs with centres within the tolerance and equal radii.
+>   - Each pair is averaged so it's exactly symmetric.
+>   - A construction line goes on the symmetry line, and each pair's matching ends get a Symmetric constraint (`ADSketchConstraintType_AD_CONSTRAINT_SYMMETRIC`, which is in the 27.0.1 headers but unproven) about it.
+>   - This happens in `FindConstraints` (`core\Section`), as a new `ProfileConstraint::Kind::Symmetric`, and in SketchWriter.
+>
+> **Resources:** `IDC_OR_DELETE`, `IDC_OR_FIND_SYMMETRY`, `IDC_OR_MID_PLANE`, `IDC_SURF_DETECT`, `IDC_SURF_SYMMETRY_SCORE`, `IDC_SEC_SYMMETRIC`. The Orient template grows to fit them.
+>
+> **Tests** (`tests\SymmetryTests.cpp`, `tests\SectionTests.cpp`)
+> - A mesh mirrored about a tilted plane is found within 0.01 mm and 0.05 degrees.
+> - A part with no symmetry is refused.
+> - Mid Plane from two parallel planes 20 mm apart lies 10 mm from each.
+> - Mid Plane from two axes bisects them.
+> - Detect ticks YZ for a scan symmetric about YZ.
+> - The Symmetric intent pairs a mirrored profile's lines and arcs, and makes them exactly symmetric.
+>
+> **Frank in Alibre**
+> 1. Fit a plane and Delete it, then Undo.
+> 2. Find Symmetry on a symmetric part, Align the symmetry plane to YZ, then Detect in 5 Surface.
+> 3. Fit the two sides, make a Mid Plane and Align it.
+> 4. Section on XY with Symmetric ticked: check the Symmetric constraints in the sketch.
+>
+> ## Shared
+>
+> **Resource IDs from 13115**
+> - `IDD_SILHOUETTE`, `IDC_SIL_SMALLEST_HOLE`.
+> - `IDD_COMPARE`, `IDC_CMP_TOLERANCE`, `IDC_CMP_RANGE`, `IDC_CMP_LEGEND`, `IDC_CMP_STATS`, `IDC_CMP_PROBE`, `IDC_CMP_STATUS`.
+>
+> **Project files:** the new files go in `core\ScanCore.vcxproj`, `tests\ScanCoreTests.vcxproj`, `addon\ScanToAlibre.vcxproj` and its filters. All are CRLF with no BOM, and non-ASCII characters are written as escapes (for example `L"−"` and `L"±"`).
+>
+> **Docs**
+> - `docs\SPEC.md`: 6 Silhouette and 7 Compare sections with Frank's choices; Compare comes off the "later buttons" list.
+> - `CLAUDE.md`: current state and the ribbon line (menu IDs 103, 105, 106, 107, 108, 109, 110, 104, 101).
+> - `TODO.md` and `README.md`: updated to match.
+>
+> ## Unproven, to watch in the log
+>
+> - That `IADPartSession::GetFacetData` on the open part gives the solid's facets, in model units, and whether inserted surfaces are included.
+> - Alibre's facet winding. It's made outward by the signed volume, so this matters only for the log.
+> - How fast 8 band meshes redraw on a scan of 1 million triangles. Only the simplified display mesh is drawn, as now.
+>
+> ## Verification
+>
+> 1. **Core tests (`ScanCoreTests.exe`), no Alibre needed:**
+>    - The silhouette of an L-bracket mesh along each axis gives the expected outline within 0.05 mm, and its tab, which a slice misses, appears.
+>    - A plate with a 5 mm through-hole keeps the hole, while a 0.5 mm pinhole is filled.
+>    - Two separate blocks give two loops.
+>    - A cylinder seen end-on fits one circle.
+>    - The deviations of a box scan against a box part 0.2 mm smaller are +0.2 everywhere; against a larger one they're −0.2.
+>    - Points beyond the range are NaN.
+>    - A part mesh with inward winding gets the same signs.
+>    - The band edges are as in the table.
+>    - The statistics are checked on known values.
+>    - Timing (skipped): 1 million points against a 50,000-triangle part.
+>    - The existing 74 cases still pass.
+> 2. **Build:** Release x64 via MSBuild. **Install:** Alibre closed, UAC accepted.
+> 3. **Frank in Alibre:**
+>    1. 6 Silhouette: pick XY and click Create Sketch. Check that every piece and through-hole is in the sketch, with its constraints, and extrude it.
+>    2. 6 Silhouette: pick one of the scan's planes, change Smallest hole and the offset, and watch the preview.
+>    3. 7 Compare on a partly modelled part: check the colours, that unmodelled areas are grey, and the statistics. Change the tolerance and range.
+>    4. 7 Compare: push Probe and click a few places; compare the values with Alibre's Measure.
+>    5. Read `[compare] part facets` in the log.
+
+*(Frank turned the plan down.)*
+
+### 🧑 Frank · 14:41
+
+> Save the plan for later.
+
+### 🤖 Claude
+
+> The plan is saved but nothing is built. It's at `C:\Users\Frank Tkalcevic\.claude\plans\next-project-will-be-mighty-koala.md`, and it now covers:
+>
+> - **Delete** for fitted planes and axes in Orient. It works with Undo, and the box's own planes and axes can't be deleted.
+> - **Find Symmetry.** It scores candidate mirror planes, tightens the best one and adds it as "Symmetry plane n", which you can then use to Align.
+> - **Mid Plane.** Your manual way: pick two fitted planes, axes or points and it adds the plane halfway between them.
+> - **Using the symmetry later:**
+>   - A **Detect** button in 5 Surface that ticks the world planes the scan is symmetric about.
+>   - A **Symmetric** check box in Section's and Silhouette's design intent, which adds Alibre Symmetric constraints. Alibre's API lists that constraint, but it's unproven.
+> - **6 Silhouette** and **7 Compare**, as you chose them.
+>
+> Plan mode only lets me write that one file, so it isn't in the repository. Once we're out of plan mode I can copy it to `docs\PLAN-next.md` or add the items to `TODO.md`.
+
+### 🧑 Frank · 14:42
+
+> Accept
+
+### 🤖 Claude
+
+> Plan:
+>
+> # ScanToAlibre: 6 Silhouette, 7 Compare, symmetry planes and deleting fitted geometry
+>
+> Build order: Delete first, then Find Symmetry and Mid Plane, then 6 Silhouette, then 7 Compare, then Detect in 5 Surface and the Symmetric intent in Section. Compare's distance search is built with Find Symmetry, which needs it.
+>
+> ## Context
+>
+> Frank asked what else would help turn a scan into an Alibre part. He chose two of the suggestions (14 November 2026):
+>
+> - **Silhouette sketch.** The scan's outline seen along a plane's normal, fitted with lines and arcs and written as an Alibre sketch for Extrude. A slice at one height misses tabs and flanges that sit at other heights; the silhouette catches them. Frank's choices:
+>   - It gets its own ribbon button.
+>   - It includes every separate piece and every through-hole.
+> - **Compare.** The scan coloured by its signed distance from the part as built so far in Alibre. Frank's choices:
+>   - Colour bands.
+>   - Statistics.
+>   - Click to probe the distance at a point.
+>   - No Update button: the part is read when the dialog opens.
+>
+> ## 6 Silhouette
+>
+> ### Core: `core\Silhouette.h/.cpp`, with tests in `tests\SilhouetteTests.cpp`
+>
+> `SectionResult SilhouetteMesh(const Mesh&, const SectionFrame&, double tolerance, double referenceTolerance, double smallestHole)` returns Section's own result type. That way FitProfile, FindConstraints, the drawing and the sketch writer all work on it unchanged.
+>
+> 1. **Project** every triangle onto the frame with `SectionFrame::ToPlane`.
+> 2. **Rasterise** onto a grid. The cell is the larger of the tolerance and the extent divided by 4000.
+>    - Take the rasteriser, the one-cell gap closing and the loop chaining out of `ProjectionOutline` (`core\SurfaceFit.cpp:837`) as shared helpers, so 5 Surface's behaviour stays the same.
+> 3. **Find the pieces and holes.** Every piece is kept. An empty region the outside can't reach is a through-hole. It's kept if its area is at least that of a circle of `smallestHole` (default 1 mm diameter); smaller ones (pinholes, scanner gaps) are filled.
+> 4. **Trace every boundary loop** (outer loops and hole loops) with the chaining code.
+> 5. **Snap the loops to sub-cell accuracy.** The contour edges are:
+>    - the mesh's edges where the two triangles face opposite ways along the normal;
+>    - open edges.
+>
+>    They're projected into 2D and put in buckets. Each loop point moves to the nearest projected contour edge within 1.5 cells, and keeps its raster position if there's none. A light smoothing pass follows.
+> 6. **Fill the result** for each loop:
+>    - `slices`: the loop in 3D, as `ToWorld` points on the plane.
+>    - `profiles`: `FitProfile(loop, closed=true, tolerance)`.
+>    - `reference`: `SimplifyPolyline`.
+>    - `behind` and `ahead`: the extent along the normal, as Section reports.
+>
+> ### Add-on
+>
+> **`ScanDocument`**
+> - Add `bool silhouetting` and a second `Section silhouette` beside `section`. Each dialog keeps its own plane and settings.
+> - Add a `kind` (Slice or Silhouette) and `smallestHole` to `Section`.
+> - `ScanDocument::ActiveSection()` returns whichever is open.
+> - `UpdateSection` calls `SilhouetteMesh` for the Silhouette kind.
+>
+> **`CSectionDlg`** (`addon\SectionDialog`)
+> - It takes the kind and a template ID, so the Silhouette button opens the same class on `IDD_SILHOUETTE`.
+> - `IDD_SILHOUETTE` is Section's template plus a "Smallest hole" mm field.
+>
+> **`ScanViewCommand`**
+> - `ReadSectionPlane`, the Scan-plane click (`ScanViewCommand.cpp:279`, `:338`, `:476`) and `DrawSection` use `ActiveSection()`.
+> - The silhouette loops are drawn red and the fit green, as now.
+>
+> **`SketchWriter`**
+> - `CreateSectionSketch` takes the `Section&` instead of `scan.section`.
+> - It calls `SilhouetteMesh` for that kind where it now calls `SectionMesh` (`SketchWriter.cpp:215`).
+> - Sketches are named "Scan Silhouette n".
+> - Holes go in as inner loops of the same sketch.
+>
+> **Ribbon:** "6 Silhouette", menu ID 109, after 5 Surface. It needs a scan.
+>
+> ## 7 Compare
+>
+> ### Core: `core\Compare.h/.cpp`, with tests in `tests\CompareTests.cpp`
+>
+> **`MeshFromFacets(values, mmPerUnit)`**
+> - Builds a triangle soup from the facets: 9 doubles a triangle, in model units, converted to mm.
+> - Corners are merged within 1e-6 mm.
+> - The winding is made outward by the signed volume, because Alibre's facet winding is unproven. CAMForAlibre does the same.
+>
+> **`Deviations(scanPoints, part, range) -> std::vector<float>`**
+> - Each value is the signed distance from a scan point to the nearest point on the part's triangles. Positive means outside the part.
+> - Triangles go into a uniform grid with cells about the range. A point searches only within the range; past it the value is NaN, meaning "not modelled".
+> - Sign: where several triangles are about equally near (an edge or corner), take the triangle with the largest |dot| of `(p − closest)` with its normal.
+> - Runs on all cores with `std::execution::par`.
+>
+> **`DeviationStats`**
+> - Counts of compared and not-compared points.
+> - The largest + and the largest −.
+> - The RMS.
+> - The percent within the tolerance.
+>
+> **`DeviationBand(value, tolerance, range)`** picks one of 8 bands:
+>
+> | Band | Values |
+> |---|---|
+> | Dark blue | −range to −range/2 |
+> | Blue | −range/2 to −tol |
+> | Green | ±tol |
+> | Yellow | tol to range/3 |
+> | Orange | range/3 to 2·range/3 |
+> | Red | 2·range/3 to range |
+> | Grey | beyond the range, or NaN |
+>
+> ### Add-on
+>
+> **Reading the part**
+> - `IADPartSession::GetFacetData()` (`AlibreX_64.tlh:11882`, unproven on the live session) is read with `ReadNumbers`, as CAMForAlibre does.
+> - It's logged as `[compare] part facets: n triangles`.
+> - With no solid, the dialog says "Nothing to compare: the part has no solid yet".
+>
+> **`ScanDocument::Compare`**
+> - `tolerance` (0.1 mm) and `range` (1.0 mm).
+> - `part` (Mesh), and per-vertex deviations for `mesh` (statistics and probe) and for `display` (colours).
+> - `stats`, and the band draw arrays (one `DrawArrays` per band).
+> - `bool comparing`.
+> - Changing the tolerance or range only re-bands the triangles, without searching again.
+> - Re-searching happens when the dialog opens, and when Refine or Orient changes the scan (`DrawingChanged` clears it).
+>
+> **Drawing**
+> - While comparing, `Refresh` draws the band meshes in place of the grey scan. Each band is its own segment, coloured with `SetSegmentColor` (the proven way, as the orange selection is drawn).
+> - A triangle's band comes from the mean of its three corners.
+> - The probe point is drawn as a marker.
+>
+> **`addon\CompareDialog.h/.cpp`** (`CCompareDlg`, a `CStepDialog`, `IDD_COMPARE`)
+> - Tolerance and Range fields.
+> - A legend: an owner-drawn strip of the band colours with their values.
+> - The statistics, for example: "Compared 812,344 points (93%); largest +0.412 / −0.287 mm; RMS 0.061 mm; 88.4% within ±0.1 mm".
+> - A **Probe** push-down button (`ClickMode::Probe`). A click on the scan uses `IntersectLine` to find the triangle, interpolates the full mesh's deviations at the hit point, and shows "At (x, y, z): +0.134 mm" or "not modelled".
+> - Close.
+>
+> **Logging:** `[compare]` lines with the counts, the statistics and the time.
+>
+> **Ribbon:** "7 Compare", menu ID 110, after 6 Silhouette. It needs a scan.
+>
+> ## Orient: symmetry planes, and deleting fitted planes and axes
+>
+> Frank asked for these on 14 November 2026. Four pieces, all in 3 Orient, with what they feed further down.
+>
+> **1. Delete.** A **Delete** button in Orient removes the chosen fitted plane or axis (`scan.chosen`, picked with Scan down) from `ScanDocument::fitted`.
+> - The box's planes, axes and centre can't be deleted; the button is greyed for them.
+> - Delete is kept for Undo (`Remember()`), clears `chosen`, marks the scan unsaved, and is logged as `[orient] deleted <name>`.
+> - A plane or axis already used by an alignment step stays aligned. The step moved the scan, not the feature.
+> - The other dialogs that list planes (Section's Scan plane click, and the new Silhouette) see it gone.
+>
+> **2. Auto symmetry plane.** A **Find Symmetry** button in Orient.
+>
+> `FindSymmetryPlane(mesh, box, fitted) -> std::vector<SymmetryCandidate>` goes in `core\Symmetry.h/.cpp`. Each candidate holds a plane, its RMS, the percent of points within 0.2 mm and the percent of points matched.
+> 1. **Candidates:** the box's three centre planes, the planes through the scan's centroid square to the principal directions, and the planes through each fitted plane's and axis's direction.
+> 2. **Scoring:** 20,000 vertices, area weighted, are mirrored. Each mirror's distance to the mesh comes from Compare's `Deviations` grid search, run against the scan itself.
+> 3. **Refining:** the best few are refined by mirror ICP. Pair each point with its mirror's nearest point, then refit the plane through the pairs' midpoints, with its normal along the mean of `p − q`. This repeats until the plane moves less than 0.001 mm and 0.001 degrees, at most 30 times. Pairs farther than three times the RMS are dropped.
+>
+> The best candidate is added as a fitted plane named "Symmetry plane n". It's then an ordinary plane: Align can put it on Alibre's YZ (for example), Section can slice on it, and Delete can remove it. The dialog shows its RMS and match percent. A score worse than 30% within 0.2 mm is refused with "No symmetry found".
+>
+> **3. Manual symmetry: Mid Plane.** A **Mid Plane** button in Orient makes the plane halfway between two scan features.
+> - With one feature chosen (Scan down), push Mid Plane, then click a second.
+> - **Two planes**, for example a part's two side faces fitted with Fit Plane: the plane bisecting them, square to the mean of their normals (flipped to agree), through the midpoint of their points.
+> - **Two axes**, for example two matching holes: the plane square to the line joining them, through its middle.
+> - **Two points:** the same, through the middle.
+> - A plane and an axis are refused.
+> - The result is added as "Mid plane n", ready for Align.
+>
+> This, with Move and Rotate (which already exist), is the manual way.
+>
+> **4. Using symmetry later.**
+> - **5 Surface:** a **Detect** button beside the symmetry boxes. It scores the three world planes (XY, YZ, ZX) on the whole scan with the same mirror score and ticks the ones with at least 80% within 0.2 mm. Each score is shown, for example "YZ: 94% within 0.2 mm".
+> - **4 Section and 6 Silhouette:** a design intent check box, **Symmetric**, used when the sketch plane is square to a symmetry plane (any fitted plane named Symmetry or Mid plane, or one of the world planes Detect found).
+>   - Pairs of segments that mirror each other across the symmetry plane's line are found: lines within 2 degrees and the tolerance, and arcs with centres within the tolerance and equal radii.
+>   - Each pair is averaged so it's exactly symmetric.
+>   - A construction line goes on the symmetry line, and each pair's matching ends get a Symmetric constraint (`ADSketchConstraintType_AD_CONSTRAINT_SYMMETRIC`, which is in the 27.0.1 headers but unproven) about it.
+>   - This happens in `FindConstraints` (`core\Section`), as a new `ProfileConstraint::Kind::Symmetric`, and in SketchWriter.
+>
+> **Resources:** `IDC_OR_DELETE`, `IDC_OR_FIND_SYMMETRY`, `IDC_OR_MID_PLANE`, `IDC_SURF_DETECT`, `IDC_SURF_SYMMETRY_SCORE`, `IDC_SEC_SYMMETRIC`. The Orient template grows to fit them.
+>
+> **Tests** (`tests\SymmetryTests.cpp`, `tests\SectionTests.cpp`)
+> - A mesh mirrored about a tilted plane is found within 0.01 mm and 0.05 degrees.
+> - A part with no symmetry is refused.
+> - Mid Plane from two parallel planes 20 mm apart lies 10 mm from each.
+> - Mid Plane from two axes bisects them.
+> - Detect ticks YZ for a scan symmetric about YZ.
+> - The Symmetric intent pairs a mirrored profile's lines and arcs, and makes them exactly symmetric.
+>
+> **Frank in Alibre**
+> 1. Fit a plane and Delete it, then Undo.
+> 2. Find Symmetry on a symmetric part, Align the symmetry plane to YZ, then Detect in 5 Surface.
+> 3. Fit the two sides, make a Mid Plane and Align it.
+> 4. Section on XY with Symmetric ticked: check the Symmetric constraints in the sketch.
+>
+> ## Shared
+>
+> **Resource IDs from 13115**
+> - `IDD_SILHOUETTE`, `IDC_SIL_SMALLEST_HOLE`.
+> - `IDD_COMPARE`, `IDC_CMP_TOLERANCE`, `IDC_CMP_RANGE`, `IDC_CMP_LEGEND`, `IDC_CMP_STATS`, `IDC_CMP_PROBE`, `IDC_CMP_STATUS`.
+>
+> **Project files:** the new files go in `core\ScanCore.vcxproj`, `tests\ScanCoreTests.vcxproj`, `addon\ScanToAlibre.vcxproj` and its filters. All are CRLF with no BOM, and non-ASCII characters are written as escapes (for example `L"−"` and `L"±"`).
+>
+> **Docs**
+> - `docs\SPEC.md`: 6 Silhouette and 7 Compare sections with Frank's choices; Compare comes off the "later buttons" list.
+> - `CLAUDE.md`: current state and the ribbon line (menu IDs 103, 105, 106, 107, 108, 109, 110, 104, 101).
+> - `TODO.md` and `README.md`: updated to match.
+>
+> ## Unproven, to watch in the log
+>
+> - That `IADPartSession::GetFacetData` on the open part gives the solid's facets, in model units, and whether inserted surfaces are included.
+> - Alibre's facet winding. It's made outward by the signed volume, so this matters only for the log.
+> - How fast 8 band meshes redraw on a scan of 1 million triangles. Only the simplified display mesh is drawn, as now.
+>
+> ## Verification
+>
+> 1. **Core tests (`ScanCoreTests.exe`), no Alibre needed:**
+>    - The silhouette of an L-bracket mesh along each axis gives the expected outline within 0.05 mm, and its tab, which a slice misses, appears.
+>    - A plate with a 5 mm through-hole keeps the hole, while a 0.5 mm pinhole is filled.
+>    - Two separate blocks give two loops.
+>    - A cylinder seen end-on fits one circle.
+>    - The deviations of a box scan against a box part 0.2 mm smaller are +0.2 everywhere; against a larger one they're −0.2.
+>    - Points beyond the range are NaN.
+>    - A part mesh with inward winding gets the same signs.
+>    - The band edges are as in the table.
+>    - The statistics are checked on known values.
+>    - Timing (skipped): 1 million points against a 50,000-triangle part.
+>    - The existing 74 cases still pass.
+> 2. **Build:** Release x64 via MSBuild. **Install:** Alibre closed, UAC accepted.
+> 3. **Frank in Alibre:**
+>    1. 6 Silhouette: pick XY and click Create Sketch. Check that every piece and through-hole is in the sketch, with its constraints, and extrude it.
+>    2. 6 Silhouette: pick one of the scan's planes, change Smallest hole and the offset, and watch the preview.
+>    3. 7 Compare on a partly modelled part: check the colours, that unmodelled areas are grey, and the statistics. Change the tolerance and range.
+>    4. 7 Compare: push Probe and click a few places; compare the values with Alibre's Measure.
+>    5. Read `[compare] part facets` in the log.
+
+*(Frank approved the plan.)*
+
+### 🤖 Claude
+
+> I've saved the plan for later. It's now in the repository at [docs/PLAN-next.md](../ScanToAlibre/docs/PLAN-next.md), headed "approved, not started", and the first item in [TODO.md](../ScanToAlibre/TODO.md) points to it. When we come back to it, the order is:
+>
+> 1. Deleting fitted planes and axes
+> 2. Find Symmetry and Mid Plane
+> 3. 6 Silhouette
+> 4. 7 Compare
+> 5. Detect in 5 Surface and the Symmetric design intent in Section
+>
+> No code is written yet, and nothing is committed. I've also rebuilt both Discussion.md files.
+
+### 🧑 Frank · 14:42
+
+> Later
+
+### 🤖 Claude
+
+> Okay, I'll leave the plan for later. It's saved in `docs\PLAN-next.md`, and the first item in `TODO.md` points to it.
+
+### 🧑 Frank · 14:43
+
+> Lets start with the delete item from the plan
+
+### 🤖 Claude
+
+> The plan is ScanToAlibre's (Orient's Delete button comes first). I'll work in `D:\Projects\alibre\ScanToAlibre`.
+
+> Found it: the plan is ScanToAlibre's, and Delete in 3 Orient comes first. Adding a Delete button to the Align group, a `DeleteFitted` in `ScanDocument`, then building.
+
+> Now the edits: document, resource, template, dialog.
+
+> Now the dialog handler, enabling, and names that don't repeat after a delete.
+
+> Built clean, 74 tests pass. Now the docs (no help page exists in ScanToAlibre).
+
+> Text is right. Now install (it needs Alibre closed and UAC).
+
+> The UAC prompt was cancelled, so it isn't installed. Correcting CLAUDE.md, then rebuilding the discussion.
+
+> I've added Delete to ScanToAlibre's 3 Orient, the first item in `docs\PLAN-next.md`. The Release build is clean and the 74 core tests pass. It isn't installed yet because the UAC prompt was cancelled, so nothing has been tried in Alibre.
+>
+> **What it does**
+> - **The button:** a Delete button now sits beside the Scan feature in the Align group. It deletes the fitted plane or axis you've chosen. It's greyed when nothing is chosen, or when the choice is one of the box's planes, its axes or its centre.
+> - **Undo:** brings a deleted plane or axis back.
+> - **Saving:** a deletion counts as an unsaved change, Alibre is told the part changed, and the log gets `[orient] deleted <name>`.
+> - **Scan button:** Delete leaves the Scan button as it was, so if it's down you can click the next one straight away.
+> - **Alignment:** a step that already used the deleted plane or axis stays aligned, because the step moved the scan.
+> - **One fix I added:** new planes and axes used to be numbered by counting, so deleting Plane 1 and fitting again would give a second "Plane 2". They're now numbered one past the highest left.
+>
+> The changes are in [OrientDialog.cpp](../ScanToAlibre/addon/OrientDialog.cpp), `ScanDocument::DeleteFitted` in [ScanDocument.cpp](../ScanToAlibre/addon/ScanDocument.cpp), and the resource and template (`IDC_OR_DELETE`, 13115). I also updated the spec, `CLAUDE.md` and `TODO.md`. ScanToAlibre has no help page, so there was none to change.
+>
+> **To install:** close Alibre, run this and accept the UAC prompt:
+>
+> ```bash
+> powershell -ExecutionPolicy Bypass -File D:\Projects\alibre\ScanToAlibre\deploy\install.ps1
+> ```
+>
+> **To test in Alibre**
+> 1. In Orient, fit a plane, push Scan, click the plane and click Delete. It should disappear, and the status line should name it.
+> 2. Click Undo. The plane should come back.
+> 3. Choose one of the box's planes or its centre. Delete should be greyed.
+> 4. Fit Plane 1 and Plane 2, delete Plane 1, then fit another plane. It should be called Plane 3.
+> 5. Delete a plane, save, and reopen the part. It should stay gone.
+> 6. Check the log for the `[orient] deleted` line.
+
+### 🧑 Frank · 14:50
+
+> Yes, continue
+
+### 🤖 Claude
+
+> Now writing the core: a nearest-point grid in `core\Compare` (shared with 7 Compare later) and `core\Symmetry`.
+
+> Let me simplify the tie handling in `visit` before going on.
+
+> Now `core\Symmetry`.
+
+> Now tests.
+
+> Adding the files to the projects and building.
+
+> All 7 pass: the tilted plane is found exactly (rms 6e-12 mm), and the blob's best is 15%, so it's refused. Let me time it on a real scan.
+
+> The box is fine, so a NaN must come from degenerate triangles in the scan going into the closest-point formula. I'll guard both places.
+
+> Now ranking by a trimmed rms (each point's distance capped at the tolerance, unmatched counted at the tolerance) so a tight fit wins over a loose one with a few more points inside 0.2 mm.
+
+> mt12cover now works (a plane with rms 0.049 mm, 99% within) but took 11.7 s: the grid cell was too coarse for 1 million small triangles. I'll size the cell from the triangle density.
+
+> Still 7 s. Let me see whether the refinement runs all 30 iterations.
+
+> About 0.3 s an iteration, and it uses all 30. Let me see how the steps shrink.
+
+> The template didn't change. Let me see why.
+
+> `SS_ENDELLIPSIS` matched my search for `END`. I'll redo it with the whole line.
+
+> Template done. Now the dialog code and the view's click.
+
+> The shell tripped on the heredoc. I'll put the script in a file instead.
+
+> Clean build, 80 tests pass. Now docs and the install attempt.
+
+> The UAC prompt was cancelled again, so it's still not installed. Rebuilding the discussion files.
+
+> Find Symmetry and Mid Plane are added to ScanToAlibre's 3 Orient, next to Delete from before. The Release build is clean and all 80 core tests pass. None of it is installed, because the UAC prompt was cancelled again, so nothing has been tested in Alibre.
+>
+> **Find Symmetry**
+> - **Search:** it tries the box's centre planes, the scan's main directions, and planes taken from your fitted planes and axes. Each is scored by mirroring 20,000 points spread over the scan and measuring how far each lands from the scan. The best four are then moved step by step until they settle (the plan's mirror ICP).
+> - **Change from the plan:** planes are ranked on how tightly the scan matches its mirror image, not on the share of points within 0.2 mm as the plan said. On `Popsicle_dispenser.stl`, the old ranking put a plane 2° off first, because mirroring flat faces still lands near them. Now the true plane comes first: points about 0.002 mm from their mirror images on average (rms), found in 0.5 s. I've recorded this in the spec.
+> - **Repeat:** pushing Find Symmetry again adds the next best plane that isn't already fitted. This was my choice; it isn't in the plan.
+> - **Refusal:** it refuses with "No symmetry found" when under 30% of the scan is within 0.2 mm of its mirror image.
+> - **Real scans:**
+>   - On `mt12cover.ply` (1.07 million triangles) it takes 3.7 s, with 99.2% of the scan within 0.2 mm and an rms of 0.048 mm.
+>   - That scan first gave meaningless results because some of its triangles have no area. It's guarded now.
+> - **Timing:** it was 11.7 s on `mt12cover.ply` at first. Two changes brought it down: the search grid is now sized to the triangles, and only the best starting plane is refined all the way.
+>
+> **Mid Plane**
+> - **How to use it:** push Scan and click a plane, axis or point, then push Mid Plane and click a second of the same kind.
+> - **Two planes:** the plane goes halfway between them, or bisects them if they're at an angle.
+> - **Two axes or two points:** the plane is square to the line joining them, through its middle.
+> - **Mixed kinds:** refused, with a message.
+>
+> The Fit group has a new Symmetry row, so the dialog is 18 units taller. The distance search is in `core\Compare`, ready for 7 Compare. I've updated the spec, `CLAUDE.md` and `TODO.md`.
+>
+> **To install:** close Alibre, run this and accept the UAC prompt:
+>
+> ```bash
+> powershell -ExecutionPolicy Bypass -File D:\Projects\alibre\ScanToAlibre\deploy\install.ps1
+> ```
+>
+> **To test in Alibre**
+> 1. In Orient, check the new Symmetry row and that the controls below it aren't overlapping.
+> 2. Click Find Symmetry on a symmetric part. You should get "Symmetry plane 1" chosen, with its score on the status line.
+> 3. Click Find Symmetry again for the next plane, or "No other symmetry found".
+> 4. Push To, click Alibre's YZ plane, and Align the symmetry plane onto it.
+> 5. Fit the part's two side faces, choose one with Scan, push Mid Plane and click the other. The new plane should sit halfway between them.
+> 6. Try Mid Plane with a plane and an axis. It should be refused with a message.
+> 7. Delete a symmetry plane and Undo it.
+> 8. Check the log for the `[orient] symmetry candidate` and `find symmetry` lines, including how long it took.
+
+### 🧑 Frank · 15:18
+
+> That tested fine.  Before we continue to 6, add a 
+> "delete all" button to remove all scan geometry
+
+### 🤖 Claude
+
+> Tidying the status wording, then building.
+
+> Builds clean. Now the docs, marking Frank's test of Find Symmetry and Mid Plane, then install.
+
+> Frank's test covered the install, so the Delete line is out of date too.
+
+> Installed. Updating the install note and rebuilding the discussion files.
+
+> I've added a Delete All button to Orient, next to Delete. It removes every fitted plane and axis in one go, symmetry and mid planes included. The box's own planes, axes and centre stay. It's built and installed (the UAC prompt went through this time), and the 80 core tests pass. I haven't tried it in Alibre.
+>
+> - **When it's enabled:** only while there's at least one fitted plane or axis.
+> - **No prompt:** it doesn't ask first, because it's a single step Undo can take back.
+> - **Saving and the log:** the part is marked changed so it saves, and the log gets `[orient] deleted all n fitted planes and axes`.
+> - **Layout:** to make room, the chosen-feature name beside the Scan button is narrower, so long names may be cut off with "…".
+>
+> I updated the spec and `CLAUDE.md`, and marked Delete, Find Symmetry and Mid Plane as tested from your last message. One thing to check: I took "remove all scan geometry" to mean the fitted planes and axes only, not the scan mesh. If you meant the mesh as well, say so.
+>
+> Alibre needs restarting to load the new version.
+>
+> **To test in Alibre**
+> 1. In Orient, fit a few planes and axes and add a symmetry plane. Click Delete All: they should all go, and the box's own planes and axes should stay.
+> 2. Check that Delete All is greyed once nothing fitted is left.
+> 3. Click Undo. Everything should come back.
+> 4. Delete All, then save and reopen the part. They should stay gone.
+> 5. Check that the Scan feature name and the two Delete buttons don't overlap.
+
+### 🧑 Frank · 15:21
+
+> Delete all passed, but it should prompt, warning you are about to remove all
+
+### 🤖 Claude
+
+> Builds clean. Updating the spec and `CLAUDE.md`, then installing.
+
+> Delete All now asks before it removes anything. It's built and installed, but I haven't tried it in Alibre. The prompt says:
+>
+> > You are about to remove all n fitted planes and axes (symmetry and mid planes too). The box's own planes, axes and centre stay.
+> >
+> > Delete them all?
+>
+> It has Yes and No buttons with a warning icon, and No is the default, so pressing Enter doesn't delete them. I've updated the spec and `CLAUDE.md`. Restart Alibre to load the new version.
+>
+> **To test in Alibre**
+> 1. Fit a few planes and click Delete All. The warning should name how many will go.
+> 2. Press Enter or click No. Nothing should change.
+> 3. Click Delete All again and answer Yes. They should all go, and Undo should bring them back.
+
+### 🧑 Frank · 15:24
+
+> Yes, continue
+
+### 🤖 Claude
+
+> I'll follow the plan: a second `Section` (`silhouette`) with a `kind`, `ActiveSection()`, and `CSectionDlg` reused on a new template. Reading the remaining pieces.

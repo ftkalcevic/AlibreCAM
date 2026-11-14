@@ -20,6 +20,7 @@ these belong in the spec (`docs\SPEC.md`) once they're made.
     - Between 2 curves
 - More stock alignment options
 - 4th axis: rotate and machine, etc.
+- Lathe support: machine type, rod stock, turning operations, tools, post and simulation (staged plan saved in `docs\LatheSupport.md`)
 - 🔴 Show some summary information under each op, eg tool
 - New dialogs should inherit speed/feeds for the last (?)  copy/paste(?)
 - Rest machining: built for Waterline Roughing and Pocketing. Still to do: Facing, and pencil passes for finishing
