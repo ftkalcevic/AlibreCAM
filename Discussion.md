@@ -10704,6 +10704,22 @@ Decisions are also recorded in the spec (`docs\SPEC.md`) and `CLAUDE.md`.
 
 > Accept and save the plan for later.
 
+### 🤖 Claude
+
+> I've saved the tri-dexel plan to [docs/TriDexelSimulation.md](docs/TriDexelSimulation.md) and added a line to [TODO.md](TODO.md) that points to it. No code has changed, and nothing has been built or installed. I rebuilt `Discussion.md`.
+>
+> The plan, with your choices:
+> - **The option:** a Stock model choice (Voxels or Tri-dexel) in the Simulation dialog. Changing it restarts the simulation at the same move.
+> - **Resolution:** in tri-dexel mode the slider sets the spacing between dexels, and Auto divide is greyed.
+> - **Drawing:** a smooth surface through the exact points where the dexels end, so slopes and round walls aren't stepped. Sharp corners are slightly rounded, by up to one spacing.
+> - **What works in tri-dexel mode:**
+>   - Cutting, the rapid-into-stock warning, and the shank, neck and holder checks.
+>   - Compare: the stock is turned into voxels at the dexel spacing, so the Not enough and Too much removed areas stay blocky. Only the stock itself is smooth.
+>   - Save STL, which gets a watertight mesh.
+> - **Rest machining** stays on voxels.
+> - **Memory:** about 150 MB at the finest spacing.
+> - **Speed:** a test will compare tri-dexel's speed with the voxels' 1.5 s on the same facing job.
+
 ---
 
 # Side conversation
@@ -16513,3 +16529,151 @@ A forked copy of the session, kept apart from the main one.
 > 1. Repeat your Section on XY with Symmetric ticked, and create the sketch. It should stay on the slice, with the Symmetric constraints and a fixed symmetry line.
 > 2. Do the same in Silhouette.
 > 3. Check the status line and the log for any refused constraints.
+
+### 🧑 Frank · 16:25
+
+> Symmetry looks good, but the alibre sketch isn't staying on the reference line.  Both Section and Silhouette have arcs fit to the line and appear incorrect.
+
+### 🤖 Claude
+
+> Checking the log, then the sketch itself through the Alibre MCP tools, if your part is still open.
+
+> I'll add a measure to the replay: each slice point's distance to the symmetric profile. I'll also print the section's segments.
+
+> You've hit your 5-hour limit · resets 5:40pm (Australia/Sydney)
+
+### 🧑 Frank · 17:41
+
+> I hit my usage limit while you were working, but it has reset now. Please continue from where you left off.
+
+### 🤖 Claude
+
+> Replacing the half selection with averaging, and the arc joining with an angle test and a refit:
+
+> Building, then rerunning the replay and the tests.
+
+> All pass. I'll add a regression test for the case you hit: a flat, big-radius arc across the line whose centre is slightly off it, checked against the scan points as well as for symmetry.
+
+> Passes: 0.057 mm from the slice. The test's arc is deliberately 0.3 mm off centre, so its sides are 0.095 mm apart and halfway is right. 91 tests pass. Updating the docs, then installing.
+
+> The UAC prompt was cancelled, so this build isn't installed. The installed copy is still the 4:17 one. Rebuilding the discussion files.
+
+> I've fixed both problems and the build passes all 91 core tests, but it isn't installed yet because the UAC prompt was cancelled.
+>
+> **The arcs at the line.** Your section's bottom is one large arc, radius about 86, running across the symmetry line. Its fitted centre was 0.56 mm off the line, and I only joined an arc to its mirror when the centre was within the tolerance (0.05 mm). So it stayed as two arcs meeting at the line with a slight kink. The tangent constraint and the radius dimensions then pulled them away from the slice in Alibre.
+>
+> Now an arc is joined to its mirror when it bends no more than 2° at the line. The joined arc is fitted again to its points and their mirror images, so its centre sits on the line. On your section, both bottom arcs now run across the line as single arcs, and the profile is at most 0.053 mm from the slice.
+>
+> **The sketch drifting off the scan.** Before, I fitted one half and mirrored it. Your scan's two sides aren't perfectly symmetric, so on the silhouette the mirrored side ended up 0.20 mm from the scan. Now both halves are averaged before fitting, so the difference is split between the two sides. The silhouette is now at most 0.12 mm from the scan, which is half the scan's own asymmetry. The result line now tells you how far apart the scan's two sides are, so you can tell the scan's asymmetry from a bad fit.
+>
+> The log also showed every "coincident refused" message. That's harmless: the joining ends are already joined when they're added at the same point. It only showed up because refusals are now checked.
+>
+> I added a test for exactly this case (a flat arc across the line with its centre slightly off), and updated the spec and `CLAUDE.md`.
+>
+> **To test in Alibre** (after installing)
+> 1. Make the Section on XY with Symmetric ticked. The bottom arcs should each be one arc across the line, staying on the construction slice, and the result line should give how far apart the sides are.
+> 2. Do the same in Silhouette.
+> 3. Zoom in where the sketch meets the slice on both sides. Any gap should be about half the "sides differ by" figure.
+
+### 🧑 Frank · 17:47
+
+> Install it
+
+### 🤖 Claude
+
+> It's installed: the copy in `C:\ProgramData\Alibre AddOns\ScanToAlibre\` matches the 5:43 PM build. Start Alibre to load it.
+>
+> **To test in Alibre**
+> 1. Make the Section on XY with Symmetric ticked. The bottom arcs should each be one arc across the line, staying on the construction slice. The result line should say how far apart the scan's two sides are.
+> 2. Do the same in Silhouette.
+> 3. Zoom in where the sketch meets the slice on both sides. Any gap should be about half the "sides differ by" figure.
+
+### 🧑 Frank · 17:58
+
+> still problems with fitting an alibre sketch to the lines generated by the section.  in "scan mt12" XY section (no symmetry) the reference lines are correct.  The generated alibre sketch is 1.2mm shifted +Y
+
+### 🤖 Claude
+
+> Checking the log, and the sketch in Alibre if it's open.
+
+> The tangent test uses the fit too, but that only judges whether the scan was meant to be tangent, so I'll leave it. Changing the radius and concentric lines:
+
+> I'll draw the 7 arcs, the clockwise ones given from their other end since the tool draws anticlockwise.
+
+> Before the dimensions I'll join the ends as the sketch writer does, to see whether Alibre refuses the coincident constraints here too.
+
+> Three joins were already there (count unchanged) and four were new, so Alibre joins some ends by itself but not all. Now the drawn-radius dimensions:
+
+> Now the sketch writer: judge a constraint by whether the count went up, and report coincident joins that were already there separately from real refusals.
+
+> I'll add a test so the radius dimension stays tied to the drawn arc.
+
+> 92 pass. Recording what was learned in `CLAUDE.md` and the spec, then installing.
+
+> The installed copy still shows the older time; the elevated installer may still have been running. Checking again:
+
+> Still not installed, and Alibre isn't running. Let me see what the installer does when elevated, to find where it stopped.
+
+> It isn't running now, so it must have closed after the installer gave up. Installing again, this time checking for the right process name:
+
+> Installed: the copies match (6:03 PM). Updating `CLAUDE.md` and rebuilding the discussion files.
+
+> I found the cause of the 1.2 mm shift, fixed it, and installed the fix. I reproduced the shift in Alibre and checked the fix there, but haven't run it on your scan.
+>
+> **Cause.** The log showed your plain XY section had 7 arcs and only 7 radius dimensions, so those dimensions moved the sketch. Each radius was taken from the circle fitted freely to the slice points, not the arc as drawn through its two ends, which is the one that matches the slice. On your section they differed by up to 1.8 mm: the bottom arc was drawn at radius 98.86 but dimensioned 100.7.
+>
+> **What I proved in Alibre.** I used the Alibre MCP tools on a throwaway part, closed without saving, and drew your 7 arcs twice:
+> - **Dimensioned with the old radii:** a radius dimension keeps the arc's centre and swept angle and scales the arc about its centre. The bottom arc's ends moved 1.8 mm, and one end that wasn't joined came apart.
+> - **Dimensioned with the drawn radii, every end joined:** the outline stayed closed and on the scan. The largest move was 0.07 mm, which is the corner radii rounding to 0.1 mm (0.425 → 0.4).
+>
+> **The fix.**
+> - The radius dimension now uses the drawn arc's radius.
+> - The concentric check now compares the drawn centres, since those are what the constraint joins.
+>
+> **Also from the experiment:**
+> - **"Refused" coincident constraints:** Alibre returns false for a coincident constraint even when it makes it; the count went up. It joins some ends by itself, but not an arc's end, because it moves that end onto the arc's circle. So the sketch writer now judges by whether the constraint count goes up. The log counts ends that were already joined separately from real refusals.
+> - **The earlier failed install:** my pre-check looked for the wrong process name ("AlibreDesign" instead of "Alibre Design"). The installer stopped because Alibre was still open, and the window closed before I saw it. Alibre had closed by the second attempt, which installed. I've noted the correct name in `CLAUDE.md`.
+>
+> All 92 core tests pass, including a new one that ties the radius dimension to the drawn arc. I updated the spec and `CLAUDE.md`, including the two Alibre behaviours I proved.
+>
+> **To test in Alibre**
+> 1. Make the scan mt12 XY section without Symmetric. The sketch should lie on the construction slice, moving only where a small corner radius rounds to 0.1 mm.
+> 2. Make it again with Symmetric ticked, and also the Silhouette.
+> 3. In the log, check the "coincident ends Alibre had already joined itself" line, and that nothing else is refused.
+
+### 🧑 Frank · 18:08
+
+> Fixed.  
+>
+> Now, 
+>
+>
+> Add to both the section and silhouette dialogs, options controlling the generated sketch.  
+> A checkbox for Create Raw Sketch, to create the sketch of the section view.
+> A checkbox for Create Fitted Sketch, to create the Alibre smoothed fitted sketch.  If this is selected, and Raw is selected, Raw will be made into a reference sketch.
+> Add a check box for "Fit arcs".  If this is not selected only fit lines.
+> By default they are all checked.
+> Put them in a group, "Sketch Options"
+
+### 🤖 Claude
+
+> Planning this with you first, since one rule needs settling. Here's how I read it:
+> - **Create Raw Sketch** alone: the slice as ordinary sketch lines.
+> - **Create Fitted Sketch** alone: the fitted lines and arcs, with no slice.
+> - **Both** (the default): the fitted sketch plus the slice as construction lines, which is what it does today.
+> - **Fit arcs** off: lines only, including for whole circles.
+> - **Neither** box ticked: Create Sketch is greyed.
+>
+> I'll start with the fitting code, since lines-only reaches into `FitProfile`.
+
+> The core is done. Now the sketch writer. Reading `SketchReport` and the start of the figure step, so I can gate each part:
+
+> Wiring the options into the sketch writer. Without the fitted sketch, the constraint step finds no figures, so nothing needs changing there.
+
+> Now the document, the dialog and both templates.
+
+> The layout looks right. Adding a core test that lines-only fitting makes no arcs or circles and still follows the points:
+
+> 93 tests pass. Updating the spec and `CLAUDE.md`, then installing.
+
+> Installed. Recording that you confirmed the radius fix, then rebuilding the discussion files.
